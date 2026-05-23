@@ -2,13 +2,15 @@
 // 맵은 Tiled JSON 을 로드해서 가져온다. 캔버스는 저해상도 백버퍼 + 정수배 업스케일.
 
 import { connect, type Net } from './net';
-import { setupInput } from './input';
+import { setupInput, consumeMentalAttack } from './input';
+import { pickInsult } from './insults';
 import { setupTouchControls } from './controls';
 import { setupCanvas } from './canvas';
 import {
-  setupChat, setRosterCount, setKills, showGame, uiHandles, type ChatBinding,
+  setupChat, setRosterCount, setKills, showGame, uiHandles, pushChatLog, showBanner, updateRanking, type ChatBinding,
 } from './ui';
 import { TILE, makeCamera, triggerShake, updateCamera } from './world';
+import { getViewport } from './viewport';
 import { randomCharColor, randomCharIdx, prescaleCharacter, CHAR_H } from './sprites';
 import {
   ATTACK_SWING_DUR,
@@ -113,6 +115,7 @@ async function startGameAsync(name: string): Promise<void> {
   const chat: ChatBinding = setupChat(ui, (text) => {
     local.chatText = text;
     local.chatUntil = nowSec() + 4;
+    pushChatLog(ui, local.name, text);
     net.sendChat({ id: local.id, text });
   });
 
@@ -144,6 +147,7 @@ async function startGameAsync(name: string): Promise<void> {
         dead: false, deadUntil: 0,
         lastSeen: nowSec(),
         kills: 0,
+        deaths: 0,
         attackUntil: 0,
         danceUntil: 0, danceStart: 0,
       };
@@ -154,7 +158,10 @@ async function startGameAsync(name: string): Promise<void> {
       r.charIdx = m.charIdx;
     }
     setRosterCount(ui, remotes.size + 1);
+    refreshRanking();
   };
+
+  const refreshRanking = () => updateRanking(ui, local, remotes.values());
 
   const updateCtx = (): UpdateCtx => ({
     dt: 0, now: nowSec(), map, chatActive: chat.isActive(),
@@ -180,6 +187,7 @@ async function startGameAsync(name: string): Promise<void> {
       if (!r) return;
       r.chatText = c.text;
       r.chatUntil = nowSec() + 4;
+      pushChatLog(ui, r.name, c.text);
     },
     onAttack: (a: AttackPayload) => {
       const r = remotes.get(a.id);
@@ -187,7 +195,14 @@ async function startGameAsync(name: string): Promise<void> {
         r.attackUntil = nowSec() + ATTACK_SWING_DUR;
         r.dir = a.dir;
       }
+      const wasAlive = !local.dead;
       onAttackBroadcast(local, a, updateCtx());
+      if (wasAlive && local.dead) {
+        const killer = remotes.get(a.id);
+        const killerName = killer ? killer.name : '???';
+        showBanner(ui, 'death', '쓰러졌다…', `${killerName}에게 당함`);
+        refreshRanking();
+      }
     },
     onHp: (h: HpPayload) => {
       const r = remotes.get(h.id);
@@ -199,16 +214,19 @@ async function startGameAsync(name: string): Promise<void> {
     onDeath: (d: DeathPayload) => {
       const now = nowSec();
       const r = remotes.get(d.id);
+      const victimName = r ? r.name : (d.id === local.id ? local.name : '???');
       if (r) {
         r.dead = true;
         r.hp = 0;
         r.deadUntil = now + 3;
+        r.deaths += 1;
       }
       if (d.killerId) {
         if (d.killerId === local.id) {
           local.kills += 1;
           setKills(ui, local.kills);
           startDance(local, now);
+          showBanner(ui, 'kill', 'K.O.!', `${victimName} 처치`);
         } else {
           const killer = remotes.get(d.killerId);
           if (killer) {
@@ -217,6 +235,7 @@ async function startGameAsync(name: string): Promise<void> {
           }
         }
       }
+      refreshRanking();
     },
     onPresenceSync: (members) => {
       const ids = new Set(members.map((m) => m.id));
@@ -234,16 +253,73 @@ async function startGameAsync(name: string): Promise<void> {
     onPresenceLeave: (members) => {
       for (const m of members) remotes.delete(m.id);
       setRosterCount(ui, remotes.size + 1);
+      refreshRanking();
     },
     onSubscribed: () => {
       net.sendPos({ id: local.id, x: local.x, y: local.y, dir: local.dir, moving: false });
       net.sendHp({ id: local.id, hp: local.hp });
+      refreshRanking();
     },
   });
 
   window.addEventListener('beforeunload', () => {
     void net.unsubscribe();
   });
+
+  // ===== 미니맵 =====
+  const minimapCtx = ui.minimap.getContext('2d')!;
+  minimapCtx.imageSmoothingEnabled = false;
+  let minimapAccum = 0;
+  function drawMinimap(): void {
+    const mw = ui.minimap.width;
+    const mh = ui.minimap.height;
+    const sx = mw / map.pixelW;
+    const sy = mh / map.pixelH;
+    minimapCtx.clearRect(0, 0, mw, mh);
+    // 배경
+    minimapCtx.fillStyle = 'rgba(40, 60, 30, 0.55)';
+    minimapCtx.fillRect(0, 0, mw, mh);
+    // 충돌 영역(나무 등) — 옅은 갈색 점
+    minimapCtx.fillStyle = 'rgba(120, 80, 40, 0.85)';
+    for (const r of map.collisionRects) {
+      const x = (r.x0 * sx) | 0;
+      const y = (r.y0 * sy) | 0;
+      const w = Math.max(1, ((r.x1 - r.x0) * sx) | 0);
+      const h = Math.max(1, ((r.y1 - r.y0) * sy) | 0);
+      minimapCtx.fillRect(x, y, w, h);
+    }
+    // 원격 플레이어 — 흰 점
+    minimapCtx.fillStyle = '#fff';
+    for (const r of remotes.values()) {
+      if (r.dead) continue;
+      const x = (r.renderX * sx - 1) | 0;
+      const y = (r.renderY * sy - 1) | 0;
+      minimapCtx.fillRect(x, y, 3, 3);
+    }
+    // 로컬 — 노란 점 (강조)
+    if (!local.dead) {
+      const x = (local.x * sx - 2) | 0;
+      const y = (local.y * sy - 2) | 0;
+      minimapCtx.fillStyle = '#1a0e08';
+      minimapCtx.fillRect(x, y, 5, 5);
+      minimapCtx.fillStyle = '#ffd84a';
+      minimapCtx.fillRect(x + 1, y + 1, 3, 3);
+    }
+  }
+
+  // ===== 멘탈 공격(욕 자동 채팅) — 1.5초 쿨다운으로 스팸 방지 =====
+  const MENTAL_COOLDOWN = 1.5;
+  let mentalCooldownUntil = 0;
+  function fireMentalAttack(now: number): void {
+    if (chat.isActive() || local.dead) return;
+    if (now < mentalCooldownUntil) return;
+    mentalCooldownUntil = now + MENTAL_COOLDOWN;
+    const text = pickInsult();
+    local.chatText = text;
+    local.chatUntil = now + 4;
+    pushChatLog(ui, local.name, text);
+    net.sendChat({ id: local.id, text });
+  }
 
   // ===== 루프 =====
   let lastT = performance.now();
@@ -269,6 +345,9 @@ async function startGameAsync(name: string): Promise<void> {
     ctx.dt = dt;
     updateLocalPlayer(local, ctx);
     clampToWorld(local, map);
+
+    // 멘탈 공격(욕 채팅) — X 키 또는 멘탈공격 버튼.
+    if (consumeMentalAttack()) fireMentalAttack(now);
 
     const k = 1 - Math.exp(-dt / 0.08);
     for (const r of remotes.values()) {
@@ -298,7 +377,10 @@ async function startGameAsync(name: string): Promise<void> {
     lastPosMoving = movingNow;
 
     // 카메라는 실제 dt 로 항상 갱신 (정지 중에도 흔들림 진행)
-    updateCamera(camera, local.x, local.y, map.pixelW, map.pixelH, realDt);
+    // 채팅 입력 활성/키보드 열림 → 캐릭터를 위쪽으로 옮겨 채팅바·키보드가 가린 영역 회피.
+    const vp = getViewport();
+    const centerY = (chat.isActive() || vp.keyboardOpen) ? 0.32 : 0.5;
+    updateCamera(camera, local.x, local.y, map.pixelW, map.pixelH, realDt, centerY);
     updateDebugInfo(debug, local.x, local.y, TILE);
 
     const renderables: RenderableRemote[] = [];
@@ -356,6 +438,13 @@ async function startGameAsync(name: string): Promise<void> {
       }
     }
     syncBubbles(visibleBubbles);
+
+    // 미니맵 ~10Hz 갱신 — 매 프레임은 과한 부하.
+    minimapAccum += realDt;
+    if (minimapAccum >= 0.1) {
+      minimapAccum = 0;
+      drawMinimap();
+    }
 
     requestAnimationFrame(loop);
   }

@@ -7,7 +7,10 @@ import type { AttackPayload, Dir, PosPayload } from './types';
 import { consumeAttack, dirFromInput, input } from './input';
 
 // 공격 사양 (spec §7) — LPC 표준 32px 타일 기준.
-export const MAX_HP = 100;
+// HP 14칸 × 10HP = 140. 공격 1대 = 20HP = 2칸. 7방 맞으면 사망.
+export const MAX_HP = 140;
+export const HP_PER_CELL = 10;        // 14칸 segmented 바와 매칭
+export const HP_REGEN_PER_SEC = 1;    // 1초당 1HP — 10초에 한 칸씩 회복
 export const SPEED = 120;            // px/sec
 export const ATTACK_COOLDOWN = 0.5;
 export const ATTACK_DAMAGE = 20;
@@ -55,6 +58,8 @@ export interface LocalPlayer {
   dead: boolean;
   deadUntil: number;
   kills: number;
+  deaths: number;
+  regenAccum: number;        // 자연회복 누적 (1초 = 1HP)
   chatText: string;
   chatUntil: number;
   floats: FloatingText[];
@@ -79,7 +84,8 @@ export function makeLocalPlayer(id: string, name: string, color: string, charIdx
     attackUntil: 0, attackCooldownUntil: 0,
     iFrameUntil: 0, hitFlashUntil: 0,
     dead: false, deadUntil: 0,
-    kills: 0,
+    kills: 0, deaths: 0,
+    regenAccum: 0,
     chatText: '', chatUntil: 0,
     floats: [],
     danceUntil: 0, danceStart: 0,
@@ -179,6 +185,18 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
   if (p.floats.length > 0) {
     p.floats = p.floats.filter((f) => now - f.birth < 0.9);
   }
+
+  // ===== 자연 회복 — 1초당 1HP. 셀 경계(10HP) 넘을 때마다만 broadcast (대역폭 절약). =====
+  if (p.hp < p.maxHp) {
+    p.regenAccum += dt * HP_REGEN_PER_SEC;
+    while (p.regenAccum >= 1 && p.hp < p.maxHp) {
+      p.regenAccum -= 1;
+      p.hp += 1;
+      if (p.hp % HP_PER_CELL === 0 || p.hp === p.maxHp) ctx.sendHp(p.hp);
+    }
+  } else {
+    p.regenAccum = 0;
+  }
 }
 
 // 공격자의 히트박스 사각형 (월드 좌표 minX/maxX/minY/maxY)
@@ -246,6 +264,7 @@ export function onAttackBroadcast(p: LocalPlayer, atk: AttackPayload, ctx: Updat
   if (p.hp <= 0) {
     p.dead = true;
     p.deadUntil = ctx.now + RESPAWN;
+    p.deaths += 1;
     ctx.sendDeath(atk.id);
   }
 }

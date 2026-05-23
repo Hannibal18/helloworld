@@ -2,7 +2,7 @@
 // 채팅은 입력칸 항상 표시되므로 별도 버튼 없음.
 // 멀티터치: 손가락마다 identifier가 다르므로, 조이스틱과 공격 버튼이 동시에 눌려도 둘 다 동작한다.
 
-import { setStick, pressAttack } from './input';
+import { setStick, pressAttack, pressMentalAttack } from './input';
 
 export function isTouchDevice(): boolean {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -13,6 +13,7 @@ export function setupTouchControls(): void {
   const stick = document.getElementById('stick') as HTMLElement | null;
   const knob = document.getElementById('stick-knob') as HTMLElement | null;
   const btnAttack = document.getElementById('btn-attack') as HTMLElement | null;
+  const btnMental = document.getElementById('btn-mental') as HTMLElement | null;
 
   if (!root || !stick || !knob || !btnAttack) return;
 
@@ -94,4 +95,14 @@ export function setupTouchControls(): void {
   };
   btnAttack.addEventListener('touchstart', onAttackDown, { passive: false });
   btnAttack.addEventListener('mousedown', onAttackDown);
+
+  // ===== 멘탈 공격 버튼 (욕 채팅 자동 송신) =====
+  if (btnMental) {
+    const onMentalDown = (e: Event) => {
+      e.preventDefault();
+      pressMentalAttack();
+    };
+    btnMental.addEventListener('touchstart', onMentalDown, { passive: false });
+    btnMental.addEventListener('mousedown', onMentalDown);
+  }
 }

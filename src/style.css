@@ -219,6 +219,147 @@ input[type="text"], textarea {
 .hud-btn:active { background: rgba(60, 42, 26, 0.9); }
 .hud-btn.off { color: #999; border-color: #444; }
 
+/* ===== 좌상단 KDA 랭킹 ===== */
+.ranking {
+  position: absolute;
+  top: calc(36px + env(safe-area-inset-top));
+  left: calc(8px + env(safe-area-inset-left));
+  z-index: 5;
+  font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif;
+  font-size: 11px;
+  color: #f0e6d0;
+  background: rgba(20, 14, 8, 0.78);
+  border: 1px solid #6a4a2a;
+  padding: 4px 8px;
+  min-width: 132px;
+  max-width: 168px;
+  pointer-events: none;
+}
+.ranking:empty { display: none; }
+.ranking-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(106, 74, 42, 0.3);
+}
+.ranking-item:last-child { border-bottom: none; }
+.ranking-rank {
+  font-family: "Galmuri11", "NeoDunggeunmo", monospace;
+  font-size: 10px;
+  color: #c9b58d;
+  min-width: 12px;
+  text-align: right;
+}
+.ranking-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.2px;
+}
+.ranking-kd {
+  font-family: "Galmuri11", "NeoDunggeunmo", monospace;
+  font-size: 10px;
+  color: #c9b58d;
+  flex-shrink: 0;
+}
+.ranking-item.me .ranking-name { color: #ffd84a; font-weight: 600; }
+.ranking-item.me .ranking-kd { color: #ffd84a; }
+
+/* ===== 미니맵 (우상단) ===== */
+.minimap {
+  position: absolute;
+  top: calc(40px + env(safe-area-inset-top));
+  right: calc(8px + env(safe-area-inset-right));
+  z-index: 5;
+  background: rgba(20, 14, 8, 0.75);
+  border: 1px solid #6a4a2a;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+/* ===== 채팅 로그 (상단 중앙, 페이드 아웃) ===== */
+.chat-log {
+  position: absolute;
+  top: calc(40px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 70vw);
+  z-index: 4;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+}
+.chat-log-item {
+  background: rgba(20, 14, 8, 0.78);
+  color: #f0e6d0;
+  border: 1px solid #6a4a2a;
+  padding: 4px 10px;
+  font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: chatLogFade 6s forwards;
+}
+.chat-log-item .chat-log-name {
+  color: #ffd07a;
+  font-weight: 600;
+  margin-right: 6px;
+  font-family: "Galmuri11", "NeoDunggeunmo", monospace;
+  font-size: 12px;
+}
+@keyframes chatLogFade {
+  0%   { opacity: 0; transform: translateY(-6px); }
+  6%   { opacity: 1; transform: translateY(0); }
+  85%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ===== 킬/사망 중앙 배너 ===== */
+.banner {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  pointer-events: none;
+  text-align: center;
+  text-shadow: 3px 3px 0 #1a0e08, -1px -1px 0 #1a0e08, 1px -1px 0 #1a0e08, -1px 1px 0 #1a0e08;
+  font-family: "Galmuri11", "NeoDunggeunmo", monospace;
+  letter-spacing: 4px;
+  opacity: 0;
+}
+.banner.show {
+  animation: bannerPop 2.4s forwards;
+}
+.banner-title {
+  font-size: 44px;
+  font-weight: bold;
+  line-height: 1;
+}
+.banner-sub {
+  display: block;
+  margin-top: 8px;
+  font-size: 16px;
+  letter-spacing: 2px;
+  color: #f0e6d0;
+}
+.banner.kill .banner-title { color: #ffd84a; }
+.banner.death .banner-title { color: #ff5d5d; }
+@keyframes bannerPop {
+  0%   { opacity: 0; transform: translate(-50%, -30%) scale(0.6); }
+  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  22%  { transform: translate(-50%, -50%) scale(1.0); }
+  80%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.0); }
+}
+
 /* ===== 채팅 바 (카카오톡 스타일) =====
    #app 이 100dvh + viewport meta 의 'interactive-widget=resizes-content' 덕에
    키보드 열리면 dvh 자체가 줄어든다 → 채팅바는 그냥 #app 의 BOTTOM 에 absolute 로 붙이면 자동으로 키보드 위. */
@@ -278,6 +419,29 @@ input[type="text"], textarea {
   content: attr(data-placeholder);
   color: #aaa;
   pointer-events: none;
+}
+/* 전송 버튼 — 입력란 우측에 붙어 한 손 엄지 닿기 쉽게 */
+.chat-send-btn {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 8px 14px;
+  height: 34px;
+  font: inherit;
+  font-family: "Galmuri11", "NeoDunggeunmo", monospace;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: #fff7a8;
+  background: linear-gradient(180deg, #c8a04a, #8a6232);
+  border: 2px solid #5d4220;
+  border-radius: 18px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.chat-send-btn:active { transform: translateY(1px); }
+.chat-send-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* ===== 모바일 가상 컨트롤 ===== */
@@ -347,6 +511,20 @@ input[type="text"], textarea {
   font-size: 12px;
   background: rgba(20, 14, 8, 0.5);
   border-color: #6a4a2a;
+}
+/* 멘탈 공격 — 보라/마젠타 톤. 공격(노란)과 한눈에 구분되게. 약간 작게. */
+.touch-btn-mental {
+  width: 72px;
+  height: 72px;
+  font-size: 12px;
+  line-height: 1.1;
+  letter-spacing: 1px;
+  color: #ffd8f0;
+  background: rgba(50, 14, 40, 0.78);
+  border-color: #c84aa0;
+}
+.touch-btn-mental:active {
+  background: rgba(120, 30, 100, 0.9);
 }
 
 /* 작은 화면 보호 */

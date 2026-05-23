@@ -10,10 +10,11 @@ export interface InputState {
   stickX: number;
   stickY: number;
   attackQueued: boolean; // 다음 게임 틱에서 소비
+  mentalAttackQueued: boolean; // 멘탈 공격(욕 채팅) — 다음 틱에서 소비
 }
 
 export const input: InputState = {
-  moveX: 0, moveY: 0, stickX: 0, stickY: 0, attackQueued: false,
+  moveX: 0, moveY: 0, stickX: 0, stickY: 0, attackQueued: false, mentalAttackQueued: false,
 };
 
 let isChatActive: () => boolean = () => false;
@@ -39,12 +40,17 @@ export function setupInput(opts: { isChatActive: () => boolean }): void {
   window.addEventListener('keydown', (e) => {
     if (isChatActive()) return;
     const k = e.key.toLowerCase();
-    if (['arrowleft','arrowright','arrowup','arrowdown',' ','w','a','s','d'].includes(k)) {
+    if (['arrowleft','arrowright','arrowup','arrowdown',' ','w','a','s','d','x'].includes(k)) {
       e.preventDefault();
     }
     if (k === ' ') {
       if (!keys.has(' ')) input.attackQueued = true;
       keys.add(' ');
+      return;
+    }
+    if (k === 'x') {
+      if (!keys.has('x')) input.mentalAttackQueued = true;
+      keys.add('x');
       return;
     }
     keys.add(k);
@@ -81,6 +87,13 @@ export function consumeAttack(): boolean {
   return v;
 }
 
+// 멘탈 공격 트리거 (욕 채팅 자동 송신) — 한 번 소비.
+export function consumeMentalAttack(): boolean {
+  const v = input.mentalAttackQueued;
+  input.mentalAttackQueued = false;
+  return v;
+}
+
 // 가상 스틱이 호출 — 부드러운 -1~1 벡터 입력.
 export function setStick(sx: number, sy: number): void {
   input.stickX = sx;
@@ -95,6 +108,12 @@ export function setStick(sx: number, sy: number): void {
 export function pressAttack(): void {
   if (isChatActive()) return;
   input.attackQueued = true;
+}
+
+// 가상 멘탈 공격 버튼이 호출.
+export function pressMentalAttack(): void {
+  if (isChatActive()) return;
+  input.mentalAttackQueued = true;
 }
 
 // 현재 입력 벡터를 4방향 Dir 로 변환.

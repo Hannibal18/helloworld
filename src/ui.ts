@@ -10,6 +10,10 @@ export interface UiHandles {
   myKills: HTMLElement;
   chatBar: HTMLElement;
   chatInput: HTMLElement;       // contenteditable div — input/textarea 아님
+  chatLog: HTMLElement;
+  minimap: HTMLCanvasElement;
+  banner: HTMLElement;
+  ranking: HTMLElement;
 }
 
 export function uiHandles(): UiHandles {
@@ -23,6 +27,10 @@ export function uiHandles(): UiHandles {
     myKills: document.getElementById('my-kills') as HTMLElement,
     chatBar: document.getElementById('chat-bar') as HTMLElement,
     chatInput: document.getElementById('chat-input') as HTMLElement,
+    chatLog: document.getElementById('chat-log') as HTMLElement,
+    minimap: document.getElementById('minimap') as HTMLCanvasElement,
+    banner: document.getElementById('banner') as HTMLElement,
+    ranking: document.getElementById('ranking') as HTMLElement,
   };
 }
 
@@ -39,6 +47,70 @@ export function setKills(ui: UiHandles, n: number): void {
   ui.myKills.textContent = `킬 ${n}`;
 }
 
+// 좌상단 KDA 랭킹 — kills 내림차순, 동률은 deaths 오름차순.
+export interface RankEntry { id: string; name: string; kills: number; deaths: number; }
+export function updateRanking(ui: UiHandles, local: RankEntry, remotes: Iterable<RankEntry>): void {
+  const all: Array<RankEntry & { isLocal: boolean }> = [{ ...local, isLocal: true }];
+  for (const r of remotes) all.push({ id: r.id, name: r.name, kills: r.kills, deaths: r.deaths, isLocal: false });
+  all.sort((a, b) => (b.kills - a.kills) || (a.deaths - b.deaths) || a.name.localeCompare(b.name));
+  const top = all.slice(0, 5);
+  ui.ranking.innerHTML = '';
+  top.forEach((p, i) => {
+    const item = document.createElement('div');
+    item.className = 'ranking-item' + (p.isLocal ? ' me' : '');
+    const rank = document.createElement('span');
+    rank.className = 'ranking-rank';
+    rank.textContent = `${i + 1}`;
+    const name = document.createElement('span');
+    name.className = 'ranking-name';
+    name.textContent = p.name;
+    const kd = document.createElement('span');
+    kd.className = 'ranking-kd';
+    kd.textContent = `${p.kills}/${p.deaths}`;
+    item.appendChild(rank);
+    item.appendChild(name);
+    item.appendChild(kd);
+    ui.ranking.appendChild(item);
+  });
+}
+
+// 상단 채팅 로그에 메시지 한 줄 추가. 6초 페이드, 최대 8개 유지.
+const MAX_CHAT_LOG = 8;
+export function pushChatLog(ui: UiHandles, name: string, text: string): void {
+  const item = document.createElement('div');
+  item.className = 'chat-log-item';
+  const n = document.createElement('span');
+  n.className = 'chat-log-name';
+  n.textContent = name;
+  item.appendChild(n);
+  item.appendChild(document.createTextNode(text));
+  ui.chatLog.appendChild(item);
+  while (ui.chatLog.children.length > MAX_CHAT_LOG) {
+    ui.chatLog.removeChild(ui.chatLog.firstChild!);
+  }
+  // 페이드 끝나면 자동 제거 — CSS 애니메이션 길이와 동기.
+  window.setTimeout(() => item.remove(), 6200);
+}
+
+// 화면 중앙 K.O.! / 사망 배너 — kind 에 따라 색깔 다름.
+export function showBanner(ui: UiHandles, kind: 'kill' | 'death', title: string, sub: string): void {
+  const el = ui.banner;
+  el.className = `banner ${kind}`;
+  el.innerHTML = '';
+  const t = document.createElement('div');
+  t.className = 'banner-title';
+  t.textContent = title;
+  const s = document.createElement('div');
+  s.className = 'banner-sub';
+  s.textContent = sub;
+  el.appendChild(t);
+  el.appendChild(s);
+  // 강제 reflow → 같은 배너 연속으로 띄울 때도 애니메이션 재시작.
+  void el.offsetWidth;
+  el.classList.add('show');
+  window.setTimeout(() => el.classList.remove('show'), 2400);
+}
+
 export interface ChatBinding {
   isActive: () => boolean;
   focus: () => void;
@@ -48,6 +120,7 @@ export interface ChatBinding {
 export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBinding {
   const MAX_LEN = 100;
   let active = false;
+  const sendBtn = document.getElementById('chat-send') as HTMLButtonElement | null;
 
   // iOS 한글 IME 상태 추적 — 조합 중에 전송 누르면 compositionend 잔여 commit 이 clear 후 입력칸에 글자 남기는 버그 방지
   let composing = false;
@@ -98,6 +171,14 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
 
   ui.chatInput.addEventListener('focus', () => { active = true; ui.chatBar.classList.add('active'); });
   ui.chatInput.addEventListener('blur', () => { active = false; ui.chatBar.classList.remove('active'); });
+
+  // 전송 버튼 — pointerdown 으로 잡아서 input blur(키보드 닫힘) 전에 발사.
+  if (sendBtn) {
+    sendBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      requestSend();
+    });
+  }
 
   // contenteditable — paste 시 서식 따라오는 거 막고 plain text 만 삽입.
   ui.chatInput.addEventListener('paste', (e) => {

@@ -73,6 +73,8 @@ export interface RemotePlayer {
   lastSeen: number;
   // 킬 카운트 (수신측에서 death broadcast로 집계)
   kills: number;
+  // 죽은 횟수 (death broadcast 받을 때마다 +1)
+  deaths: number;
   // 공격 모션 (스윙)
   attackUntil: number;
   // 제로투 댄스 (킬 후 도발 — 3초)

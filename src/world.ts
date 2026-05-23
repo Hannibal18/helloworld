@@ -18,6 +18,8 @@ export function makeCamera(viewW = 320, viewH = 240): Camera {
 }
 
 // targetX/Y 로 부드럽게 추적하고, 흔들림(shake) 을 더해 최종 cam.x/y 를 계산.
+// centerRatioY: 캐릭터를 화면 세로의 어느 비율에 둘지 (0.5 = 정중앙, 0.35 = 위쪽 1/3).
+// 채팅바·키보드가 하단을 가릴 때 작게 잡아서 캐릭터가 안 가리게.
 export function updateCamera(
   cam: Camera,
   targetX: number,
@@ -25,9 +27,10 @@ export function updateCamera(
   worldW: number,
   worldH: number,
   dt: number,
+  centerRatioY: number = 0.5,
 ): void {
   let cx = targetX - cam.viewW / 2;
-  let cy = targetY - cam.viewH / 2;
+  let cy = targetY - cam.viewH * centerRatioY;
   if (worldW <= cam.viewW) cx = (worldW - cam.viewW) / 2;
   else cx = Math.max(0, Math.min(worldW - cam.viewW, cx));
   if (worldH <= cam.viewH) cy = (worldH - cam.viewH) / 2;

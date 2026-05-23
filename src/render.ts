@@ -225,31 +225,61 @@ function drawNameHpKills(
 ): void {
   const baseX = Math.round(worldX - camera.x);
   const heightAbove = dancing ? DANCE_H : CHAR_H;
-  const topY = Math.round(worldY - camera.y - heightAbove - 4);
-
-  ctx.font = `8px ${DOT_FONT}`;
-  ctx.textAlign = 'center';
   const label = kills > 0 ? `${name} · ${kills}` : name;
+
+  // 이름 — 더 키우고(11px), 8방향 + 2px 외곽선 + 어두운 배경박스로 가독성 강화.
+  ctx.font = `bold 11px ${DOT_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  const labelW = ctx.measureText(label).width;
+  const padX = 3;
+  const padY = 2;
+  const boxW = Math.ceil(labelW) + padX * 2;
+  const boxH = 13;
+  const topY = Math.round(worldY - camera.y - heightAbove - 6);
+  const boxX = baseX - boxW / 2;
+  const boxY = topY - boxH + padY;
+
+  // 반투명 검정 박스 배경
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(boxX + 0.5, boxY + 0.5, boxW - 1, boxH - 1);
+
+  // 8방향 외곽선 — 두 픽셀 두께
   ctx.fillStyle = '#000';
-  ctx.fillText(label, baseX + 1, topY);
-  ctx.fillText(label, baseX - 1, topY);
-  ctx.fillText(label, baseX, topY + 1);
-  ctx.fillText(label, baseX, topY - 1);
+  for (let dx = -2; dx <= 2; dx++) {
+    for (let dy = -2; dy <= 2; dy++) {
+      if (dx === 0 && dy === 0) continue;
+      if (Math.abs(dx) === 2 && Math.abs(dy) === 2) continue;
+      ctx.fillText(label, baseX + dx, topY + dy);
+    }
+  }
+  // 본체
   ctx.fillStyle = isLocal ? '#fff7a8' : '#ffffff';
   ctx.fillText(label, baseX, topY);
 
-  // HP 바 — 새 스케일에 맞춰 작게
-  const barW = 18;
-  const barH = 3;
-  const bx = baseX - barW / 2;
-  const by = topY + 1;
+  // HP 바 — 14칸 segmented (2px 셀 + 1px 갭 = 총 41px). 각 셀 = 10HP.
+  const SEGMENTS = 14;
+  const segW = 2;
+  const segGap = 1;
+  const barW = SEGMENTS * segW + (SEGMENTS - 1) * segGap;
+  const barH = 4;
+  const bx = baseX - Math.floor(barW / 2);
+  const by = topY + 3;
+  // 외곽 검정 테두리 + 셀 사이 갭 채울 배경
   ctx.fillStyle = '#000';
   ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
-  ctx.fillStyle = '#3a1212';
-  ctx.fillRect(bx, by, barW, barH);
   const pct = Math.max(0, Math.min(1, hp / maxHp));
-  ctx.fillStyle = pct > 0.5 ? '#5fd06a' : pct > 0.25 ? '#e0c050' : '#d04a4a';
-  ctx.fillRect(bx, by, Math.round(barW * pct), barH);
+  const filledSegs = hp <= 0 ? 0 : Math.max(1, Math.floor(SEGMENTS * pct));
+  const fillColor = pct > 0.5 ? '#5fd06a' : pct > 0.25 ? '#e0c050' : '#d04a4a';
+  for (let i = 0; i < SEGMENTS; i++) {
+    const segX = bx + i * (segW + segGap);
+    ctx.fillStyle = i < filledSegs ? fillColor : '#3a1212';
+    ctx.fillRect(segX, by, segW, barH);
+  }
+  // 색깔 표시 (왼쪽)
   ctx.fillStyle = color;
   ctx.fillRect(bx - 3, by, 2, barH);
 }
