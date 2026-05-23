@@ -6,7 +6,8 @@
 import { isBlocked, type TileMap } from './map';
 import type { Dir } from './types';
 
-export const GUN_DROP_INTERVAL = 15;     // 호스트가 새 드랍 spawn 주기 (초)
+export const GUN_DROP_INTERVAL = 60;     // 호스트가 새 드랍 spawn 주기 (초)
+export const GUN_MAX_DROPS = 2;          // 맵 위 동시 존재 가능한 드랍 최대 개수
 export const GUN_HOLD_DURATION = 30;     // 픽업 후 보유 시간 (초)
 export const GUN_PICKUP_RADIUS = 18;     // 픽업 인식 반경 (월드 px)
 export const GUN_FIRE_COOLDOWN = 0.15;   // 사격 간격 (초)
@@ -87,6 +88,7 @@ export function pickSpawnTile(map: TileMap): { x: number; y: number } | null {
 }
 
 // 매 프레임 호출 — 호스트면 주기에 따라 spawn() 호출, 아니면 no-op.
+// 맵에 이미 GUN_MAX_DROPS 개 이상 떠 있으면 타이머만 다시 잡고 spawn 은 건너뜀.
 export function maybeSpawn(
   state: GunState,
   now: number,
@@ -97,6 +99,7 @@ export function maybeSpawn(
   if (!isHost) return;
   if (now < state.nextSpawnAt) return;
   state.nextSpawnAt = now + GUN_DROP_INTERVAL;
+  if (state.drops.size >= GUN_MAX_DROPS) return;
   const pos = pickSpawnTile(map);
   if (!pos) return;
   spawn({ id: cryptoRandom(), x: pos.x, y: pos.y, spawnedAt: now });
