@@ -6,6 +6,7 @@ import { isBlocked, type TileMap } from './map';
 import type { AttackPayload, Dir, PosPayload } from './types';
 import { consumeAttack, dirFromInput, input } from './input';
 import { spawnHitBurst } from './particles';
+import { GUN_FIRE_COOLDOWN as GUN_FIRE_COOLDOWN_SEC } from './gun';
 
 // 공격 사양 (spec §7) — LPC 표준 32px 타일 기준.
 // HP 14칸 × 10HP = 140. 공격 1대 = 20HP = 2칸. 7방 맞으면 사망.
@@ -71,6 +72,10 @@ export interface LocalPlayer {
   hitPauseUntil: number;
   // 화면 흔들림 트리거 — onAttackBroadcast 에서 set, game.ts 가 1회 소비.
   shakePending: number;
+  // AK 보유 만료 시각 (sec). now < gunUntil 이면 보유 중 → 공격키 = 사격.
+  gunUntil: number;
+  // 마지막 사격 시각 (사격 쿨다운 체크용).
+  lastShotAt: number;
 }
 
 export function makeLocalPlayer(id: string, name: string, color: string, charIdx: number, spawn: { x: number; y: number }): LocalPlayer {
@@ -91,6 +96,7 @@ export function makeLocalPlayer(id: string, name: string, color: string, charIdx
     floats: [],
     danceUntil: 0, danceStart: 0,
     hitPauseUntil: 0, shakePending: 0,
+    gunUntil: 0, lastShotAt: 0,
   };
 }
 
@@ -115,6 +121,8 @@ export interface UpdateCtx {
   sendPos: (p: PosPayload) => void;     // throttled by caller
   sendHp: (hp: number) => void;
   sendDeath: (killerId: string | null) => void;
+  // 보유 중인 총으로 사격 — game.ts 가 bullet broadcast 처리.
+  fireBullet: (x: number, y: number, dir: Dir) => void;
 }
 
 export function startDance(p: { danceUntil: number; danceStart: number }, now: number): void {
@@ -174,12 +182,27 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
   }
   p.moving = moving;
 
-  // 공격
+  // 공격 — 총 보유 중이면 사격, 아니면 펀치.
   const wantsAttack = consumeAttack();
-  if (wantsAttack && !chatActive && now >= p.attackCooldownUntil) {
-    p.attackCooldownUntil = now + ATTACK_COOLDOWN;
-    p.attackUntil = now + ATTACK_SWING_DUR;
-    ctx.sendAttack({ id: p.id, x: p.x, y: p.y, dir: p.dir });
+  if (wantsAttack && !chatActive) {
+    const hasGun = now < p.gunUntil;
+    if (hasGun) {
+      if (now - p.lastShotAt >= GUN_FIRE_COOLDOWN_SEC) {
+        p.lastShotAt = now;
+        // 총구는 캐릭터 몸통 중심 살짝 앞쪽에서.
+        const muzzleOff = 10;
+        let mx = p.x, my = p.y + BODY_OFF_Y;
+        if (p.dir === 'left') mx -= muzzleOff;
+        else if (p.dir === 'right') mx += muzzleOff;
+        else if (p.dir === 'up') my -= muzzleOff;
+        else my += muzzleOff;
+        ctx.fireBullet(mx, my, p.dir);
+      }
+    } else if (now >= p.attackCooldownUntil) {
+      p.attackCooldownUntil = now + ATTACK_COOLDOWN;
+      p.attackUntil = now + ATTACK_SWING_DUR;
+      ctx.sendAttack({ id: p.id, x: p.x, y: p.y, dir: p.dir });
+    }
   }
 
   // 부유 텍스트 정리
@@ -265,6 +288,7 @@ export function onAttackBroadcast(p: LocalPlayer, atk: AttackPayload, ctx: Updat
 
   if (p.hp <= 0) {
     p.dead = true;
+    p.gunUntil = 0; // 사망 시 총 떨어뜨림 — 재시작 후 새로 주워야 함
     p.deadUntil = ctx.now + RESPAWN;
     p.deaths += 1;
     ctx.sendDeath(atk.id);

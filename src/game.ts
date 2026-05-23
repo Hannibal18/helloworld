@@ -14,7 +14,7 @@ import {
 import { TILE, makeCamera, triggerShake, updateCamera } from './world';
 import { randomCharColor, randomCharIdx, prescaleCharacter, CHAR_H } from './sprites';
 import {
-  ATTACK_SWING_DUR, BODY_OFF_Y,
+  ATTACK_SWING_DUR, BODY_HH, BODY_HW, BODY_OFF_Y,
   makeLocalPlayer, MAX_HP, onAttackBroadcast, startDance, updateLocalPlayer, clampToWorld,
   type UpdateCtx,
 } from './player';
@@ -23,8 +23,21 @@ import { setBubble, syncBubbles } from './bubbles';
 import { spawnHitBurst, updateAndRenderParticles } from './particles';
 import { loadMap, type TileMap } from './map';
 import { setupDebugPanel, updateDebugInfo, type DebugState } from './debug';
+import {
+  addBullet,
+  BULLET_DAMAGE,
+  findPickup,
+  GUN_HOLD_DURATION,
+  makeGunState,
+  maybeSpawn as maybeSpawnGun,
+  stepBullets,
+  type GunDrop,
+  type GunState,
+} from './gun';
+import { ensureGunSprite, drawGunOverlay } from './render';
 import type {
-  AttackPayload, ChatPayload, DeathPayload, HpPayload, PosPayload, PresenceMeta, RemotePlayer,
+  AttackPayload, BulletPayload, ChatPayload, DeathPayload, GunDropPayload, GunPickupPayload,
+  HpPayload, PosPayload, PresenceMeta, RemotePlayer,
 } from './types';
 
 const POS_SEND_INTERVAL = 1 / 10;
@@ -152,6 +165,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
         deaths: 0,
         attackUntil: 0,
         danceUntil: 0, danceStart: 0,
+        gunUntil: 0,
       };
       remotes.set(m.id, r);
     } else {
@@ -165,6 +179,33 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
 
   const refreshRanking = () => updateRanking(ui, local, remotes.values());
 
+  // ===== 총(AK) =====
+  const gunState: GunState = makeGunState(nowSec());
+  void ensureGunSprite();
+  // 호스트 판정: presence 멤버 중 id 가 사전순으로 가장 작은 클라이언트가 호스트.
+  // 호스트만 새 드랍 spawn 을 결정하고 broadcast.
+  const isLocalHost = (): boolean => {
+    let minId = local.id;
+    for (const id of remotes.keys()) if (id < minId) minId = id;
+    return local.id === minId;
+  };
+  const applyGunDrop = (p: GunDropPayload, spawnedAt: number) => {
+    gunState.drops.set(p.id, { id: p.id, x: p.x, y: p.y, spawnedAt });
+  };
+  const applyGunPickup = (p: GunPickupPayload) => {
+    gunState.drops.delete(p.id);
+    const now = nowSec();
+    if (p.by === local.id) {
+      local.gunUntil = now + GUN_HOLD_DURATION;
+    } else {
+      const r = remotes.get(p.by);
+      if (r) r.gunUntil = now + GUN_HOLD_DURATION;
+    }
+  };
+  const applyBullet = (p: BulletPayload) => {
+    addBullet(gunState, p.bid, p.ownerId, p.ownerName, p.x, p.y, p.dir, nowSec());
+  };
+
   const updateCtx = (): UpdateCtx => ({
     dt: 0, now: nowSec(), map, chatActive: false,
     sendAttack: (p) => {
@@ -175,6 +216,13 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     sendPos: (p) => net.sendPos(p),
     sendHp: (hp) => net.sendHp({ id: local.id, hp }),
     sendDeath: (killerId) => net.sendDeath({ id: local.id, killerId }),
+    fireBullet: (x, y, dir) => {
+      const now = nowSec();
+      const bid = crypto.randomUUID();
+      // 로컬에 즉시 추가하고 broadcast
+      addBullet(gunState, bid, local.id, local.name, x, y, dir, now);
+      net.sendBullet({ bid, ownerId: local.id, ownerName: local.name, x, y, dir });
+    },
   });
 
   // ===== 네트워크 =====
@@ -220,6 +268,9 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       r.hp = h.hp;
       if (r.dead && h.hp > 0) r.dead = false;
     },
+    onGunDrop: (p: GunDropPayload) => applyGunDrop(p, nowSec()),
+    onGunPickup: (p: GunPickupPayload) => applyGunPickup(p),
+    onBullet: (p: BulletPayload) => applyBullet(p),
     onDeath: (d: DeathPayload) => {
       const now = nowSec();
       const r = remotes.get(d.id);
@@ -229,6 +280,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
         r.hp = 0;
         r.deadUntil = now + 3;
         r.deaths += 1;
+        r.gunUntil = 0;
       }
       if (d.killerId) {
         if (d.killerId === local.id) {
@@ -368,6 +420,51 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     // 멘탈 공격(욕 채팅) — X 키 또는 멘탈공격 버튼.
     if (consumeMentalAttack()) fireMentalAttack(now);
 
+    // ===== 총(AK) — 스폰/픽업/총알 진행/자기 피격 체크 =====
+    // 호스트 클라이언트만 새 드랍 결정 + broadcast (중복 방지)
+    maybeSpawnGun(gunState, now, map, isLocalHost(), (drop: GunDrop) => {
+      applyGunDrop({ id: drop.id, x: drop.x, y: drop.y }, drop.spawnedAt);
+      net.sendGunDrop({ id: drop.id, x: drop.x, y: drop.y });
+    });
+    // 로컬 발 좌표가 드랍 반경 안이면 픽업
+    if (!local.dead) {
+      const got = findPickup(gunState, local.x, local.y);
+      if (got) {
+        gunState.drops.delete(got.id);
+        local.gunUntil = now + GUN_HOLD_DURATION;
+        net.sendGunPickup({ id: got.id, by: local.id });
+      }
+    }
+    // 총알 위치 갱신 + 만료/벽 충돌 시 제거
+    stepBullets(gunState, dt, now, map);
+    // 자기 몸통(BODY AABB) 에 들어온 총알(자기 자신이 쏜 것 제외) 처리
+    if (!local.dead && now >= local.iFrameUntil) {
+      const me = { x0: local.x - BODY_HW, x1: local.x + BODY_HW, y0: local.y + BODY_OFF_Y - BODY_HH, y1: local.y + BODY_OFF_Y + BODY_HH };
+      for (const b of gunState.bullets) {
+        if (b.ownerId === local.id) continue;
+        if (b.hitIds.has(local.id)) continue;
+        if (b.x < me.x0 || b.x > me.x1 || b.y < me.y0 || b.y > me.y1) continue;
+        b.hitIds.add(local.id);
+        local.hp = Math.max(0, local.hp - BULLET_DAMAGE);
+        local.iFrameUntil = now + 0.15;
+        local.hitFlashUntil = now + 0.2;
+        spawnHitBurst(local.x, local.y + BODY_OFF_Y, now);
+        net.sendHp({ id: local.id, hp: local.hp });
+        if (local.hp <= 0) {
+          local.dead = true;
+          local.gunUntil = 0;
+          local.deadUntil = now + 4;
+          local.deaths += 1;
+          net.sendDeath({ id: local.id, killerId: b.ownerId });
+          const killer = remotes.get(b.ownerId);
+          const killerName = killer ? killer.name : (b.ownerId === local.id ? local.name : b.ownerName);
+          showBanner(ui, 'death', '쓰러졌다…', `${killerName}에게 사살`);
+          refreshRanking();
+        }
+        break;
+      }
+    }
+
     const k = 1 - Math.exp(-dt / 0.08);
     for (const r of remotes.values()) {
       r.renderX += (r.x - r.renderX) * k;
@@ -430,6 +527,15 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     ctx2d.fillStyle = '#000';
     ctx2d.fillRect(0, 0, canvas.width, canvas.height);
     renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale });
+
+    // 총(AK) — 드랍 + 보유 중 캐릭터 옆 + 총알
+    const heldOwners: { x: number; y: number; dir: 'up'|'down'|'left'|'right' }[] = [];
+    if (now < local.gunUntil && !local.dead) heldOwners.push({ x: local.x, y: local.y, dir: local.dir });
+    for (const r of remotes.values()) {
+      if (now < r.gunUntil && !r.dead) heldOwners.push({ x: r.renderX, y: r.renderY, dir: r.dir });
+    }
+    drawGunOverlay(ctx2d, camera, gunState.drops.values(), gunState.bullets, heldOwners, now);
+
     updateAndRenderParticles(ctx2d, camera.x, camera.y, realDt, now);
 
     // 보스 — 게임 캔버스 위에 스프라이트/슬리퍼/AOE, HUD 캔버스 상단에 HP 바 그림.

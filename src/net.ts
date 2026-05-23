@@ -2,8 +2,11 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase } from './supabase';
 import type {
   AttackPayload,
+  BulletPayload,
   ChatPayload,
   DeathPayload,
+  GunDropPayload,
+  GunPickupPayload,
   HpPayload,
   PosPayload,
   PresenceMeta,
@@ -35,6 +38,9 @@ export interface NetHandlers {
   onAttack: (p: AttackPayload) => void;
   onHp: (p: HpPayload) => void;
   onDeath: (p: DeathPayload) => void;
+  onGunDrop: (p: GunDropPayload) => void;
+  onGunPickup: (p: GunPickupPayload) => void;
+  onBullet: (p: BulletPayload) => void;
   onPresenceSync: (members: PresenceMeta[]) => void;
   onPresenceJoin: (members: PresenceMeta[]) => void;
   onPresenceLeave: (members: PresenceMeta[]) => void;
@@ -48,6 +54,9 @@ export interface Net {
   sendAttack: (p: AttackPayload) => void;
   sendHp: (p: HpPayload) => void;
   sendDeath: (p: DeathPayload) => void;
+  sendGunDrop: (p: GunDropPayload) => void;
+  sendGunPickup: (p: GunPickupPayload) => void;
+  sendBullet: (p: BulletPayload) => void;
   unsubscribe: () => Promise<void>;
 }
 
@@ -69,11 +78,14 @@ export function connect(meta: PresenceMeta, handlers: NetHandlers): Net {
   });
 
   channel
-    .on('broadcast', { event: 'pos' },    ({ payload }) => handlers.onPos(payload as PosPayload))
-    .on('broadcast', { event: 'chat' },   ({ payload }) => handlers.onChat(payload as ChatPayload))
-    .on('broadcast', { event: 'attack' }, ({ payload }) => handlers.onAttack(payload as AttackPayload))
-    .on('broadcast', { event: 'hp' },     ({ payload }) => handlers.onHp(payload as HpPayload))
-    .on('broadcast', { event: 'death' },  ({ payload }) => handlers.onDeath(payload as DeathPayload))
+    .on('broadcast', { event: 'pos' },        ({ payload }) => handlers.onPos(payload as PosPayload))
+    .on('broadcast', { event: 'chat' },       ({ payload }) => handlers.onChat(payload as ChatPayload))
+    .on('broadcast', { event: 'attack' },     ({ payload }) => handlers.onAttack(payload as AttackPayload))
+    .on('broadcast', { event: 'hp' },         ({ payload }) => handlers.onHp(payload as HpPayload))
+    .on('broadcast', { event: 'death' },      ({ payload }) => handlers.onDeath(payload as DeathPayload))
+    .on('broadcast', { event: 'gun_drop' },   ({ payload }) => handlers.onGunDrop(payload as GunDropPayload))
+    .on('broadcast', { event: 'gun_pickup' }, ({ payload }) => handlers.onGunPickup(payload as GunPickupPayload))
+    .on('broadcast', { event: 'bullet' },     ({ payload }) => handlers.onBullet(payload as BulletPayload))
     .on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState() as Record<string, readonly unknown[]>;
       const all: PresenceMeta[] = [];
@@ -99,11 +111,14 @@ export function connect(meta: PresenceMeta, handlers: NetHandlers): Net {
 
   return {
     channel,
-    sendPos: (p) => send('pos', p),
-    sendChat: (p) => send('chat', p),
-    sendAttack: (p) => send('attack', p),
-    sendHp: (p) => send('hp', p),
-    sendDeath: (p) => send('death', p),
+    sendPos:       (p) => send('pos', p),
+    sendChat:      (p) => send('chat', p),
+    sendAttack:    (p) => send('attack', p),
+    sendHp:        (p) => send('hp', p),
+    sendDeath:     (p) => send('death', p),
+    sendGunDrop:   (p) => send('gun_drop', p),
+    sendGunPickup: (p) => send('gun_pickup', p),
+    sendBullet:    (p) => send('bullet', p),
     unsubscribe: async () => {
       try { await channel.untrack(); } catch { /* ignore */ }
       await channel.unsubscribe();

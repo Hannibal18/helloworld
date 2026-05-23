@@ -311,3 +311,117 @@ export function attackPhaseFor(attackUntil: number, nowSec: number): number {
   if (remain <= 0) return -1;
   return 1 - remain / ATTACK_SWING_DUR;
 }
+
+// ===== 총 (AK) 오버레이 =====
+// 드랍(황금 펄스 테두리 + 작은 총 그림), 보유 중 캐릭터 옆 따라다니는 총, 총알.
+// 게임 캐릭터 위에 그려지므로 캐릭터 Y-소트 후에 호출.
+
+const gunImg = new Image();
+let gunReady = false;
+gunImg.src = '/sprites/items/ak47.png';
+gunImg.onload = () => { gunReady = true; };
+
+export function ensureGunSprite(): boolean {
+  return gunReady;
+}
+
+interface GunDropLite { id: string; x: number; y: number; spawnedAt: number }
+interface BulletLite { x: number; y: number; vx: number; vy: number }
+interface HeldGunOwner { x: number; y: number; dir: 'up'|'down'|'left'|'right' }
+
+export function drawGunOverlay(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  drops: Iterable<GunDropLite>,
+  bullets: Iterable<BulletLite>,
+  heldOwners: Iterable<HeldGunOwner>,
+  now: number,
+): void {
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+
+  // ----- 드랍: 황금 펄스 테두리 + 안쪽에 작은 총 -----
+  const RING_R = 16;
+  const GUN_W_DROP = 22;
+  const GUN_H_DROP = 9;
+  for (const d of drops) {
+    const sx = Math.round(d.x - camera.x);
+    const sy = Math.round(d.y - camera.y);
+    // 펄스: sin 으로 반경 ±3px, 두께 1~2.5px, 투명도 0.5~1
+    const phase = (now - d.spawnedAt) * 3.2; // ≈ 0.5Hz × 2π
+    const pulse = (Math.sin(phase) + 1) / 2; // 0..1
+    const r = RING_R + pulse * 4;
+    const alpha = 0.55 + pulse * 0.45;
+    // 바깥쪽 흐릿한 글로우
+    ctx.strokeStyle = `rgba(255, 215, 80, ${alpha * 0.35})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r + 2, 0, Math.PI * 2);
+    ctx.stroke();
+    // 메인 황금 링
+    ctx.strokeStyle = `rgba(255, 215, 80, ${alpha})`;
+    ctx.lineWidth = 1.5 + pulse;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    // 안쪽 그림자 깔고 총 그림
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.arc(sx, sy, RING_R - 2, 0, Math.PI * 2);
+    ctx.fill();
+    if (gunReady) {
+      ctx.drawImage(gunImg, sx - GUN_W_DROP / 2, sy - GUN_H_DROP / 2, GUN_W_DROP, GUN_H_DROP);
+    }
+  }
+
+  // ----- 보유 총: 캐릭터 옆 (방향에 따라 좌/우 어깨 높이) -----
+  const GUN_W_HELD = 20;
+  const GUN_H_HELD = 8;
+  if (gunReady) {
+    for (const o of heldOwners) {
+      const sx = Math.round(o.x - camera.x);
+      const sy = Math.round(o.y - camera.y);
+      // 발 기준이라 살짝 위로 (몸통 중간)
+      const yOff = -14;
+      let xOff = 8; // 기본 우측
+      let flip = false;
+      if (o.dir === 'left') { xOff = -8 - GUN_W_HELD; flip = true; }
+      else if (o.dir === 'right') { xOff = 8; flip = false; }
+      else if (o.dir === 'up') { xOff = 4; }
+      else { xOff = 4; }
+      ctx.save();
+      if (flip) {
+        ctx.translate(sx + xOff + GUN_W_HELD, sy + yOff);
+        ctx.scale(-1, 1);
+        ctx.drawImage(gunImg, 0, 0, GUN_W_HELD, GUN_H_HELD);
+      } else {
+        ctx.drawImage(gunImg, sx + xOff, sy + yOff, GUN_W_HELD, GUN_H_HELD);
+      }
+      ctx.restore();
+    }
+  }
+
+  // ----- 총알: 노란 픽셀 + 진행 방향 잔상 -----
+  for (const b of bullets) {
+    const sx = Math.round(b.x - camera.x);
+    const sy = Math.round(b.y - camera.y);
+    // 잔상 (반대 방향으로 8px)
+    const tailLen = 8;
+    const norm = Math.hypot(b.vx, b.vy) || 1;
+    const tx = sx - (b.vx / norm) * tailLen;
+    const ty = sy - (b.vy / norm) * tailLen;
+    ctx.strokeStyle = 'rgba(255, 220, 80, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(sx, sy);
+    ctx.stroke();
+    // 머리 픽셀
+    ctx.fillStyle = '#fff7a0';
+    ctx.fillRect(sx - 2, sy - 2, 4, 4);
+    ctx.fillStyle = '#ffd64a';
+    ctx.fillRect(sx - 1, sy - 1, 2, 2);
+  }
+
+  ctx.restore();
+}

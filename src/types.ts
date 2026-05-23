@@ -47,6 +47,31 @@ export interface DeathPayload {
   killerId: string | null;
 }
 
+// ===== 총(AK) =====
+
+// 호스트가 새 총 드랍을 알림.
+export interface GunDropPayload {
+  id: string;   // drop instance id (uuid)
+  x: number;
+  y: number;
+}
+
+// 누군가 드랍을 주움.
+export interface GunPickupPayload {
+  id: string;   // drop id
+  by: string;   // player id
+}
+
+// 누군가 총알을 발사. 각 클라이언트가 동일 vx/vy 로 deterministic 시뮬레이션.
+export interface BulletPayload {
+  bid: string;      // bullet id
+  ownerId: string;
+  ownerName: string;
+  x: number;
+  y: number;
+  dir: Dir;
+}
+
 // 원격 플레이어의 시각용 상태 (수신 측에서 유지)
 export interface RemotePlayer {
   id: string;
@@ -80,4 +105,6 @@ export interface RemotePlayer {
   // 제로투 댄스 (킬 후 도발 — 3초)
   danceUntil: number;
   danceStart: number; // 댄스 시작 시각 (애니메이션 위상 계산용)
+  // AK 보유 만료 (gun_pickup broadcast 받으면 set). 보유 중이면 옆에 총 그림.
+  gunUntil: number;
 }
