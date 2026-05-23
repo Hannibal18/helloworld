@@ -83,6 +83,17 @@ export function setupViewport(): void {
   const setTarget = (b: number) => {
     if (b === targetBottom) return;
     targetBottom = b;
+    // 키보드 내려갈 때(target=0)는 보간 없이 즉시 snap — 키보드가 이미
+    // 닫힌 뒤라 챗바가 천천히 따라 내려오는 게 어색하게 보임.
+    if (b === 0) {
+      if (rafId !== 0) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      currentBottom = 0;
+      applyPositions();
+      return;
+    }
     if (rafId === 0) {
       lastTime = performance.now();
       rafId = requestAnimationFrame(tick);
