@@ -48,6 +48,12 @@ export interface ChatBinding {
 export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBinding {
   let active = false;
 
+  const send = () => {
+    const text = ui.chatInput.value.trim();
+    if (text.length > 0) onSend(text.slice(0, 100));
+    blur();
+  };
+
   const focus = () => {
     active = true;
     ui.chatBar.classList.add('active');
@@ -63,25 +69,50 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
   ui.chatInput.addEventListener('focus', () => { active = true; ui.chatBar.classList.add('active'); });
   ui.chatInput.addEventListener('blur', () => { active = false; ui.chatBar.classList.remove('active'); });
 
+  // 전송 버튼 (카카오톡식)
+  const sendBtn = document.getElementById('chat-send');
+  if (sendBtn) {
+    // pointerdown 으로 즉시 — touchstart/click 보다 빠르고 OS 키보드 닫힘 전에 동작
+    sendBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (active) send();
+    });
+  }
+
+  // Enter 처리 — 모바일은 enterkeyhint="send" 라 송신 키, PC 는 일반 Enter.
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      // 한글/일어/중국어 IME 조합 중에는 Enter 가 "조합 완료" 용도로 쓰여 전송 트리거하면 안 됨
+      // 한글 IME 조합 중 Enter 는 조합 완료 — 전송 트리거 X
       if (e.isComposing || (e as KeyboardEvent & { keyCode: number }).keyCode === 229) return;
       if (active) {
-        const text = ui.chatInput.value.trim();
-        if (text.length > 0) onSend(text.slice(0, 100));
-        blur();
-      } else {
-        // 입장 화면이 떠 있으면 무시
-        if (!ui.game.classList.contains('hidden')) {
-          e.preventDefault();
-          focus();
-        }
+        e.preventDefault();
+        send();
+      } else if (!ui.game.classList.contains('hidden')) {
+        e.preventDefault();
+        focus();
       }
     } else if (e.key === 'Escape' && active) {
       blur();
     }
   });
+
+  // ===== 모바일 키보드 위로 채팅바 끌어올리기 (visualViewport) =====
+  // iOS Safari, Android Chrome 둘 다 지원. 키보드가 열리면 visualViewport.height 가 줄어듦.
+  const vv = window.visualViewport;
+  if (vv) {
+    const adjust = () => {
+      // 키보드 안 떠 있으면 default bottom 유지
+      const keyboardOffset = window.innerHeight - vv.height - vv.offsetTop;
+      if (keyboardOffset > 80) {
+        // 키보드 떠 있음 — 그 위 12px 위치로
+        ui.chatBar.style.bottom = `${keyboardOffset + 12}px`;
+      } else {
+        ui.chatBar.style.bottom = '';
+      }
+    };
+    vv.addEventListener('resize', adjust);
+    vv.addEventListener('scroll', adjust);
+  }
 
   return { isActive: () => active, focus, blur };
 }

@@ -35,9 +35,17 @@
           <div class="hud-pill" id="my-kills">킬 0</div>
         </div>
 
-        <!-- 채팅 입력창 -->
+        <!-- 채팅 입력창 (카카오톡 스타일) -->
         <div id="chat-bar" class="chat-bar">
-          <input id="chat-input" class="chat-input" type="text" maxlength="100" placeholder="채팅 (Enter)" autocomplete="off" />
+          <input id="chat-input" class="chat-input" type="text" maxlength="100"
+                 placeholder="메시지 입력" autocomplete="off" autocorrect="off"
+                 autocapitalize="off" spellcheck="false"
+                 enterkeyhint="send" inputmode="text" />
+          <button id="chat-send" class="chat-send" type="button" aria-label="전송">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+              <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
+            </svg>
+          </button>
         </div>
 
         <!-- 모바일 가상 컨트롤 -->

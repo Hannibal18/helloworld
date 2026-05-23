@@ -29,7 +29,6 @@ const POS_HEARTBEAT = 1.0;
 // 디폴트: PC 24 타일 폭, 모바일 세로 14 타일. 캐릭터 prescale 0.75 (살짝 작게).
 const DEFAULT_VIEW_TILES_PC = 24;
 const TARGET_TILES_WIDE_MOBILE = 14;
-const MAX_LOGICAL_H = 540;
 const DEFAULT_CHAR_SCALE = 0.75;
 
 let gameStarted = false;
@@ -93,30 +92,27 @@ async function startGameAsync(name: string): Promise<void> {
   const ctx2d = canvas.getContext('2d')!;
   ctx2d.imageSmoothingEnabled = false;
 
-  // 정수배 업스케일 — 백버퍼는 저해상도, 표시 크기는 정확히 정수배.
+  // 백버퍼는 가변 해상도, CSS 는 viewport 100% — 화면 꽉 차게.
+  // image-rendering: pixelated 가 fractional 스케일도 또렷하게 처리.
   const resizeCanvas = () => {
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
     const wantTiles = (isTouchDevice() && cssW < cssH) ? TARGET_TILES_WIDE_MOBILE : debug.viewTilesWide;
     const targetLogicalW = wantTiles * TILE;
 
-    // 정수 스케일 — 최소 1.
-    const scale = Math.max(1, Math.floor(cssW / targetLogicalW));
-    const logicalW = Math.floor(cssW / scale);
-    let   logicalH = Math.floor(cssH / scale);
-    if (logicalH > MAX_LOGICAL_H) logicalH = MAX_LOGICAL_H;
+    // 보일 가로 타일 수 ⇒ 스케일 ⇒ 논리 해상도. logicalH 는 화면 비율 따라감.
+    const scale = Math.max(1, cssW / targetLogicalW);
+    const logicalW = Math.round(cssW / scale);
+    const logicalH = Math.round(cssH / scale);
 
     canvas.width  = logicalW;
     canvas.height = logicalH;
-    // 정수배 정확히 — 검은 여백은 viewport CSS 가 가운데 정렬해서 처리.
-    const displayW = logicalW * scale;
-    const displayH = logicalH * scale;
     if (viewport) {
-      viewport.style.width  = `${displayW}px`;
-      viewport.style.height = `${displayH}px`;
+      viewport.style.width  = `${cssW}px`;
+      viewport.style.height = `${cssH}px`;
     }
-    canvas.style.width  = `${displayW}px`;
-    canvas.style.height = `${displayH}px`;
+    canvas.style.width  = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
 
     camera.viewW = logicalW;
     camera.viewH = logicalH;
@@ -214,6 +210,28 @@ async function startGameAsync(name: string): Promise<void> {
   const endPinch = () => { pinchActive = false; };
   document.addEventListener('touchend', endPinch);
   document.addEventListener('touchcancel', endPinch);
+
+  // iOS Safari fallback — multi-touch 를 native gesture 이벤트로 가로챔.
+  // standard touch event 가 multi-touch 에서 안정적이지 않을 때 이게 작동.
+  type GestureEvent = Event & { scale: number; clientX?: number; clientY?: number };
+  let gestureStartView = 0;
+  document.addEventListener('gesturestart', (e) => {
+    const ge = e as GestureEvent;
+    ge.preventDefault?.();
+    gestureStartView = debug.viewTilesWide;
+  }, { passive: false } as AddEventListenerOptions);
+  document.addEventListener('gesturechange', (e) => {
+    const ge = e as GestureEvent;
+    ge.preventDefault?.();
+    // scale: 1 = 시작, >1 = 벌리는 중(줌인), <1 = 오므리는 중(줌아웃)
+    if (ge.scale && ge.scale > 0) {
+      setZoom(gestureStartView / ge.scale);
+    }
+  }, { passive: false } as AddEventListenerOptions);
+  document.addEventListener('gestureend', (e) => {
+    const ge = e as GestureEvent;
+    ge.preventDefault?.();
+  }, { passive: false } as AddEventListenerOptions);
 
   // ===== 원격 플레이어 맵 =====
   const remotes = new Map<string, RemotePlayer>();
