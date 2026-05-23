@@ -70,13 +70,13 @@ export function setupViewport(): void {
     // 키보드 떠 있는 동안에만 .keyboard-open 클래스 토글 → 조이스틱 숨김 등 CSS 가 처리.
     root.classList.toggle('keyboard-open', keyboardOpen);
 
-    // 키보드 열렸을 때 모바일 UI 의 bottom 을 inline style 로 직접 못 박는다.
-    // iOS Safari 가 var(--vp-bottom) CSS 적용을 빠뜨리는 케이스/타이밍이 있어
-    // 안전망으로 JS 가 매번 위치 보정한다.
+    // iOS Safari 하단 툴바(주소창)와 키보드가 모두 visualViewport 를 줄인다.
+    // 둘 다 챗바를 가리므로, bottomOffset > 0 이면 키보드 여부와 무관하게 챗바·컨트롤을 올려준다.
+    // bottomOffset === 0 이면 inline style 비워서 CSS 기본값(desktop 12px 갭 포함) 살린다.
     const chatBar = document.getElementById('chat-bar') as HTMLElement | null;
     const stick = document.getElementById('stick') as HTMLElement | null;
     const touchRight = document.querySelector('.touch-right') as HTMLElement | null;
-    if (keyboardOpen) {
+    if (bottomOffset > 0) {
       if (chatBar) chatBar.style.bottom = `${bottomOffset}px`;
       if (stick) stick.style.bottom = `${64 + bottomOffset}px`;
       if (touchRight) touchRight.style.bottom = `${64 + bottomOffset}px`;
