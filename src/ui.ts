@@ -9,7 +9,7 @@ export interface UiHandles {
   roster: HTMLElement;
   myKills: HTMLElement;
   chatBar: HTMLElement;
-  chatInput: HTMLInputElement;
+  chatInput: HTMLTextAreaElement;
 }
 
 export function uiHandles(): UiHandles {
@@ -22,7 +22,7 @@ export function uiHandles(): UiHandles {
     roster: document.getElementById('roster') as HTMLElement,
     myKills: document.getElementById('my-kills') as HTMLElement,
     chatBar: document.getElementById('chat-bar') as HTMLElement,
-    chatInput: document.getElementById('chat-input') as HTMLInputElement,
+    chatInput: document.getElementById('chat-input') as HTMLTextAreaElement,
   };
 }
 

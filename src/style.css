@@ -220,13 +220,14 @@ input[type="text"], textarea {
 .hud-btn.off { color: #999; border-color: #444; }
 
 /* ===== 채팅 바 (카카오톡 스타일) =====
-   #app 이 100dvh 라 그 하단은 자동으로 URL 바 위. 단, 키보드가 열리면
-   visualViewport 가 추가로 줄어 키보드 위로 채팅바를 더 올려야 한다 (keyboard-open class). */
+   position: fixed + top + translateY(-100%) — viewport.ts 가 채팅바 BOTTOM 이 항상
+   visualViewport 의 시각 영역 하단에 붙도록 --chat-anchor-top 을 갱신한다.
+   이 방식이 iOS Safari 키보드 동작과 가장 안정적으로 맞물림. */
 .chat-bar {
-  position: absolute;
+  position: fixed;
   left: 50%;
-  bottom: env(safe-area-inset-bottom);
-  transform: translateX(-50%);
+  top: var(--chat-anchor-top, 100%);
+  transform: translate(-50%, calc(-100% - env(safe-area-inset-bottom)));
   width: min(560px, 100vw);
   z-index: 6;
   display: flex;
@@ -236,15 +237,15 @@ input[type="text"], textarea {
   background: rgba(255, 255, 255, 0.97);
   border-radius: 0;
   box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.12);
-  transition: bottom 0.18s;
+  transition: top 0.18s;
 }
+/* 키보드 열림 — 안전영역 무시(어차피 키보드가 home indicator 덮음), 키보드 위에 딱 */
 .keyboard-open .chat-bar {
-  /* 키보드 열림 — 키보드 위에 딱 */
-  bottom: var(--vp-bottom, 0px);
+  transform: translate(-50%, -100%);
 }
 @media (min-width: 600px) {
   .chat-bar {
-    bottom: calc(12px + env(safe-area-inset-bottom));
+    transform: translate(-50%, calc(-100% - 12px - env(safe-area-inset-bottom)));
     border-radius: 24px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
     width: min(560px, 92vw);
@@ -253,14 +254,18 @@ input[type="text"], textarea {
 .chat-input {
   flex: 1;
   min-width: 0;
+  height: 1.4em;        /* 단일 라인 강제 — textarea 가 multi-line 으로 안 늘어남 */
   padding: 8px 0;
   font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif;
   font-size: 15px;
   font-weight: 400;
+  line-height: 1.4;
   background: transparent;
   color: #1a1a1a;
   border: none;
   outline: none;
+  resize: none;         /* textarea 사이즈 변경 불가 */
+  overflow: hidden;     /* 줄바꿈 방지 (preventDefault 가 백업 처리) */
   letter-spacing: 0;
   -webkit-user-select: text;
   user-select: text;
