@@ -210,3 +210,4 @@ helloworld/
 ## 8. 향후 확장 메모 (현재는 구현 안 함)
 
 - **킬 리더보드**: Supabase 에 `kills (id, name, kills, updated_at)` 테이블 + RLS, `death` 발생 시 killer 가 자기 카운트를 upsert, Postgres Changes 또는 폴링으로 화면 우측에 TOP 5 표시. (지금은 만들지 말 것.)
+
