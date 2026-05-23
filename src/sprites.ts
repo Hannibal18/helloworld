@@ -29,7 +29,7 @@ function rect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
 const SOURCE_FRAME = 64;            // 원본 LPC 프레임 크기
 const SOURCE_FOOT_Y = 58;           // 프레임 안에서 발 y 위치
 
-export const CHARACTER_COUNT = 10;  // public/sprites/characters/ 안의 시트 개수
+export const CHARACTER_COUNT = 9;   // public/sprites/characters/ 안의 시트 개수
 
 // 기본값 — prescaleCharacter 가 호출되면 갱신됨. 캐논 LPC 비례 32×48 가까이.
 export let CHAR_W = 32;
