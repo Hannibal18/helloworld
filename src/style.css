@@ -316,17 +316,14 @@ input[type="text"], textarea {
 /* ===== 채팅 로그 (좌상단 스택 안에 위치 — 랭킹 바로 아래) =====
    위치는 .left-stack 이 잡고, 여기는 크기/외형만 담당. */
 .chat-log {
-  width: min(300px, 60vw);
-  max-height: 240px;
+  width: min(180px, 36vw);          /* 기존 300/60 의 60% */
+  max-height: 144px;                /* 기존 240 의 60% */
   overflow: hidden;
   pointer-events: none;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;       /* 새 메시지 = DOM 끝 = 화면 아래 */
   gap: 2px;
-  /* 위쪽 fade out — 오래된 메시지가 자연스럽게 사라짐 */
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 35%, black 100%);
-          mask-image: linear-gradient(to bottom, transparent 0%, black 35%, black 100%);
 }
 .chat-log-item {
   font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif;
