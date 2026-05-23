@@ -34,7 +34,7 @@ const POS_HEARTBEAT = 1.0;
 // 백버퍼 논리 해상도 — 디버그 패널 슬라이더로 실시간 조정 가능.
 // 디폴트: PC 24 타일 폭, 모바일 세로 14 타일. 캐릭터 prescale 0.75 (살짝 작게).
 const DEFAULT_VIEW_TILES_PC = 24;
-const TARGET_TILES_WIDE_MOBILE = 14;
+const TARGET_TILES_WIDE_MOBILE = 11;
 const DEFAULT_CHAR_SCALE = 0.75;
 
 let gameStarted = false;
