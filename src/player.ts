@@ -20,7 +20,7 @@ export const HIT_LEN = 40;           // 히트박스 길이 (앞쪽)
 export const HIT_WID = 36;           // 히트박스 폭
 export const KNOCKBACK = 24;         // px
 export const IFRAME = 0.4;
-export const ATTACK_SWING_DUR = 0.26;   // Slash 6프레임 — 너무 빠르면 읽히지 않아 0.18 → 0.26
+export const ATTACK_SWING_DUR = 0.156;  // 0.26 → 0.156 (60%) — 더 빠른 펀치
 export const RESPAWN = 3.0;
 export const DANCE_DUR = 3.0;
 
@@ -163,10 +163,12 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
   // 이동 — 채팅 활성 중에도 가상 스틱(터치) 으로 이동 허용.
   // PC 키보드는 input.ts 의 keydown 리스너가 chatActive 일 때 차단하므로, 채팅 중엔
   // 자연스럽게 setStick (모바일 터치) 만 moveX/Y 에 기여한다.
-  let mx = input.moveX;
-  let my = input.moveY;
+  // 펀치(p.attackUntil) 진행 중이면 이동·방향 변경 차단 → 자리에 서서 펀치.
+  const mx = input.moveX;
+  const my = input.moveY;
   void chatActive;
-  const moving = mx !== 0 || my !== 0;
+  const isPunching = now < p.attackUntil;
+  const moving = !isPunching && (mx !== 0 || my !== 0);
   if (moving) {
     p.dir = dirFromInput(p.dir);
     // 대각선이면 정규화
