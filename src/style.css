@@ -377,11 +377,12 @@ input[type="text"], textarea {
 }
 .banner.kill .banner-title { color: #ffd84a; }
 .banner.death .banner-title { color: #ff5d5d; }
-/* info — 한 줄 시스템 알림: 폰트 절반, 자간도 살짝 줄임 */
+/* info — 한 줄 시스템 알림: 폰트 절반, 자간 줄임, 줄바꿈 강제 차단 */
 .banner.info .banner-title {
   color: #ffd84a;
   font-size: 22px;
   letter-spacing: 2px;
+  white-space: nowrap;
 }
 @keyframes bannerPop {
   0%   { opacity: 0; transform: translate(-50%, -30%) scale(0.6); }
