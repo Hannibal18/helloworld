@@ -40,11 +40,11 @@
           <div class="hud-pill" id="my-kills">킬 0</div>
         </div>
 
-        <!-- 좌상단 KDA 랭킹 -->
-        <div id="ranking" class="ranking"></div>
-
-        <!-- 채팅 로그 (화면 상단, 말풍선과 별도) -->
-        <div id="chat-log" class="chat-log"></div>
+        <!-- 좌상단 스택: 랭킹 → 채팅 로그 (flex column 으로 자동 정렬) -->
+        <div class="left-stack">
+          <div id="ranking" class="ranking"></div>
+          <div id="chat-log" class="chat-log"></div>
+        </div>
 
         <!-- 미니맵 (우상단) -->
         <canvas id="minimap" class="minimap" width="120" height="80"></canvas>

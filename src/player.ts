@@ -6,7 +6,7 @@ import { isBlocked, type TileMap } from './map';
 import type { AttackPayload, Dir, PosPayload } from './types';
 import { consumeAttack, dirFromInput, input } from './input';
 import { spawnHitBurst } from './particles';
-import { GUN_FIRE_COOLDOWN as GUN_FIRE_COOLDOWN_SEC } from './gun';
+import { GUN_FIRE_COOLDOWN as GUN_FIRE_COOLDOWN_SEC, BULLET_SPEED } from './gun';
 
 // 공격 사양 (spec §7) — LPC 표준 32px 타일 기준.
 // HP 14칸 × 10HP = 140. 공격 1대 = 20HP = 2칸. 7방 맞으면 사망.
@@ -121,8 +121,8 @@ export interface UpdateCtx {
   sendPos: (p: PosPayload) => void;     // throttled by caller
   sendHp: (hp: number) => void;
   sendDeath: (killerId: string | null) => void;
-  // 보유 중인 총으로 사격 — game.ts 가 bullet broadcast 처리.
-  fireBullet: (x: number, y: number, dir: Dir) => void;
+  // 보유 중인 총으로 사격 — game.ts 가 bullet broadcast 처리. (vx, vy = 정규화 후 BULLET_SPEED 곱한 px/sec)
+  fireBullet: (x: number, y: number, vx: number, vy: number) => void;
 }
 
 export function startDance(p: { danceUntil: number; danceStart: number }, now: number): void {
@@ -189,14 +189,27 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
     if (hasGun) {
       if (now - p.lastShotAt >= GUN_FIRE_COOLDOWN_SEC) {
         p.lastShotAt = now;
-        // 총구는 캐릭터 몸통 중심 살짝 앞쪽에서.
+        // 8방향 사격: 움직이는 중이면 input 방향, 정지 중이면 마지막 바라본 방향(4방향).
+        let nx = 0, ny = 0;
+        const ix = input.moveX;
+        const iy = input.moveY;
+        if (ix !== 0 || iy !== 0) {
+          const len = Math.hypot(ix, iy) || 1;
+          nx = ix / len;
+          ny = iy / len;
+        } else {
+          switch (p.dir) {
+            case 'left':  nx = -1; ny = 0; break;
+            case 'right': nx =  1; ny = 0; break;
+            case 'up':    nx = 0; ny = -1; break;
+            case 'down':  nx = 0; ny =  1; break;
+          }
+        }
+        // 총구 위치는 정규화된 방향으로 살짝 앞쪽.
         const muzzleOff = 10;
-        let mx = p.x, my = p.y + BODY_OFF_Y;
-        if (p.dir === 'left') mx -= muzzleOff;
-        else if (p.dir === 'right') mx += muzzleOff;
-        else if (p.dir === 'up') my -= muzzleOff;
-        else my += muzzleOff;
-        ctx.fireBullet(mx, my, p.dir);
+        const mx = p.x + nx * muzzleOff;
+        const my = (p.y + BODY_OFF_Y) + ny * muzzleOff;
+        ctx.fireBullet(mx, my, nx * BULLET_SPEED, ny * BULLET_SPEED);
       }
     } else if (now >= p.attackCooldownUntil) {
       p.attackCooldownUntil = now + ATTACK_COOLDOWN;

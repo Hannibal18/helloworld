@@ -4,7 +4,6 @@
 // (총알이 자기 몸통 AABB 에 들어오면 자기 HP 깎고 hp/death broadcast).
 
 import { isBlocked, type TileMap } from './map';
-import type { Dir } from './types';
 
 export const GUN_DROP_INTERVAL = 60;     // 호스트가 새 드랍 spawn 주기 (초)
 export const GUN_MAX_DROPS = 2;          // 맵 위 동시 존재 가능한 드랍 최대 개수
@@ -50,21 +49,11 @@ export function makeGunState(now: number): GunState {
   };
 }
 
-export function dirToVelocity(dir: Dir): { vx: number; vy: number } {
-  switch (dir) {
-    case 'left':  return { vx: -BULLET_SPEED, vy: 0 };
-    case 'right': return { vx:  BULLET_SPEED, vy: 0 };
-    case 'up':    return { vx: 0, vy: -BULLET_SPEED };
-    case 'down':  return { vx: 0, vy:  BULLET_SPEED };
-  }
-}
-
 export function addBullet(
   state: GunState,
   bid: string, ownerId: string, ownerName: string,
-  x: number, y: number, dir: Dir, now: number,
+  x: number, y: number, vx: number, vy: number, now: number,
 ): void {
-  const { vx, vy } = dirToVelocity(dir);
   state.bullets.push({
     bid, ownerId, ownerName,
     x, y, vx, vy,

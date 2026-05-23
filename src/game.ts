@@ -206,7 +206,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     }
   };
   const applyBullet = (p: BulletPayload) => {
-    addBullet(gunState, p.bid, p.ownerId, p.ownerName, p.x, p.y, p.dir, nowSec());
+    addBullet(gunState, p.bid, p.ownerId, p.ownerName, p.x, p.y, p.vx, p.vy, nowSec());
   };
 
   const updateCtx = (): UpdateCtx => ({
@@ -219,12 +219,12 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     sendPos: (p) => net.sendPos(p),
     sendHp: (hp) => net.sendHp({ id: local.id, hp }),
     sendDeath: (killerId) => net.sendDeath({ id: local.id, killerId }),
-    fireBullet: (x, y, dir) => {
+    fireBullet: (x, y, vx, vy) => {
       const now = nowSec();
       const bid = crypto.randomUUID();
       // 로컬에 즉시 추가하고 broadcast
-      addBullet(gunState, bid, local.id, local.name, x, y, dir, now);
-      net.sendBullet({ bid, ownerId: local.id, ownerName: local.name, x, y, dir });
+      addBullet(gunState, bid, local.id, local.name, x, y, vx, vy, now);
+      net.sendBullet({ bid, ownerId: local.id, ownerName: local.name, x, y, vx, vy });
     },
   });
 

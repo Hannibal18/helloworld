@@ -243,12 +243,22 @@ input[type="text"], textarea {
   color: #f0e6d0;
   letter-spacing: 1px;
 }
-/* ===== 좌상단 KDA 랭킹 ===== */
-.ranking {
+/* ===== 좌상단 스택 컨테이너 — 랭킹 + 채팅 로그를 flex column 으로 묶음.
+   매직넘버 top 없이 랭킹 아이템 수에 따라 채팅 로그가 자동으로 따라붙는다. ===== */
+.left-stack {
   position: absolute;
   top: calc(36px + env(safe-area-inset-top));
   left: calc(8px + env(safe-area-inset-left));
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;       /* 자식별로 자기 너비 유지 (ranking 168, chat-log 300) */
+  gap: 8px;
+  pointer-events: none;
+}
+
+/* ===== 좌상단 KDA 랭킹 ===== */
+.ranking {
   font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif;
   font-size: 11px;
   color: #f0e6d0;
@@ -303,15 +313,12 @@ input[type="text"], textarea {
   pointer-events: none;
 }
 
-/* ===== 채팅 로그 (좌상단, 영구 표시 — 새 메시지가 아래에 쌓이고 위로 페이드) ===== */
+/* ===== 채팅 로그 (좌상단 스택 안에 위치 — 랭킹 바로 아래) =====
+   위치는 .left-stack 이 잡고, 여기는 크기/외형만 담당. */
 .chat-log {
-  position: absolute;
-  top: calc(170px + env(safe-area-inset-top));   /* 랭킹 패널 아래 */
-  left: calc(8px + env(safe-area-inset-left));
   width: min(300px, 60vw);
   max-height: 240px;
   overflow: hidden;
-  z-index: 4;
   pointer-events: none;
   display: flex;
   flex-direction: column;

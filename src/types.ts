@@ -62,14 +62,16 @@ export interface GunPickupPayload {
   by: string;   // player id
 }
 
-// 누군가 총알을 발사. 각 클라이언트가 동일 vx/vy 로 deterministic 시뮬레이션.
+// 누군가 총알을 발사. 8방향 (대각선 포함) 지원을 위해 dir 대신 vx/vy 정규화 후 전송.
+// 각 클라이언트가 동일 vx/vy 로 deterministic 시뮬레이션.
 export interface BulletPayload {
   bid: string;      // bullet id
   ownerId: string;
   ownerName: string;
   x: number;
   y: number;
-  dir: Dir;
+  vx: number;       // px/sec
+  vy: number;       // px/sec
 }
 
 // 원격 플레이어의 시각용 상태 (수신 측에서 유지)
