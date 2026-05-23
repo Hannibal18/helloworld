@@ -507,8 +507,14 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       },
     });
 
-    // HP 감소 감지 → 화면 붉은 플래시 (출처 무관)
-    if (local.hp < prevLocalHp) local.damageFlashUntil = now + 0.3;
+    // HP 감소 감지 → 화면 붉은 플래시 + 진동 (출처 무관)
+    if (local.hp < prevLocalHp) {
+      local.damageFlashUntil = now + 0.3;
+      // 진동: 안드로이드 Chrome 등 지원 브라우저만. iOS Safari 는 no-op.
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        try { navigator.vibrate(80); } catch { /* ignore */ }
+      }
+    }
     prevLocalHp = local.hp;
     // 자기 몸통(BODY AABB + 여유 패딩) 에 들어온 총알(자기 자신이 쏜 것 제외) 처리.
     // BODY 만으론 너무 작아서 잘 안 맞는다는 피드백 → 사방으로 BULLET_HIT_PAD 만큼 확장.
