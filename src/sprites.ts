@@ -16,10 +16,12 @@ function rect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
 // ===== 캐릭터 (LPC 스프라이트시트 기반) =====
 // public/sprites/characters/00.png ~ 09.png : 각 832×3456, 64×64 프레임 × 13 cols × 54 rows.
 // LPC 생성기로 미리 만들어 둔 10개의 랜덤 캐릭터 — 입장 시 한 명당 하나 배정.
-// LPC (Liberated Pixel Cup) 표준 행 배치:
-//   4~7:   Thrust  (Up/Left/Down/Right) — 8 frames (펀치 시퀀스의 와인드업/임팩트/회수 프레임 사용)
-//   8~11:  Walk    — 9 frames (0=idle, 1-8=walk cycle)
-//   20:    Hurt/Die — 6 frames (마지막 프레임 = 쓰러진 자세)
+// LPC (Liberated Pixel Cup) 표준 행 배치 (이 프로젝트에서 실제로 쓰는 것만):
+//   4~7:   Thrust    (Up/Left/Down/Right) — 8 frames (현재 미사용, 호환 위해 매핑만 유지)
+//   8~11:  Walk      — 9 frames (0=idle, 1-8=walk cycle) — idle 정지 자세용
+//   20:    Hurt/Die  — 6 frames (마지막 프레임 = 쓰러진 자세)
+//   38~41: Run       — 8 frames (모두 stride, idle 프레임 없음) — 이동 사이클
+//   50~53: Halfslash — 6 frames (작은 호 슬래시) — 공격 모션 (col 4 = 임팩트 hold)
 //
 // 스케일 정책: 시작 시 한 번 prescale 해서 offscreen canvas 에 캐싱.
 // 매 프레임은 그 캐싱된 sheet 를 1:1 로 drawImage → 픽셀 또렷.
@@ -59,13 +61,10 @@ tombstone.src = '/sprites/tombstone.png';
 let tombstoneReady = false;
 tombstone.onload = () => { tombstoneReady = true; };
 
-// 01, 02, 06, 07 은 LPC thrust 프레임에 몸 레이어가 빠져 있어 펀치 시 머리만 보임.
-// (scripts/extract-broken-chars.mjs 로 확인) 추후 시트 재생성 전까지 랜덤 풀에서 제외.
-const USABLE_CHAR_INDICES: readonly number[] = [0, 3, 4, 5, 8, 9];
-
+// 공격 모션을 halfslash 로 바꾼 뒤 scripts/check-halfslash.mjs 로 전체 캐릭터의
+// halfslash 프레임이 모두 정상임을 확인 — 10개 전부 사용 가능.
 export function randomCharIdx(): number {
-  const i = Math.floor(Math.random() * USABLE_CHAR_INDICES.length);
-  return USABLE_CHAR_INDICES[i];
+  return Math.floor(Math.random() * CHARACTER_COUNT);
 }
 
 // 인트로 미리보기용 — prescale 전이라도 원본 시트에서 직접 한 프레임 그려준다.
@@ -128,22 +127,23 @@ function prescaleOne(i: number, scale: number): void {
   prescaledSheets[i] = c;
 }
 
-const ROW_WALK:   Record<Dir, number> = { up: 8, left: 9, down: 10, right: 11 };
-const ROW_THRUST: Record<Dir, number> = { up: 4, left: 5, down: 6,  right: 7  };
+const ROW_WALK:      Record<Dir, number> = { up: 8,  left: 9,  down: 10, right: 11 };
+const ROW_RUN:       Record<Dir, number> = { up: 38, left: 39, down: 40, right: 41 };
+const ROW_HALFSLASH: Record<Dir, number> = { up: 50, left: 51, down: 52, right: 53 };
 
-// "풀 스트레이트" 펀치 시퀀스 — 정지 → 와인드업 → 임팩트 hold → 회수 → 정착.
-// attackPhase(0~1) 구간별로 다른 LPC 행/프레임을 골라 그린다. 임팩트 프레임(thrust col 5)을
-// 130ms 길게 hold 해서 "퍼퓩!" 임팩트가 또렷이 보이게 함. 합계 260ms = ATTACK_SWING_DUR.
+// 한손 halfslash 공격 시퀀스 — 정지 → 와인드업 → 임팩트 hold → 회수 → 정착.
+// attackPhase(0~1) 구간별로 다른 LPC 행/프레임을 골라 그린다. 임팩트 프레임(halfslash col 4)을
+// 130ms 길게 hold 해서 "휙!" 임팩트가 또렷이 보이게 함. 합계 260ms = ATTACK_SWING_DUR.
 //
-// 'walk' → ROW_WALK[dir], col 0 (idle 정지 자세)
-// 'thrust' → ROW_THRUST[dir], col N (찌르기 N번째 프레임)
-type PunchStep = { until: number; src: 'walk' | 'thrust'; col: number };
+// 'walk' → ROW_WALK[dir], col 0 (idle 정지 자세 — 공격 시작/종료 bookend)
+// 'halfslash' → ROW_HALFSLASH[dir], col N (슬래시 N번째 프레임, 총 6프레임)
+type PunchStep = { until: number; src: 'walk' | 'halfslash'; col: number };
 const PUNCH_SEQUENCE: readonly PunchStep[] = [
-  { until: 30  / 260, src: 'walk',   col: 0 }, // 30ms  — 정지 자세
-  { until: 70  / 260, src: 'thrust', col: 2 }, // 40ms  — 와인드업 (팔 뒤로)
-  { until: 200 / 260, src: 'thrust', col: 5 }, // 130ms — 임팩트 hold (팔 쭉 뻗음)
-  { until: 230 / 260, src: 'thrust', col: 6 }, // 30ms  — 회수 시작
-  { until: 1.0,       src: 'walk',   col: 0 }, // 30ms  — 정착
+  { until: 30  / 260, src: 'walk',      col: 0 }, // 30ms  — 정지 자세
+  { until: 70  / 260, src: 'halfslash', col: 2 }, // 40ms  — 와인드업 (팔 뒤로)
+  { until: 200 / 260, src: 'halfslash', col: 4 }, // 130ms — 임팩트 hold (팔 쭉 뻗음)
+  { until: 230 / 260, src: 'halfslash', col: 5 }, // 30ms  — 회수 시작
+  { until: 1.0,       src: 'walk',      col: 0 }, // 30ms  — 정착
 ];
 
 // 색을 약간 어둡게/밝게 (댄스 모듈이 사용).
@@ -208,13 +208,15 @@ export function drawCharacter(
   let frame: number;
   let idleBobY = 0;
   if (attackPhase >= 0) {
-    // 풀 스트레이트 펀치 — PUNCH_SEQUENCE 의 시간 구간별 프레임을 선택.
+    // 한손 halfslash 공격 — PUNCH_SEQUENCE 의 시간 구간별 프레임 선택.
     const step = PUNCH_SEQUENCE.find((s) => attackPhase < s.until) ?? PUNCH_SEQUENCE[PUNCH_SEQUENCE.length - 1];
-    row = step.src === 'walk' ? ROW_WALK[dir] : ROW_THRUST[dir];
+    row = step.src === 'walk' ? ROW_WALK[dir] : ROW_HALFSLASH[dir];
     frame = step.col;
   } else if (moving) {
-    row = ROW_WALK[dir];
-    frame = 1 + Math.floor(now * 8) % 8;
+    // 러닝 사이클 — 8프레임 전부 stride (walk 처럼 idle col 0 건너뛰지 않음).
+    // 속도는 walk(8/sec) 대비 1.5× 빠르게.
+    row = ROW_RUN[dir];
+    frame = Math.floor(now * 12) % 8;
   } else {
     row = ROW_WALK[dir];
     frame = 0;
