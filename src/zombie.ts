@@ -16,21 +16,23 @@
 import type { TileMap } from './map';
 import type { Camera } from './world';
 import type { LocalPlayer } from './player';
-import { BODY_HH, BODY_HW, BODY_OFF_Y } from './player';
-import type { Dir, RemotePlayer } from './types';
+import { ATTACK_DAMAGE as PLAYER_ATTACK_DAMAGE, BODY_HH, BODY_HW, BODY_OFF_Y, SPEED as PLAYER_SPEED, attackerHitbox } from './player';
+import type { AttackPayload, Dir, RemotePlayer } from './types';
 
 export const ZOMBIE_WAVE_DURATION_SEC = 120;     // 한 웨이브 길이 (2분)
 export const ZOMBIE_WAVE_INTERVAL_SEC = 300;     // 웨이브 간 간격 (5분: 시작~다음 시작)
 const INITIAL_SPAWN = 8;
 const SPAWN_INTERVAL_SEC = 4;
 const MAX_ZOMBIES = 30;
-const ZOMBIE_SPEED_PX = 38;                      // 플레이어보다 살짝 느리게
-const ZOMBIE_BODY_HW = 8;
-const ZOMBIE_BODY_HH = 14;
-const ATTACK_RANGE_PX = 18;                      // 닿았다고 판정할 거리
-const ATTACK_DAMAGE = 8;
+const ZOMBIE_SPEED_PX = PLAYER_SPEED * 0.7;      // 플레이어 속도의 70% (= 84 px/s)
+const ZOMBIE_BODY_HW = 10;                       // 캐릭터 8 의 1.2×
+const ZOMBIE_BODY_HH = 17;                       // 캐릭터 14 의 1.2×
+const ATTACK_RANGE_PX = 22;                      // 닿았다고 판정할 거리 (1.2× 스케일에 맞춰 18→22)
+const ATTACK_DAMAGE = Math.round(PLAYER_ATTACK_DAMAGE / 2);  // 캐릭터 펀치의 1/2 (= 10)
 const ATTACK_COOLDOWN_SEC = 1.2;
 const ATTACK_MOTION_SEC = 0.45;                  // spellcast 1회 모션 길이
+// 좀비 hitbox 반경 — 플레이어 공격이 좀비를 죽이는 판정용. 좀비 몸통 중심 기준.
+const ZOMBIE_HIT_RADIUS = 16;
 
 // LPC 행
 const ROW_SPELL: Record<Dir, number> = { up: 0, left: 1, down: 2, right: 3 };
@@ -130,6 +132,27 @@ function makeId(): string {
   return `z${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// ===== 플레이어 공격 vs 좀비 — 한 대 맞으면 죽음 =====
+// 누군가(로컬 or 원격) 공격 broadcast 발사 → 그 공격 hitbox 안 좀비를 자기 클라이언트에서 제거.
+// 각 클라가 자기 좀비 시뮬에서 처리하므로 (좀비 위치 약간 다를 수 있음) 시각적으로 좀
+// 어긋날 수 있으나 v1 단순화로 OK.
+export function tryHitFromAttack(wave: ZombieWave, atk: AttackPayload): number {
+  if (!wave.active || wave.zombies.length === 0) return 0;
+  const hb = attackerHitbox(atk);
+  let killed = 0;
+  wave.zombies = wave.zombies.filter((z) => {
+    // 좀비 몸통 AABB (몸통 중심 = z.y + 발 기준 살짝 위, 대충 z.y - HH)
+    const zx0 = z.x - ZOMBIE_HIT_RADIUS;
+    const zx1 = z.x + ZOMBIE_HIT_RADIUS;
+    const zy0 = z.y - ZOMBIE_BODY_HH * 2;
+    const zy1 = z.y;
+    const hit = zx0 < hb.x1 && zx1 > hb.x0 && zy0 < hb.y1 && zy1 > hb.y0;
+    if (hit) killed++;
+    return !hit;
+  });
+  return killed;
+}
+
 // ===== 매 프레임 업데이트 — 좀비 AI + 자기 자신 (로컬 플레이어) 피격 처리 =====
 export interface ZombieHitCallbacks {
   onLocalHit: (dmg: number, fromZombieId: string) => void;
@@ -203,13 +226,13 @@ function dirFromVec(dx: number, dy: number): Dir {
 }
 
 // ===== 렌더 =====
-// camera 좌표계 사용. 캐릭터 prescale 과 비슷한 크기로 그림.
+// camera 좌표계 사용. 캐릭터 prescale (0.5) 의 1.2배 = 0.6 으로 그림.
 export function drawZombies(
   ctx: CanvasRenderingContext2D,
   camera: Camera,
   wave: ZombieWave,
   now: number,
-  charScale: number = 0.5,
+  charScale: number = 0.6,
 ): void {
   if (!wave.active || !sheetReady) return;
   ctx.save();

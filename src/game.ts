@@ -42,6 +42,7 @@ import {
   makeZombieWave,
   maybeTriggerWave,
   startWave,
+  tryHitFromAttack as tryHitZombiesFromAttack,
   updateWave,
   type ZombieWave,
 } from './zombie';
@@ -234,6 +235,8 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       net.sendAttack(p);
       // 보스 명중 체크 — boss 가 null 이면 그냥 noop.
       boss?.tryHitFromLocal(p.x, p.y, p.dir, nowSec());
+      // 좀비도 같은 공격으로 죽임 (한 대 = 즉사)
+      tryHitZombiesFromAttack(zombieWave, p);
     },
     sendPos: (p) => net.sendPos(p),
     sendHp: (hp) => net.sendHp({ id: local.id, hp }),
@@ -271,6 +274,8 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
         r.attackUntil = nowSec() + ATTACK_SWING_DUR;
         r.dir = a.dir;
       }
+      // 원격 플레이어 공격도 내 클라이언트의 좀비를 죽일 수 있음
+      tryHitZombiesFromAttack(zombieWave, a);
       const wasAlive = !local.dead;
       onAttackBroadcast(local, a, updateCtx());
       if (wasAlive && local.dead) {
