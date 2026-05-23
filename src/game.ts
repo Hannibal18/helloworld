@@ -283,7 +283,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       if (wasAlive && local.dead) {
         const killer = remotes.get(a.id);
         const killerName = killer ? killer.name : '???';
-        showBanner(ui, 'death', '쓰러졌다…', `${killerName}에게 당함`);
+        showBanner(ui, 'death', `쓰러졌다… ${killerName}에게 당함`);
         refreshRanking();
       }
     },
@@ -501,7 +501,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
           local.deadUntil = now + 4;
           local.deaths += 1;
           net.sendDeath({ id: local.id, killerId: null });
-          showBanner(ui, 'death', '쓰러졌다…', '좀비에게 당함');
+          showBanner(ui, 'death', '쓰러졌다… 좀비에게 당함');
           refreshRanking();
         }
       },
@@ -544,7 +544,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
           net.sendDeath({ id: local.id, killerId: b.ownerId });
           const killer = remotes.get(b.ownerId);
           const killerName = killer ? killer.name : (b.ownerId === local.id ? local.name : b.ownerName);
-          showBanner(ui, 'death', '쓰러졌다…', `${killerName}에게 사살`);
+          showBanner(ui, 'death', `쓰러졌다… ${killerName}에게 사살`);
           refreshRanking();
         }
         break;

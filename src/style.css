@@ -377,7 +377,12 @@ input[type="text"], textarea {
   color: #f0e6d0;
 }
 .banner.kill .banner-title { color: #ffd84a; }
-.banner.death .banner-title { color: #ff5d5d; }
+/* death — info 와 같은 단일 라인 + 작은 폰트. 색은 빨강 유지. */
+.banner.death .banner-title {
+  color: #ff5d5d;
+  font-size: 22px;
+  letter-spacing: 2px;
+}
 /* info — 한 줄 시스템 알림: 폰트 절반, 자간 줄임 */
 .banner.info .banner-title {
   color: #ffd84a;
