@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>엄마 전쟁</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/quiple/galmuri/dist/galmuri.css" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 입장 화면 -->
+      <div id="intro" class="intro">
+        <div class="intro-card">
+          <h1 class="intro-title">엄마 전쟁</h1>
+          <p class="intro-sub">닉네임을 입력하고 입장하세요</p>
+          <input id="nick" class="nick-input" type="text" maxlength="12" placeholder="닉네임" autocomplete="off" />
+          <button id="enter" class="enter-btn">입 장</button>
+          <p class="intro-hint">PC: 방향키/WASD 이동 · Space 공격 · Enter 채팅<br/>모바일: 왼쪽 조이스틱 · 오른쪽 공격/채팅 버튼</p>
+        </div>
+      </div>
+
+      <!-- 게임 화면 -->
+      <div id="game" class="game hidden">
+        <!-- 백버퍼 + 말풍선 오버레이를 정수배 업스케일된 viewport 박스 안에서 함께 다룬다 -->
+        <div id="viewport" class="viewport">
+          <canvas id="canvas"></canvas>
+          <div id="bubbles" class="bubbles-layer"></div>
+        </div>
+
+        <!-- 상단 HUD -->
+        <div class="hud-top">
+          <div class="hud-pill" id="roster">접속자 1</div>
+          <div class="hud-pill" id="my-kills">킬 0</div>
+        </div>
+
+        <!-- 채팅 입력창 -->
+        <div id="chat-bar" class="chat-bar">
+          <input id="chat-input" class="chat-input" type="text" maxlength="100" placeholder="채팅 (Enter)" autocomplete="off" />
+        </div>
+
+        <!-- 모바일 가상 컨트롤 -->
+        <div id="touch-controls" class="touch-controls hidden">
+          <div id="stick" class="stick">
+            <div id="stick-knob" class="stick-knob"></div>
+          </div>
+          <div class="touch-right">
+            <button id="btn-chat" class="touch-btn touch-btn-chat">채팅</button>
+            <button id="btn-attack" class="touch-btn touch-btn-attack">공격</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

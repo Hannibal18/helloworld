@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+.vite/
+.vercel
+
+# OpenGameArt 다운로드 페이지 (작업 참고용 — 저장소에 둘 필요 없음)
+\[LPC\]*.html
+\[LPC\]*_files/
+
+# Tiled 에디터 세션/프로젝트 — 사용자 로컬 상태
+*.tiled-session
+*.tiled-project
+
+# Claude Code 에이전트 상태
+.claude/

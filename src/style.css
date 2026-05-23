@@ -1,0 +1,333 @@
+/* 전체 도트 룩 — 안티앨리어싱 끄고 모노폰트 도트 폰트 사용 */
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #1a1410;
+  color: #f0e6d0;
+  font-family: "Galmuri11", "NeoDunggeunmo", monospace;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+}
+
+.hidden { display: none !important; }
+
+/* ===== 입장 화면 ===== */
+.intro {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(circle at 50% 30%, #2a1f15 0%, #120c08 70%),
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,0.18) 3px 4px);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.intro-card {
+  width: min(360px, 90vw);
+  padding: 28px 24px;
+  border: 2px solid #6a4a2a;
+  background: rgba(40, 28, 18, 0.92);
+  box-shadow: 0 0 0 2px #1a0e08, 0 8px 24px rgba(0,0,0,0.55);
+  text-align: center;
+}
+.intro-title {
+  margin: 0 0 6px;
+  font-size: 30px;
+  letter-spacing: 4px;
+  color: #f7e7b8;
+  text-shadow: 2px 2px 0 #1a0e08;
+}
+.intro-sub {
+  margin: 0 0 18px;
+  color: #c9b58d;
+  font-size: 13px;
+}
+.nick-input {
+  display: block; width: 100%;
+  padding: 10px 12px;
+  font: inherit; font-size: 16px;
+  background: #1a120b;
+  color: #f0e6d0;
+  border: 2px solid #6a4a2a;
+  outline: none;
+  text-align: center;
+  letter-spacing: 2px;
+}
+.nick-input:focus { border-color: #c8a04a; }
+.enter-btn {
+  margin-top: 12px;
+  display: block; width: 100%;
+  padding: 12px;
+  font: inherit; font-size: 18px; letter-spacing: 8px;
+  background: linear-gradient(180deg, #8a6232, #5d4220);
+  color: #fff7a8;
+  border: 2px solid #1a0e08;
+  cursor: pointer;
+}
+.enter-btn:active { transform: translateY(1px); }
+.intro-hint {
+  margin: 16px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #8e7c5a;
+}
+
+/* ===== 게임 화면 ===== */
+.game {
+  position: absolute; inset: 0;
+  background: #000;
+}
+/* viewport — 백버퍼와 말풍선을 같은 박스에 묶어서 정수배 업스케일 유지 */
+.viewport {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 320px;  /* JS 가 정확히 정수배로 갱신 */
+  height: 240px;
+  overflow: hidden;
+}
+#canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  touch-action: none;
+  background: #000;
+}
+
+/* ===== 말풍선 (메이플 스타일, DOM 오버레이) ===== */
+.bubbles-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 4;
+}
+.maple-bubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* setBubble 이 transform 으로 (sx, sy) 위치를 잡고, 자체적으로 -50% / -100% 로 머리 위 가운데 정렬은
+     .maple-bubble-inner 의 margin 으로 처리 */
+  will-change: transform;
+  pointer-events: none;
+}
+.maple-bubble-inner {
+  position: relative;
+  transform: translate(-50%, -100%);
+  padding: 6px 12px;
+  background: #ffffff;
+  color: #1a1a1a;
+  font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.2px;
+  border: 2px solid #1a1a1a;
+  border-radius: 12px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.18);
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: center;
+  max-width: 260px;
+  min-width: 12px;
+}
+.maple-bubble-tail {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translate(-50%, calc(-100% + 1px));
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 10px solid #1a1a1a;
+  pointer-events: none;
+}
+.maple-bubble-tail::after {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: -11px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 8px solid #ffffff;
+}
+
+/* ===== HUD ===== */
+.hud-top {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top));
+  left: calc(8px + env(safe-area-inset-left));
+  display: flex;
+  gap: 6px;
+  z-index: 5;
+  pointer-events: none;
+}
+.hud-pill {
+  font-size: 11px;
+  padding: 4px 10px;
+  background: rgba(20, 14, 8, 0.75);
+  border: 1px solid #6a4a2a;
+  color: #f0e6d0;
+  letter-spacing: 1px;
+}
+
+/* ===== 채팅 바 ===== */
+.chat-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(520px, 90vw);
+  z-index: 6;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.chat-bar.active { opacity: 1; }
+.chat-input {
+  width: 100%;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 14px;
+  background: rgba(20, 14, 8, 0.85);
+  color: #f0e6d0;
+  border: 2px solid #6a4a2a;
+  outline: none;
+  letter-spacing: 1px;
+}
+.chat-input:focus { border-color: #c8a04a; }
+
+/* ===== 모바일 가상 컨트롤 ===== */
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 7;
+}
+.stick {
+  position: absolute;
+  left: calc(18px + env(safe-area-inset-left));
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(20, 14, 8, 0.45);
+  border: 2px solid rgba(202, 160, 74, 0.7);
+  pointer-events: auto;
+  touch-action: none;
+}
+.stick-knob {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 48px; height: 48px;
+  margin: -24px 0 0 -24px;
+  border-radius: 50%;
+  background: rgba(202, 160, 74, 0.85);
+  border: 2px solid #1a0e08;
+  pointer-events: none;
+  transition: transform 0.04s linear;
+}
+.touch-right {
+  position: absolute;
+  right: calc(18px + env(safe-area-inset-right));
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.touch-btn {
+  pointer-events: auto;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  font: inherit;
+  font-size: 16px;
+  letter-spacing: 2px;
+  color: #fff7a8;
+  background: rgba(20, 14, 8, 0.7);
+  border: 2px solid #c8a04a;
+  touch-action: none;
+  cursor: pointer;
+}
+.touch-btn:active {
+  background: rgba(120, 80, 30, 0.85);
+}
+.touch-btn-chat {
+  width: 64px;
+  height: 64px;
+  font-size: 12px;
+  background: rgba(20, 14, 8, 0.5);
+  border-color: #6a4a2a;
+}
+
+/* 작은 화면 보호 */
+@media (max-width: 380px) {
+  .stick { width: 100px; height: 100px; }
+  .stick-knob { width: 40px; height: 40px; margin: -20px 0 0 -20px; }
+  .touch-btn { width: 76px; height: 76px; }
+}
+
+/* ===== 디버그 패널 (개발용, 백틱으로 토글) ===== */
+.debug-panel {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top));
+  right: calc(8px + env(safe-area-inset-right));
+  z-index: 9;
+  width: 220px;
+  padding: 8px 10px;
+  background: rgba(10, 10, 14, 0.85);
+  border: 1px solid #4a4a55;
+  color: #d8d8e0;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  pointer-events: auto;
+}
+.dbg-title {
+  font-weight: bold;
+  margin-bottom: 4px;
+  color: #ffd07a;
+}
+.dbg-hint {
+  font-weight: normal;
+  font-size: 9px;
+  color: #888;
+  margin-left: 4px;
+}
+.dbg-row { margin: 3px 0; }
+.dbg-row label { cursor: pointer; }
+.dbg-row input[type="range"] {
+  width: 100%;
+  margin-top: 2px;
+}
+.dbg-row input[type="checkbox"] {
+  margin-right: 4px;
+  vertical-align: middle;
+}
+#dbg-scale-val {
+  color: #a0e0ff;
+  margin-left: 4px;
+}
