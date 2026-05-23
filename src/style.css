@@ -27,16 +27,17 @@ input[type="text"], textarea {
 }
 
 #app {
-  /* iOS Safari: 하단 URL 바 + 키보드 둘 다 dvh 에 반영된다.
-     키보드 올라오면 #app 자체가 (브라우저 native easing 으로) 줄어들고
-     그 안쪽 챗바·조이스틱이 자연스럽게 따라 올라간다.
-     단점: 채팅 중에는 게임 캔버스도 같이 줄어들지만, 어차피 키보드 뒤라 안 보임.
-     vh 폴백은 dvh 미지원 브라우저(iOS 15.4 이전) 대응. */
+  /* iOS Safari 하단 URL 바가 100vh 안쪽을 가려서 챗바·터치 컨트롤이
+     보이지 않는 문제. svh = 모바일 UI 바가 보이는 상태의 viewport 높이라
+     #app 이 바로 가시 영역에 들어맞아 그 안쪽 UI 가 자동으로 위쪽으로 정렬된다.
+     svh 는 (dvh 와 달리) 키보드에는 반응하지 않아서 키보드 떴을 때
+     #app 자체가 줄지 않음 — 키보드 위로 띄울 UI 만 var(--vp-bottom) 으로 따로 처리.
+     vh 폴백은 svh 미지원 브라우저(iOS 15.4 이전 등) 대응. */
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
-  height: 100dvh;
+  height: 100svh;
   overflow: hidden;
 }
 
@@ -397,7 +398,12 @@ input[type="text"], textarea {
   background: rgba(255, 255, 255, 0.97);
   border-radius: 0;
   box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.12);
-  /* 위치 보정은 #app 의 100dvh 가 키보드/툴바에 맞춰 줄어들면서 자동으로 따라감 */
+  /* bottom 트랜지션 없음 — viewport.ts 의 rAF 보간이 매 프레임 직접 갱신하므로
+     CSS transition 을 걸면 둘이 충돌해 오히려 끊겨 보인다. */
+}
+/* 키보드 열림 — layout viewport 는 그대로이므로 채팅바를 키보드 위로 직접 올린다 */
+.keyboard-open .chat-bar {
+  bottom: var(--vp-bottom, 0px);
 }
 @media (min-width: 600px) {
   .chat-bar {
@@ -502,6 +508,12 @@ input[type="text"], textarea {
   align-items: flex-end;
   pointer-events: none;
   transition: opacity 0.15s;
+}
+
+/* 키보드 열림 — 게임 화면(#app)은 그대로, 조이스틱/공격/멘탈만 키보드 위로 올라가도록 */
+.keyboard-open .stick,
+.keyboard-open .touch-right {
+  bottom: calc(64px + var(--vp-bottom, 0px));
 }
 
 .touch-btn {

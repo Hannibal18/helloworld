@@ -38,9 +38,56 @@ export function setupViewport(): void {
   if (started) return;
   started = true;
 
-  // #app 이 100dvh 라 키보드/툴바에 맞춰 브라우저가 native 로 reflow.
-  // 그 안쪽 챗바·조이스틱은 자연스럽게 따라가므로 JS 로 inline bottom 박지 않는다.
-  // 여기서는 다른 모듈이 참고할 수 있게 CSS 변수와 keyboard-open 클래스만 유지.
+  // ===== rAF 보간 =====
+  // 키보드 애니메이션 동안 visualViewport.resize 가 2~3 회만 띄엄띄엄 발사돼서
+  // 직접 style.bottom 을 박으면 그 사이에 챗바·컨트롤이 계단식으로 점프한다.
+  // CSS transition 은 매 이벤트마다 재시작돼 오히려 더 끊겨 보임.
+  // → 별도 currentBottom 을 두고 매 프레임 target 쪽으로 지수 보간해 60fps 로 그린다.
+  const HALF_LIFE_MS = 55; // 약 0.16초만에 목표의 ~88% 도달 — iOS 키보드와 비슷한 속도
+  let targetBottom = 0;
+  let currentBottom = 0;
+  let rafId = 0;
+  let lastTime = 0;
+
+  const applyPositions = () => {
+    const chatBar = document.getElementById('chat-bar') as HTMLElement | null;
+    const stick = document.getElementById('stick') as HTMLElement | null;
+    const touchRight = document.querySelector('.touch-right') as HTMLElement | null;
+    if (currentBottom > 0) {
+      if (chatBar) chatBar.style.bottom = `${currentBottom}px`;
+      if (stick) stick.style.bottom = `${64 + currentBottom}px`;
+      if (touchRight) touchRight.style.bottom = `${64 + currentBottom}px`;
+    } else {
+      if (chatBar) chatBar.style.bottom = '';
+      if (stick) stick.style.bottom = '';
+      if (touchRight) touchRight.style.bottom = '';
+    }
+  };
+
+  const tick = (now: number) => {
+    const dt = now - lastTime;
+    lastTime = now;
+    const factor = 1 - Math.pow(0.5, dt / HALF_LIFE_MS);
+    const next = currentBottom + (targetBottom - currentBottom) * factor;
+    if (Math.abs(targetBottom - next) < 0.3) {
+      currentBottom = targetBottom;
+      applyPositions();
+      rafId = 0;
+      return;
+    }
+    currentBottom = next;
+    applyPositions();
+    rafId = requestAnimationFrame(tick);
+  };
+
+  const setTarget = (b: number) => {
+    if (b === targetBottom) return;
+    targetBottom = b;
+    if (rafId === 0) {
+      lastTime = performance.now();
+      rafId = requestAnimationFrame(tick);
+    }
+  };
 
   const update = () => {
     // iOS Safari 자동 스크롤 차단 — input focus 시 페이지를 위로 끌어올려
@@ -66,12 +113,15 @@ export function setupViewport(): void {
 
     current = { width, height, bottomOffset, keyboardOpen };
 
-    // CSS 변수 — 외부에서 var(--vp-bottom) 참조 가능
+    // CSS 변수 — 외부에서 var(--vp-bottom) 참조 가능 (현재 직접 쓰는 곳은 없음)
     const root = document.documentElement;
     root.style.setProperty('--vp-width', `${width}px`);
     root.style.setProperty('--vp-height', `${height}px`);
     root.style.setProperty('--vp-bottom', `${bottomOffset}px`);
     root.classList.toggle('keyboard-open', keyboardOpen);
+
+    // 새 target 으로 rAF 보간 시작 (현재 진행 중인 보간이 있으면 그쪽으로 추적 방향만 바뀜)
+    setTarget(bottomOffset);
 
     if (changed) for (const cb of listeners) cb(current);
   };
