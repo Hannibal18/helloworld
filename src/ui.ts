@@ -1,5 +1,7 @@
 // 입장 화면, 채팅 입력창, HUD 갱신 등 DOM 조작 모음.
 
+import { input } from './input';
+
 export interface UiHandles {
   intro: HTMLElement;
   game: HTMLElement;
@@ -170,7 +172,13 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
     ui.chatInput.blur();
   };
 
-  ui.chatInput.addEventListener('focus', () => { active = true; ui.chatBar.classList.add('active'); });
+  ui.chatInput.addEventListener('focus', () => {
+    active = true;
+    ui.chatBar.classList.add('active');
+    // 채팅 focus 시 키보드 누적 입력 reset — PC 에서 W 누른 채로 채팅 열어도 캐릭터 계속 움직이지 않도록.
+    // 터치 가상 스틱은 setStick 으로 재기록되므로 영향 X.
+    input.moveX = 0; input.moveY = 0; input.stickX = 0; input.stickY = 0;
+  });
   ui.chatInput.addEventListener('blur', () => { active = false; ui.chatBar.classList.remove('active'); });
 
   // 전송 버튼 — pointerdown 으로 잡아서 input blur(키보드 닫힘) 전에 발사.

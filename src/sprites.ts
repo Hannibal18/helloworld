@@ -17,8 +17,8 @@ function rect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
 // public/sprites/characters/00.png ~ 09.png : 각 832×3456, 64×64 프레임 × 13 cols × 54 rows.
 // LPC 생성기로 미리 만들어 둔 10개의 랜덤 캐릭터 — 입장 시 한 명당 하나 배정.
 // LPC (Liberated Pixel Cup) 표준 행 배치:
+//   4~7:   Thrust  (Up/Left/Down/Right) — 8 frames (펀치 시퀀스의 와인드업/임팩트/회수 프레임 사용)
 //   8~11:  Walk    — 9 frames (0=idle, 1-8=walk cycle)
-//   12~15: Slash   (Up/Left/Down/Right) — 6 frames (옆으로 휘두름 → 훅 펀치 느낌)
 //   20:    Hurt/Die — 6 frames (마지막 프레임 = 쓰러진 자세)
 //
 // 스케일 정책: 시작 시 한 번 prescale 해서 offscreen canvas 에 캐싱.
@@ -102,9 +102,23 @@ function prescaleOne(i: number, scale: number): void {
   prescaledSheets[i] = c;
 }
 
-const ROW_WALK:  Record<Dir, number> = { up: 8,  left: 9,  down: 10, right: 11 };
-const ROW_SLASH: Record<Dir, number> = { up: 12, left: 13, down: 14, right: 15 };
-const SLASH_FRAMES = 6;
+const ROW_WALK:   Record<Dir, number> = { up: 8, left: 9, down: 10, right: 11 };
+const ROW_THRUST: Record<Dir, number> = { up: 4, left: 5, down: 6,  right: 7  };
+
+// "풀 스트레이트" 펀치 시퀀스 — 정지 → 와인드업 → 임팩트 hold → 회수 → 정착.
+// attackPhase(0~1) 구간별로 다른 LPC 행/프레임을 골라 그린다. 임팩트 프레임(thrust col 5)을
+// 130ms 길게 hold 해서 "퍼퓩!" 임팩트가 또렷이 보이게 함. 합계 260ms = ATTACK_SWING_DUR.
+//
+// 'walk' → ROW_WALK[dir], col 0 (idle 정지 자세)
+// 'thrust' → ROW_THRUST[dir], col N (찌르기 N번째 프레임)
+type PunchStep = { until: number; src: 'walk' | 'thrust'; col: number };
+const PUNCH_SEQUENCE: readonly PunchStep[] = [
+  { until: 30  / 260, src: 'walk',   col: 0 }, // 30ms  — 정지 자세
+  { until: 70  / 260, src: 'thrust', col: 2 }, // 40ms  — 와인드업 (팔 뒤로)
+  { until: 200 / 260, src: 'thrust', col: 5 }, // 130ms — 임팩트 hold (팔 쭉 뻗음)
+  { until: 230 / 260, src: 'thrust', col: 6 }, // 30ms  — 회수 시작
+  { until: 1.0,       src: 'walk',   col: 0 }, // 30ms  — 정착
+];
 
 // 색을 약간 어둡게/밝게 (댄스 모듈이 사용).
 function shade(hex: string, amt: number): string {
@@ -168,9 +182,10 @@ export function drawCharacter(
   let frame: number;
   let idleBobY = 0;
   if (attackPhase >= 0) {
-    // Slash: 6 프레임. 옆으로 휘두름 → 훅 펀치 느낌.
-    row = ROW_SLASH[dir];
-    frame = Math.min(SLASH_FRAMES - 1, Math.max(0, Math.floor(attackPhase * SLASH_FRAMES)));
+    // 풀 스트레이트 펀치 — PUNCH_SEQUENCE 의 시간 구간별 프레임을 선택.
+    const step = PUNCH_SEQUENCE.find((s) => attackPhase < s.until) ?? PUNCH_SEQUENCE[PUNCH_SEQUENCE.length - 1];
+    row = step.src === 'walk' ? ROW_WALK[dir] : ROW_THRUST[dir];
+    frame = step.col;
   } else if (moving) {
     row = ROW_WALK[dir];
     frame = 1 + Math.floor(now * 8) % 8;

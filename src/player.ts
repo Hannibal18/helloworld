@@ -149,12 +149,12 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
     return;
   }
 
-  // 이동
-  let mx = 0, my = 0;
-  if (!chatActive) {
-    mx = input.moveX;
-    my = input.moveY;
-  }
+  // 이동 — 채팅 활성 중에도 가상 스틱(터치) 으로 이동 허용.
+  // PC 키보드는 input.ts 의 keydown 리스너가 chatActive 일 때 차단하므로, 채팅 중엔
+  // 자연스럽게 setStick (모바일 터치) 만 moveX/Y 에 기여한다.
+  let mx = input.moveX;
+  let my = input.moveY;
+  void chatActive;
   const moving = mx !== 0 || my !== 0;
   if (moving) {
     p.dir = dirFromInput(p.dir);
