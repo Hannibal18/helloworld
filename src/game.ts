@@ -497,9 +497,16 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     // HP 감소 감지 → 화면 붉은 플래시 (출처 무관)
     if (local.hp < prevLocalHp) local.damageFlashUntil = now + 0.3;
     prevLocalHp = local.hp;
-    // 자기 몸통(BODY AABB) 에 들어온 총알(자기 자신이 쏜 것 제외) 처리
+    // 자기 몸통(BODY AABB + 여유 패딩) 에 들어온 총알(자기 자신이 쏜 것 제외) 처리.
+    // BODY 만으론 너무 작아서 잘 안 맞는다는 피드백 → 사방으로 BULLET_HIT_PAD 만큼 확장.
     if (!local.dead && now >= local.iFrameUntil) {
-      const me = { x0: local.x - BODY_HW, x1: local.x + BODY_HW, y0: local.y + BODY_OFF_Y - BODY_HH, y1: local.y + BODY_OFF_Y + BODY_HH };
+      const BULLET_HIT_PAD = 16;
+      const me = {
+        x0: local.x - BODY_HW - BULLET_HIT_PAD,
+        x1: local.x + BODY_HW + BULLET_HIT_PAD,
+        y0: local.y + BODY_OFF_Y - BODY_HH - BULLET_HIT_PAD,
+        y1: local.y + BODY_OFF_Y + BODY_HH + BULLET_HIT_PAD,
+      };
       for (const b of gunState.bullets) {
         if (b.ownerId === local.id) continue;
         if (b.hitIds.has(local.id)) continue;
