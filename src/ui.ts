@@ -9,7 +9,7 @@ export interface UiHandles {
   roster: HTMLElement;
   myKills: HTMLElement;
   chatBar: HTMLElement;
-  chatInput: HTMLTextAreaElement;
+  chatInput: HTMLElement;       // contenteditable div — input/textarea 아님
 }
 
 export function uiHandles(): UiHandles {
@@ -22,7 +22,7 @@ export function uiHandles(): UiHandles {
     roster: document.getElementById('roster') as HTMLElement,
     myKills: document.getElementById('my-kills') as HTMLElement,
     chatBar: document.getElementById('chat-bar') as HTMLElement,
-    chatInput: document.getElementById('chat-input') as HTMLTextAreaElement,
+    chatInput: document.getElementById('chat-input') as HTMLElement,
   };
 }
 
@@ -46,13 +46,17 @@ export interface ChatBinding {
 }
 
 export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBinding {
+  const MAX_LEN = 100;
   let active = false;
+
+  const getText = () => (ui.chatInput.textContent ?? '');
+  const clear = () => { ui.chatInput.textContent = ''; };
 
   // 카톡식 — 전송해도 키보드는 유지 (입력칸 비우고 포커스만 유지).
   const send = () => {
-    const text = ui.chatInput.value.trim();
-    if (text.length > 0) onSend(text.slice(0, 100));
-    ui.chatInput.value = '';
+    const text = getText().trim();
+    if (text.length > 0) onSend(text.slice(0, MAX_LEN));
+    clear();
     ui.chatInput.focus();
   };
 
@@ -69,6 +73,33 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
 
   ui.chatInput.addEventListener('focus', () => { active = true; ui.chatBar.classList.add('active'); });
   ui.chatInput.addEventListener('blur', () => { active = false; ui.chatBar.classList.remove('active'); });
+
+  // contenteditable — paste 시 서식 따라오는 거 막고 plain text 만 삽입.
+  ui.chatInput.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const raw = e.clipboardData?.getData('text/plain') ?? '';
+    const text = raw.replace(/[\r\n]+/g, ' ').slice(0, MAX_LEN);
+    // execCommand 는 deprecated 지만 contenteditable 에서 caret 위치 자동 처리는 여전히 이게 가장 깔끔.
+    document.execCommand('insertText', false, text);
+  });
+
+  // 드롭으로 이미지/파일 끌어다 넣는 거 차단.
+  ui.chatInput.addEventListener('drop', (e) => e.preventDefault());
+
+  // maxlength 강제 — 100 자 초과하면 자르고 caret 을 끝으로.
+  ui.chatInput.addEventListener('input', () => {
+    // 줄바꿈 노드(<br>, <div>)가 들어오면 plain text 로 정규화 — 항상 한 줄 유지.
+    const text = getText();
+    if (text.length > MAX_LEN) {
+      ui.chatInput.textContent = text.slice(0, MAX_LEN);
+      const range = document.createRange();
+      range.selectNodeContents(ui.chatInput);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+  });
 
   // 전송 버튼 (카카오톡식)
   const sendBtn = document.getElementById('chat-send');

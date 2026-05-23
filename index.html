@@ -36,12 +36,15 @@
           <button id="btn-bgm" class="hud-btn" type="button" aria-label="BGM 토글">♪ ON</button>
         </div>
 
-        <!-- 채팅 입력창 (카카오톡 스타일) — textarea 사용해 iOS 연락처 autofill 차단 -->
+        <!-- 채팅 입력창 (카카오톡 스타일) — contenteditable div 사용:
+             1) iOS 의 input/textarea 자동 스크롤 (포커스 시 페이지 튀어오름) 회피
+             2) iOS 의 키보드 위 accessory toolbar (이전/다음/완료) 자동 표시 회피
+             3) iOS 연락처/비밀번호 autofill 대상 아님 -->
         <div id="chat-bar" class="chat-bar">
-          <textarea id="chat-input" class="chat-input" rows="1" maxlength="100"
-                    placeholder="메시지 입력" autocomplete="off" autocorrect="off"
-                    autocapitalize="off" spellcheck="false"
-                    enterkeyhint="send" data-1p-ignore="true" data-lpignore="true"></textarea>
+          <div id="chat-input" class="chat-input" contenteditable="true" role="textbox"
+               aria-label="메시지 입력" data-placeholder="메시지 입력"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+               enterkeyhint="send"></div>
           <button id="chat-send" class="chat-send" type="button" aria-label="전송">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
               <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>

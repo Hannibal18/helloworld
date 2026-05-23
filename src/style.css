@@ -253,7 +253,8 @@ input[type="text"], textarea {
 .chat-input {
   flex: 1;
   min-width: 0;
-  height: 1.4em;        /* 단일 라인 강제 — textarea 가 multi-line 으로 안 늘어남 */
+  min-height: 1.4em;    /* 단일 라인 — contenteditable div, white-space: nowrap 으로 줄바꿈 차단 */
+  max-height: 1.4em;
   padding: 8px 0;
   font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif;
   font-size: 15px;
@@ -263,13 +264,21 @@ input[type="text"], textarea {
   color: #1a1a1a;
   border: none;
   outline: none;
-  resize: none;         /* textarea 사이즈 변경 불가 */
-  overflow: hidden;     /* 줄바꿈 방지 (preventDefault 가 백업 처리) */
+  white-space: nowrap;  /* 가로 한 줄 강제 */
+  overflow-x: auto;     /* 긴 텍스트는 가로 스크롤 */
+  overflow-y: hidden;
   letter-spacing: 0;
   -webkit-user-select: text;
   user-select: text;
+  cursor: text;
+  word-break: keep-all;
 }
-.chat-input::placeholder { color: #aaa; }
+/* contenteditable placeholder — 비어 있을 때만 data-placeholder 텍스트 표시 */
+.chat-input:empty::before {
+  content: attr(data-placeholder);
+  color: #aaa;
+  pointer-events: none;
+}
 .chat-send {
   flex: 0 0 auto;
   width: 36px;
