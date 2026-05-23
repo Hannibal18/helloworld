@@ -8,6 +8,8 @@ import { getViewport, onViewportChange } from './viewport';
 
 export interface CanvasSetupOpts {
   canvas: HTMLCanvasElement;
+  /** HUD 오버레이 — 이름/HP 등 크리스프 텍스트 전용. 픽셀아트와 다르게 full DPR 로 그림. */
+  hudCanvas: HTMLCanvasElement;
   /** 디버그 패널 + 줌 컨트롤이 공유하는 viewTilesWide getter/setter. */
   getViewTiles: () => number;
   setViewTiles: (n: number) => void;
@@ -15,8 +17,9 @@ export interface CanvasSetupOpts {
   mobileTilesWide: number;
   zoomMin: number;
   zoomMax: number;
-  /** 백버퍼 해상도가 갱신될 때마다 호출 — 카메라 viewW/H 등을 따라가야 함. */
-  onSized: (logicalW: number, logicalH: number) => void;
+  /** 백버퍼 해상도가 갱신될 때마다 호출 — 카메라 viewW/H 등을 따라가야 함.
+   *  displayScale = "백버퍼 1px 당 CSS px 수" (HUD 캔버스의 backbuffer→screen 좌표 변환에 필요). */
+  onSized: (logicalW: number, logicalH: number, displayScale: number) => void;
 }
 
 export interface CanvasController {
@@ -27,9 +30,10 @@ export interface CanvasController {
 }
 
 export function setupCanvas(opts: CanvasSetupOpts): CanvasController {
-  const { canvas, getViewTiles, setViewTiles, mobileTilesWide, zoomMin, zoomMax, onSized } = opts;
+  const { canvas, hudCanvas, getViewTiles, setViewTiles, mobileTilesWide, zoomMin, zoomMax, onSized } = opts;
   const ctx2d = canvas.getContext('2d')!;
   ctx2d.imageSmoothingEnabled = false;
+  const hudCtx = hudCanvas.getContext('2d')!;
 
   const resize = () => {
     const vp = getViewport();
@@ -47,10 +51,21 @@ export function setupCanvas(opts: CanvasSetupOpts): CanvasController {
     // 부모 컨테이너가 분수 dvh(예: 833.45px) 일 때 image-rendering: pixelated 가
     // backbuffer→display 비정수 스케일 처리하다가 한 줄을 빠뜨려 가로선 생기는 iOS Safari 이슈 회피.
     // (URL 바 collapse 애니메이션 중에 선이 위로 이동하다가 dvh 안정화되면 그 위치에 멈춤)
-    canvas.style.width  = `${Math.round(canvas.width * scale)}px`;
-    canvas.style.height = `${Math.round(canvas.height * scale)}px`;
+    const dispW = Math.round(canvas.width * scale);
+    const dispH = Math.round(canvas.height * scale);
+    canvas.style.width  = `${dispW}px`;
+    canvas.style.height = `${dispH}px`;
     ctx2d.imageSmoothingEnabled = false;
-    onSized(canvas.width, canvas.height);
+
+    // HUD 캔버스 — 게임 캔버스와 같은 표시 크기, full DPR 백버퍼.
+    const dpr = window.devicePixelRatio || 1;
+    hudCanvas.width  = Math.round(dispW * dpr);
+    hudCanvas.height = Math.round(dispH * dpr);
+    hudCanvas.style.width  = `${dispW}px`;
+    hudCanvas.style.height = `${dispH}px`;
+    hudCtx.setTransform(dpr, 0, 0, dpr, 0, 0); // 이후엔 CSS px 단위로 그림
+
+    onSized(canvas.width, canvas.height, scale);
   };
 
   onViewportChange(resize);

@@ -8,13 +8,16 @@
 // 브라우저 자동재생 정책:
 //   - 자동재생은 보통 차단된다. 첫 사용자 제스처에서 재생을 시작한다.
 //   - iOS Safari/모바일 Chrome 은 "이 제스처에서 play() 호출된 audio 객체"만 unlock 한다.
-//     따라서 다음 곡 전환 시점(setTimeout/'ended' 콜백) 은 user gesture 컨텍스트가 아니라
-//     새 audio.play() 가 차단될 수 있다 → 첫 제스처에서 3개 audio 를 모두 한 번씩 unlock 한다.
+//     따라서 곡 전환 콜백 안의 play() 가 차단될 수 있어 → 첫 제스처에서 3개 audio 모두 한 번씩 unlock 한다.
 //
 // 곡 전환:
 //   - 일차 메커니즘: audio.ended 이벤트 → 다음 곡으로 sync.
-//   - 안전망: setTimeout (audio.duration 이 부정확하거나 ended 가 발사 안 되는 경우 대비).
-//     +500ms 여유를 둬 ended 가 먼저 발사되도록 한다.
+//   - 안전망: setTimeout (audio.duration 부정확/buffering/ended 누락 대비), +5초 여유로 ended 가 먼저 발사되도록.
+//
+// duration 안정성:
+//   - MP3 헤더의 duration 은 추정값일 수 있고 'durationchange' 이벤트로 보정된다.
+//   - sync 가 매 호출마다 audio.duration 을 fresh 로 읽으면 idx/offset 이 흔들려 곡이 갑자기 점프하는 버그가 난다.
+//   - 그래서 한 번 캐싱 + durationchange 핸들러로 캐시 업데이트 한다.
 
 const TRACK_URLS: readonly string[] = [
   '/audio/Henesys Port Vibes.mp3',
@@ -23,8 +26,10 @@ const TRACK_URLS: readonly string[] = [
 ] as const;
 
 const VOLUME = 0.5;
+const SAFETY_MARGIN_MS = 5000; // setTimeout 안전망 여유 — ended 가 거의 항상 먼저 발사되도록 넉넉히
+const TAIL_GUARD_S = 0.5;      // offset 이 트랙 끝에 너무 가깝지 않도록 (즉시 ended → 무한 sync 방지)
 
-type Track = { url: string; audio: HTMLAudioElement };
+type Track = { url: string; audio: HTMLAudioElement; duration: number };
 
 let tracks: Track[] = [];
 let currentIdx = -1;
@@ -33,14 +38,9 @@ let setupStarted = false;
 let unlocked = false;
 let syncTimer: number | null = null;
 
-function durationOf(t: Track): number {
-  const d = t.audio.duration;
-  return isFinite(d) && d > 0 ? d : 0;
-}
-
 function totalDuration(): number {
   let s = 0;
-  for (const t of tracks) s += durationOf(t);
+  for (const t of tracks) s += t.duration;
   return s;
 }
 
@@ -54,7 +54,11 @@ async function loadTrack(url: string): Promise<Track> {
     audio.addEventListener('loadedmetadata', () => resolve(), { once: true });
     audio.addEventListener('error', () => reject(new Error('audio load failed: ' + url)), { once: true });
   });
-  const t: Track = { url, audio };
+  const t: Track = { url, audio, duration: audio.duration };
+  // 나중에 정확한 duration 이 들어오면 캐시 갱신
+  audio.addEventListener('durationchange', () => {
+    if (isFinite(audio.duration) && audio.duration > 0) t.duration = audio.duration;
+  });
   audio.addEventListener('ended', () => {
     if (userMuted) return;
     syncAndPlay();
@@ -63,7 +67,7 @@ async function loadTrack(url: string): Promise<Track> {
 }
 
 export async function setupBgm(): Promise<void> {
-  if (setupStarted) return; // HMR / 중복 호출 안전망
+  if (setupStarted) return; // 중복 호출 안전망
   setupStarted = true;
 
   try {
@@ -90,18 +94,14 @@ export async function setupBgm(): Promise<void> {
 }
 
 // 모든 audio 객체를 user-gesture 안에서 한 번 play() → pause() 처리해 unlock 한다.
-// 모바일/Safari 에서는 곡 전환 시점(콜백)에 새 audio.play() 가 차단되는 걸 방지.
-// volume=0 으로 시작해 잠시 동시 재생되는 소리가 새는 일을 막는다.
 async function unlockAll(): Promise<void> {
   if (unlocked) return;
   unlocked = true;
-  // 1) user-gesture 컨텍스트가 살아있는 동안 동기 루프로 play() 모두 호출
   const promises: Array<Promise<unknown>> = [];
   for (const t of tracks) {
     t.audio.volume = 0;
     promises.push(t.audio.play().catch(() => { /* ignore */ }));
   }
-  // 2) 모두 시작된 뒤 즉시 정지하고 원래 볼륨으로
   await Promise.allSettled(promises);
   for (const t of tracks) {
     t.audio.pause();
@@ -130,11 +130,16 @@ function syncAndPlay(): void {
   let idx = 0;
   let acc = 0;
   for (let i = 0; i < tracks.length; i++) {
-    const d = durationOf(tracks[i]);
+    const d = tracks[i].duration;
     if (pos < acc + d) { idx = i; break; }
     acc += d;
   }
-  const offset = pos - acc;
+  const t = tracks[idx];
+  // 트랙 끝 직전(<TAIL_GUARD_S)으로 점프하면 즉시 ended 가 발사되어 곡 점프가 연쇄로 일어날 수 있다.
+  // 끝 TAIL_GUARD_S 안엔 들어가지 않도록 클램프.
+  const rawOffset = pos - acc;
+  const maxOffset = Math.max(0, t.duration - TAIL_GUARD_S);
+  const offset = Math.min(rawOffset, maxOffset);
 
   // 다른 트랙들 정지
   for (let i = 0; i < tracks.length; i++) {
@@ -142,26 +147,23 @@ function syncAndPlay(): void {
   }
 
   currentIdx = idx;
-  const t = tracks[idx];
   try { t.audio.currentTime = offset; } catch { /* 일부 브라우저가 seek 직후 throw */ }
   t.audio.play().catch(() => { /* autoplay 차단 — 다음 제스처에서 재시도 */ });
 
-  // 안전망 setTimeout — ended 이벤트가 안 발사되거나 늦는 경우만 발사되도록 +500ms 여유.
-  // 정상 흐름은 audio.ended → syncAndPlay 가 먼저 실행되어 이 타이머를 clear 한다.
-  const remaining = durationOf(t) - offset;
+  // 안전망 setTimeout — 정상 흐름은 audio.ended 가 먼저 발사되어 이 타이머를 clear 한다.
+  const remaining = t.duration - offset;
   if (remaining > 0 && isFinite(remaining)) {
     syncTimer = window.setTimeout(() => {
       syncTimer = null;
       if (userMuted) return;
       syncAndPlay();
-    }, remaining * 1000 + 500);
+    }, remaining * 1000 + SAFETY_MARGIN_MS);
   }
 }
 
 // BGM 토글 — 재생 중이면 정지, 아니면 동기화 위치부터 재생. 새 재생 상태 반환.
 export function toggleBgm(): boolean {
   if (tracks.length === 0) {
-    // 아직 metadata 로딩 중 — userMuted 만 뒤집어 둔다.
     userMuted = !userMuted;
     return !userMuted;
   }
@@ -186,8 +188,21 @@ export function isBgmPlaying(): boolean {
   return !!(a && !a.paused);
 }
 
+// Vite HMR — 모듈 재로드 시 기존 audio 객체를 정리하지 않으면 좀비 audio 가 살아서
+// 새 audio 와 동시에 재생되며 "갑자기 다른 노래" 증상을 일으킨다.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    for (const t of tracks) {
+      try { t.audio.pause(); } catch { /* ignore */ }
+      t.audio.src = '';
+    }
+    if (syncTimer !== null) clearTimeout(syncTimer);
+    tracks = [];
+    if (enterVoice) { try { enterVoice.pause(); } catch { /* ignore */ } enterVoice.src = ''; enterVoice = null; }
+  });
+}
+
 // 전투장 입장 시 1회 재생되는 보이스. 입장 화면 → 게임 화면 전환 직후 1초 뒤에 호출한다.
-// 사용자가 BGM 을 끈 상태(userMuted)여도 명시 트리거이므로 일단 재생 시도.
 let enterVoice: HTMLAudioElement | null = null;
 export function playEnterVoice(): void {
   if (!enterVoice) {

@@ -33,6 +33,12 @@ export interface RenderableRemote {
   danceStart: number;
 }
 
+export interface HudLayer {
+  ctx: CanvasRenderingContext2D;
+  /** 백버퍼 1px → CSS px 변환 계수. (worldX - camera.x) * displayScale = HUD 캔버스 좌표. */
+  displayScale: number;
+}
+
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   map: TileMap,
@@ -41,6 +47,7 @@ export function renderFrame(
   remotes: RenderableRemote[],
   now: number,
   debug: DebugState,
+  hud: HudLayer,
 ): void {
   ctx.imageSmoothingEnabled = false;
 
@@ -93,12 +100,14 @@ export function renderFrame(
   const above = map.layerByName.get('objects_above');
   if (above) drawTileLayer(ctx, map, above, camera.x, camera.y, camera.viewW, camera.viewH);
 
-  // 4. 이름/HP/킬 (캐릭터 위에 항상)
+  // 4. 이름/HP/킬 — HUD 오버레이 캔버스에 그림 (full DPR, 크리스프 텍스트).
+  //    HUD 캔버스는 게임 캔버스보다 해상도가 높으므로 좌표는 (worldX - camera.x) * displayScale 로 변환.
+  hud.ctx.clearRect(0, 0, hud.ctx.canvas.width / (window.devicePixelRatio || 1), hud.ctx.canvas.height / (window.devicePixelRatio || 1));
   for (const r of remotes) {
-    drawNameHpKills(ctx, camera, r.x, r.y, r.name, r.color, r.hp, r.maxHp, r.kills, false, r.dancing);
+    drawNameHpKills(hud.ctx, camera, hud.displayScale, r.x, r.y, r.name, r.color, r.hp, r.maxHp, r.kills, false, r.dancing);
   }
   const localDancing = now < local.danceUntil;
-  drawNameHpKills(ctx, camera, local.x, local.y, local.name, local.color, local.hp, local.maxHp, local.kills, true, localDancing);
+  drawNameHpKills(hud.ctx, camera, hud.displayScale, local.x, local.y, local.name, local.color, local.hp, local.maxHp, local.kills, true, localDancing);
 
   // 5. 부유 데미지 텍스트 — 팝업 스케일 + 떠오름 + 페이드.
   for (const f of local.floats) {
@@ -214,26 +223,27 @@ function drawRemote(ctx: CanvasRenderingContext2D, camera: Camera, r: Renderable
 }
 
 function drawNameHpKills(
-  ctx: CanvasRenderingContext2D, camera: Camera,
+  ctx: CanvasRenderingContext2D, camera: Camera, displayScale: number,
   worldX: number, worldY: number,
   name: string, color: string,
   hp: number, maxHp: number, kills: number,
   isLocal: boolean,
   dancing: boolean,
 ): void {
-  const baseX = Math.round(worldX - camera.x);
-  const heightAbove = dancing ? DANCE_H : CHAR_H;
-  const footScreenY = Math.round(worldY - camera.y);
+  // 백버퍼 좌표 → HUD(CSS px) 좌표. 캐릭터 발/머리 위치는 백버퍼 단위라 displayScale 로 환산.
+  const baseX = Math.round((worldX - camera.x) * displayScale);
+  const heightAbove = (dancing ? DANCE_H : CHAR_H) * displayScale;
+  const footScreenY = Math.round((worldY - camera.y) * displayScale);
   const label = kills > 0 ? `${name} · ${kills}` : name;
 
-  // ===== HP 바 — 머리 위 (14칸 segmented, 2px 셀 + 1px 갭 = 41px) =====
+  // ===== HP 바 — 머리 위. CSS px 단위라 segment/간격을 시각 비율로 다시 정함. =====
   const SEGMENTS = 14;
-  const segW = 2;
+  const segW = 4;
   const segGap = 1;
   const barW = SEGMENTS * segW + (SEGMENTS - 1) * segGap;
-  const barH = 4;
+  const barH = 6;
   const bx = baseX - Math.floor(barW / 2);
-  const by = Math.round(worldY - camera.y - heightAbove - 6);
+  const by = Math.round((worldY - camera.y) * displayScale - heightAbove - 10);
   ctx.fillStyle = '#000';
   ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
   const pct = Math.max(0, Math.min(1, hp / maxHp));
@@ -244,23 +254,27 @@ function drawNameHpKills(
     ctx.fillStyle = i < filledSegs ? fillColor : '#3a1212';
     ctx.fillRect(segX, by, segW, barH);
   }
+  // 캐릭터 컬러 칩 — HP 바 왼쪽
   ctx.fillStyle = color;
-  ctx.fillRect(bx - 3, by, 2, barH);
+  ctx.fillRect(bx - 5, by, 3, barH);
 
-  // ===== 이름 — 발 아래. 한글 시스템 고딕 14px bold + 두꺼운 검정 외곽선(stroke). =====
-  // 작은 도트 폰트에서 한글 모음이 뭉개지는 걸 막기 위해 시스템 폰트로 변경. 박스는 빼서 시야 확보.
-  ctx.font = `bold 14px 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif`;
+  // ===== 이름 — 발 아래. CSS px 기준 크기. HUD 캔버스라 1:1 픽셀에 안티앨리어싱 살아있음. =====
+  ctx.font = `600 14px 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  const textY = footScreenY + 16;  // 발 아래 충분히 띄움
+  const textY = footScreenY + 20;
 
-  // 두꺼운 검정 외곽선 — canvas stroke 로 한 번에. save/restore 로 lineJoin/lineWidth state 누수 방지.
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.miterLimit = 2;
+  // 얇은 검정 외곽선 + 연한 그림자로 자연스럽게.
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 2;
+  ctx.shadowOffsetY = 1;
   ctx.lineWidth = 3;
   ctx.strokeStyle = '#000';
   ctx.strokeText(label, baseX, textY);
+  ctx.shadowColor = 'transparent';
   ctx.fillStyle = isLocal ? '#fff7a8' : '#ffffff';
   ctx.fillText(label, baseX, textY);
   ctx.restore();

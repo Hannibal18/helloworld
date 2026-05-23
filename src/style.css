@@ -144,6 +144,17 @@ input[type="text"], textarea {
   background: #000;
 }
 
+/* HUD 오버레이 캔버스 — 이름/HP 같이 크리스프 텍스트가 필요한 것들.
+   #canvas 는 픽셀아트라 image-rendering: pixelated 로 올라가지만, 텍스트는 그 위 별도 캔버스에서 full DPR 로 그린다. */
+.hud-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
 /* ===== 말풍선 (메이플 스타일, DOM 오버레이) ===== */
 .bubbles-layer {
   position: absolute;

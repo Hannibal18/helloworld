@@ -8,6 +8,7 @@ export interface UiHandles {
   nick: HTMLInputElement;
   enterBtn: HTMLButtonElement;
   canvas: HTMLCanvasElement;
+  hudCanvas: HTMLCanvasElement;
   roster: HTMLElement;
   myKills: HTMLElement;
   chatBar: HTMLElement;
@@ -25,6 +26,7 @@ export function uiHandles(): UiHandles {
     nick: document.getElementById('nick') as HTMLInputElement,
     enterBtn: document.getElementById('enter') as HTMLButtonElement,
     canvas: document.getElementById('canvas') as HTMLCanvasElement,
+    hudCanvas: document.getElementById('hud-canvas') as HTMLCanvasElement,
     roster: document.getElementById('roster') as HTMLElement,
     myKills: document.getElementById('my-kills') as HTMLElement,
     chatBar: document.getElementById('chat-bar') as HTMLElement,

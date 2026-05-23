@@ -2,6 +2,7 @@
 
 import { startGame } from './game';
 import { setupBgm, toggleBgm, isBgmPlaying } from './audio';
+import { unlockSfx, playSfx } from './sfx';
 import { setupViewport } from './viewport';
 import { CHARACTER_COUNT, drawCharacterPreview, randomCharIdx } from './sprites';
 
@@ -67,6 +68,9 @@ ready(() => {
   nick.focus();
 
   const enter = () => {
+    // 첫 사용자 제스처 — SFX AudioContext 잠금 해제 + 클릭 음 재생
+    unlockSfx();
+    playSfx('ui_click');
     let name = nick.value.trim();
     if (!name) name = `손님${Math.floor(Math.random() * 9000 + 1000)}`;
     name = name.slice(0, 12);

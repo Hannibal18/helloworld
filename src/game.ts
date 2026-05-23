@@ -5,6 +5,8 @@ import { connect, type Net } from './net';
 import { setupInput, consumeMentalAttack } from './input';
 import { pickInsult } from './insults';
 import { playEnterVoice } from './audio';
+import { playSfx } from './sfx';
+import { BOSS_ENABLED, spawnBoss, type BossSystem } from './boss';
 import { colorFromName } from './colors';
 import { setupTouchControls } from './controls';
 import { setupCanvas } from './canvas';
@@ -96,15 +98,21 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   const ctx2d = canvas.getContext('2d')!;
   ctx2d.imageSmoothingEnabled = false;
 
+  // HUD 오버레이 — 이름/HP 등 크리스프 텍스트 전용. game 캔버스와 같은 표시 영역, full DPR.
+  const hudCanvas = ui.hudCanvas;
+  const hudCtx = hudCanvas.getContext('2d')!;
+  let displayScale = 1;  // 백버퍼 1px 당 CSS px — canvas.ts 의 onSized 콜백으로 갱신.
+
   // 캔버스 리사이즈 + 사용자 줌 (PC 휠 / 모바일 핀치 / iOS gesture) 은 canvas.ts 에 일임.
   const canvasCtrl = setupCanvas({
     canvas,
+    hudCanvas,
     getViewTiles: () => debug.viewTilesWide,
     setViewTiles: (n) => { debug.viewTilesWide = n; },
     mobileTilesWide: TARGET_TILES_WIDE_MOBILE,
     zoomMin: 14,
     zoomMax: 40,
-    onSized: (w, h) => { camera.viewW = w; camera.viewH = h; },
+    onSized: (w, h, scale) => { camera.viewW = w; camera.viewH = h; displayScale = scale; },
   });
 
   // 디버그 패널 — 슬라이더에서 viewTilesWide 변경 시 canvasCtrl 가 처리.
@@ -172,7 +180,11 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
 
   const updateCtx = (): UpdateCtx => ({
     dt: 0, now: nowSec(), map, chatActive: chat.isActive(),
-    sendAttack: (p) => net.sendAttack(p),
+    sendAttack: (p) => {
+      net.sendAttack(p);
+      // 보스 명중 체크 — boss 가 null 이면 그냥 noop.
+      boss?.tryHitFromLocal(p.x, p.y, p.dir, nowSec());
+    },
     sendPos: (p) => net.sendPos(p),
     sendHp: (hp) => net.sendHp({ id: local.id, hp }),
     sendDeath: (killerId) => net.sendDeath({ id: local.id, killerId }),
@@ -217,6 +229,9 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       if (h.hp < r.hp) {
         r.hitFlashUntil = nowSec() + 0.2;
         spawnHitBurst(r.renderX, r.renderY + BODY_OFF_Y, nowSec());
+        // 가까이서 일어난 타격일 때만 소리 (멀리서 일어난 전투 소리로 시끄러워지지 않게)
+        const dx = r.x - local.x, dy = r.y - local.y;
+        if (dx * dx + dy * dy < 400 * 400) playSfx('punch_hit');
       }
       r.hp = h.hp;
       if (r.dead && h.hp > 0) r.dead = false;
@@ -275,6 +290,14 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   window.addEventListener('beforeunload', () => {
     void net.unsubscribe();
   });
+
+  // ===== 엄마 보스 (BOSS_ENABLED 가 false 면 boss === null 이라 어떤 보스 로직도 실행 안 됨) =====
+  const boss: BossSystem | null = BOSS_ENABLED
+    ? spawnBoss(map, nowSec(), {
+        sendHp: (hp) => net.sendHp({ id: local.id, hp }),
+        sendDeath: (killerId) => net.sendDeath({ id: local.id, killerId }),
+      })
+    : null;
 
   // ===== 미니맵 =====
   const minimapCtx = ui.minimap.getContext('2d')!;
@@ -356,6 +379,9 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     updateLocalPlayer(local, ctx);
     clampToWorld(local, map);
 
+    // 보스 — 슬리퍼/AOE 진행 + 로컬에 데미지 적용 (BOSS_ENABLED off 면 boss === null 이라 자동 스킵)
+    boss?.update(dt, now, local);
+
     // 멘탈 공격(욕 채팅) — X 키 또는 멘탈공격 버튼.
     if (consumeMentalAttack()) fireMentalAttack(now);
 
@@ -427,8 +453,11 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     ctx2d.clearRect(0, 0, canvas.width, canvas.height);
     ctx2d.fillStyle = '#000';
     ctx2d.fillRect(0, 0, canvas.width, canvas.height);
-    renderFrame(ctx2d, map, camera, local, renderables, now, debug);
+    renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale });
     updateAndRenderParticles(ctx2d, camera.x, camera.y, realDt, now);
+
+    // 보스 — 게임 캔버스 위에 스프라이트/슬리퍼/AOE, HUD 캔버스 상단에 HP 바 그림.
+    boss?.draw(ctx2d, hudCtx, camera, displayScale, now);
 
     // ===== 말풍선 (DOM 오버레이) =====
     // 좌표 변환: 백버퍼(논리) px → CSS px (정수배 scale)
