@@ -27,10 +27,13 @@ input[type="text"], textarea {
 }
 
 #app {
+  /* position: fixed + 100vh — 키보드 떠도 #app 자체가 줄거나 위로 밀리지 않는다.
+     dvh 는 iOS Safari 가 키보드를 반영해 줄여버리는 케이스가 있어 사용 안 함.
+     키보드 위로 띄울 UI 는 var(--vp-bottom) 기준으로 따로 처리. */
+  position: fixed;
+  inset: 0;
   width: 100vw;
-  height: 100vh;     /* fallback */
-  height: 100dvh;    /* iOS Safari 15.4+ / Chrome 108+ — URL 바 자동 처리 */
-  position: relative;
+  height: 100vh;
   overflow: hidden;
 }
 
