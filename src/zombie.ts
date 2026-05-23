@@ -132,6 +132,26 @@ function makeId(): string {
   return `z${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// ===== 총알 vs 좀비 — 한 발 맞으면 죽음. 적중한 좀비 id 목록 반환 (호출자가 총알 제거에 사용). =====
+const ZOMBIE_BULLET_HIT_RADIUS = 22; // 시각 크기(1.2×) 보다 살짝 여유
+export function bulletHitsZombie(wave: ZombieWave, bx: number, by: number): string | null {
+  if (!wave.active) return null;
+  const R2 = ZOMBIE_BULLET_HIT_RADIUS * ZOMBIE_BULLET_HIT_RADIUS;
+  for (const z of wave.zombies) {
+    // 좀비 몸통 중심 = 발 기준 살짝 위 (그림 발 y = z.y, 몸 중심 ≈ z.y - HH)
+    const cy = z.y - ZOMBIE_BODY_HH;
+    const dx = z.x - bx;
+    const dy = cy - by;
+    if (dx * dx + dy * dy <= R2) return z.id;
+  }
+  return null;
+}
+export function killZombieById(wave: ZombieWave, id: string): boolean {
+  const before = wave.zombies.length;
+  wave.zombies = wave.zombies.filter((z) => z.id !== id);
+  return wave.zombies.length < before;
+}
+
 // ===== 플레이어 공격 vs 좀비 — 한 대 맞으면 죽음 =====
 // 누군가(로컬 or 원격) 공격 broadcast 발사 → 그 공격 hitbox 안 좀비를 자기 클라이언트에서 제거.
 // 각 클라가 자기 좀비 시뮬에서 처리하므로 (좀비 위치 약간 다를 수 있음) 시각적으로 좀

@@ -36,9 +36,11 @@ import {
 } from './gun';
 import { ensureGunSprite, drawGunOverlay, drawDamageFlash } from './render';
 import {
+  bulletHitsZombie,
   drawWaveAmbient,
   drawWaveTimer,
   drawZombies,
+  killZombieById,
   makeZombieWave,
   maybeTriggerWave,
   startWave,
@@ -467,6 +469,17 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     }
     // 총알 위치 갱신 + 만료/벽 충돌 시 제거
     stepBullets(gunState, dt, now, map);
+    // 총알 vs 좀비 — 한 발 = 즉사. 적중한 총알도 함께 제거.
+    if (zombieWave.active && gunState.bullets.length > 0) {
+      gunState.bullets = gunState.bullets.filter((b) => {
+        const zid = bulletHitsZombie(zombieWave, b.x, b.y);
+        if (zid) {
+          killZombieById(zombieWave, zid);
+          return false; // 총알 제거
+        }
+        return true;
+      });
+    }
 
     // ===== 좀비 웨이브 =====
     maybeTriggerWave(zombieWave, now, isLocalHost(), () => {
