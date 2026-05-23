@@ -17,8 +17,8 @@ function rect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
 // public/sprites/characters/00.png ~ 09.png : 각 832×3456, 64×64 프레임 × 13 cols × 54 rows.
 // LPC 생성기로 미리 만들어 둔 10개의 랜덤 캐릭터 — 입장 시 한 명당 하나 배정.
 // LPC (Liberated Pixel Cup) 표준 행 배치:
-//   4~7:   Thrust (Up/Left/Down/Right) — 8 frames (공격 → 펀치처럼 보임, 손/팔 앞으로 뻗음)
 //   8~11:  Walk    — 9 frames (0=idle, 1-8=walk cycle)
+//   12~15: Slash   (Up/Left/Down/Right) — 6 frames (옆으로 휘두름 → 훅 펀치 느낌)
 //   20:    Hurt/Die — 6 frames (마지막 프레임 = 쓰러진 자세)
 //
 // 스케일 정책: 시작 시 한 번 prescale 해서 offscreen canvas 에 캐싱.
@@ -96,8 +96,9 @@ function prescaleOne(i: number, scale: number): void {
   prescaledSheets[i] = c;
 }
 
-const ROW_WALK:   Record<Dir, number> = { up: 8, left: 9,  down: 10, right: 11 };
-const ROW_THRUST: Record<Dir, number> = { up: 4, left: 5,  down: 6,  right: 7  };
+const ROW_WALK:  Record<Dir, number> = { up: 8,  left: 9,  down: 10, right: 11 };
+const ROW_SLASH: Record<Dir, number> = { up: 12, left: 13, down: 14, right: 15 };
+const SLASH_FRAMES = 6;
 const ROW_HURT = 20;
 
 // 색을 약간 어둡게/밝게 (댄스 모듈이 사용).
@@ -144,9 +145,9 @@ export function drawCharacter(
     row = ROW_HURT;
     frame = 5;
   } else if (attackPhase >= 0) {
-    // Thrust: 8 프레임. 앞으로 손/팔이 쭉 뻗어 펀치처럼 보임.
-    row = ROW_THRUST[dir];
-    frame = Math.min(7, Math.max(0, Math.floor(attackPhase * 8)));
+    // Slash: 6 프레임. 옆으로 휘두름 → 훅 펀치 느낌.
+    row = ROW_SLASH[dir];
+    frame = Math.min(SLASH_FRAMES - 1, Math.max(0, Math.floor(attackPhase * SLASH_FRAMES)));
   } else if (moving) {
     row = ROW_WALK[dir];
     frame = 1 + Math.floor(now * 8) % 8;

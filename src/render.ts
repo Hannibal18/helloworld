@@ -12,8 +12,6 @@ import { drawCollisionDebug, drawGridDebug, drawTile, drawTileLayer, type TileMa
 import type { DebugState } from './debug';
 import type { RemotePlayer } from './types';
 
-const DOT_FONT = '"Galmuri11", "NeoDunggeunmo", monospace';
-
 export interface RenderableRemote {
   id: string;
   name: string;
@@ -249,34 +247,20 @@ function drawNameHpKills(
   ctx.fillStyle = color;
   ctx.fillRect(bx - 3, by, 2, barH);
 
-  // ===== 이름 — 발 아래. 어두운 박스 + 8방향 외곽선으로 가독성 확보. =====
-  ctx.font = `bold 11px ${DOT_FONT}`;
+  // ===== 이름 — 발 아래. 한글 시스템 고딕 14px bold + 두꺼운 검정 외곽선(stroke). =====
+  // 작은 도트 폰트에서 한글 모음이 뭉개지는 걸 막기 위해 시스템 폰트로 변경. 박스는 빼서 시야 확보.
+  ctx.font = `bold 14px 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  const labelW = ctx.measureText(label).width;
-  const padX = 3;
-  const padY = 2;
-  const boxW = Math.ceil(labelW) + padX * 2;
-  const boxH = 13;
-  const boxX = baseX - Math.floor(boxW / 2);
-  const boxY = footScreenY + 4;          // 발 바로 아래 4px gap
-  const textY = boxY + boxH - padY;      // alphabetic baseline
+  const textY = footScreenY + 16;  // 발 아래 충분히 띄움
 
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.fillRect(boxX, boxY, boxW, boxH);
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(boxX + 0.5, boxY + 0.5, boxW - 1, boxH - 1);
+  // 두꺼운 검정 외곽선 — canvas stroke 로 한 번에. lineWidth 3 = 양쪽 1.5px → 두께 충분.
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#000';
+  ctx.strokeText(label, baseX, textY);
 
-  // 8방향 외곽선 (2px 두께)
-  ctx.fillStyle = '#000';
-  for (let dx = -2; dx <= 2; dx++) {
-    for (let dy = -2; dy <= 2; dy++) {
-      if (dx === 0 && dy === 0) continue;
-      if (Math.abs(dx) === 2 && Math.abs(dy) === 2) continue;
-      ctx.fillText(label, baseX + dx, textY + dy);
-    }
-  }
   ctx.fillStyle = isLocal ? '#fff7a8' : '#ffffff';
   ctx.fillText(label, baseX, textY);
 }

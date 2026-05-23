@@ -310,11 +310,12 @@ input[type="text"], textarea {
   flex-shrink: 0;
 }
 .chat-log-item .chat-log-name {
+  /* color 는 닉네임 해시로 JS 가 inline 으로 지정 (사용자별 다른 색) */
   color: #ffd07a;
   font-weight: 700;
   margin-right: 6px;
-  font-family: "Galmuri11", "NeoDunggeunmo", monospace;
-  font-size: 12px;
+  font-family: inherit;       /* 본문과 같은 시스템 고딕 */
+  font-size: inherit;         /* 본문과 같은 13px */
 }
 
 /* ===== 킬/사망 중앙 배너 ===== */

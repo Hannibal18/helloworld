@@ -21,6 +21,28 @@ const NOTE_COLORS = ['#ff9aa8', '#ffd96a', '#9cf0ff', '#c5a4ff', '#a8f0a4', '#ff
 const SPARKLE_GLYPHS = ['✦', '✧', '✺', '•'];
 const SPARKLE_COLORS = ['#fff8a8', '#fff', '#ffd0e0', '#a8e8ff'];
 
+// 피격 임팩트 — 짧고 빠르게 사방으로 흩날리는 흰/노란 스파크.
+// worldX/Y 는 충돌 지점 (대략 몸통 중심).
+export function spawnHitBurst(worldX: number, worldY: number, now: number): void {
+  const count = 6;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+    const speed = 90 + Math.random() * 50;
+    particles.push({
+      kind: 'sparkle',
+      x: worldX,
+      y: worldY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      birth: now,
+      duration: 0.22 + Math.random() * 0.08,
+      glyph: i % 2 === 0 ? '✦' : '✧',
+      color: i % 3 === 0 ? '#fff5a0' : '#ffffff',
+      size: 9 + Math.floor(Math.random() * 4),
+    });
+  }
+}
+
 export function spawnDanceParticles(worldX: number, worldY: number, now: number): void {
   // 음표 1~2개
   const noteCount = 1 + (Math.random() < 0.35 ? 1 : 0);

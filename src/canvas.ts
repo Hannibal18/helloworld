@@ -43,6 +43,12 @@ export function setupCanvas(opts: CanvasSetupOpts): CanvasController {
     const scale = Math.max(1, cssW / targetLogicalW);
     canvas.width  = Math.round(cssW / scale);
     canvas.height = Math.round(cssH / scale);
+    // CSS 표시 크기를 backbuffer 와 같은 정수 px 로 고정.
+    // 부모 컨테이너가 분수 dvh(예: 833.45px) 일 때 image-rendering: pixelated 가
+    // backbuffer→display 비정수 스케일 처리하다가 한 줄을 빠뜨려 가로선 생기는 iOS Safari 이슈 회피.
+    // (URL 바 collapse 애니메이션 중에 선이 위로 이동하다가 dvh 안정화되면 그 위치에 멈춤)
+    canvas.style.width  = `${Math.round(canvas.width * scale)}px`;
+    canvas.style.height = `${Math.round(canvas.height * scale)}px`;
     ctx2d.imageSmoothingEnabled = false;
     onSized(canvas.width, canvas.height);
   };

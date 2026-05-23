@@ -5,6 +5,7 @@
 import { isBlocked, type TileMap } from './map';
 import type { AttackPayload, Dir, PosPayload } from './types';
 import { consumeAttack, dirFromInput, input } from './input';
+import { spawnHitBurst } from './particles';
 
 // 공격 사양 (spec §7) — LPC 표준 32px 타일 기준.
 // HP 14칸 × 10HP = 140. 공격 1대 = 20HP = 2칸. 7방 맞으면 사망.
@@ -18,7 +19,7 @@ export const HIT_LEN = 40;           // 히트박스 길이 (앞쪽)
 export const HIT_WID = 36;           // 히트박스 폭
 export const KNOCKBACK = 24;         // px
 export const IFRAME = 0.4;
-export const ATTACK_SWING_DUR = 0.18;
+export const ATTACK_SWING_DUR = 0.26;   // Slash 6프레임 — 너무 빠르면 읽히지 않아 0.18 → 0.26
 export const RESPAWN = 3.0;
 export const DANCE_DUR = 3.0;
 
@@ -237,8 +238,9 @@ export function onAttackBroadcast(p: LocalPlayer, atk: AttackPayload, ctx: Updat
   p.hp = Math.max(0, p.hp - ATTACK_DAMAGE);
   p.iFrameUntil = ctx.now + IFRAME;
   p.hitFlashUntil = ctx.now + 0.2;
-  p.hitPauseUntil = ctx.now + 0.06;   // 60ms 정지 — 타격감
-  p.shakePending = 6;                 // 화면 흔들림 강도 (px)
+  p.hitPauseUntil = ctx.now + 0.08;   // 80ms 정지 — 타격감 (60 → 80)
+  p.shakePending = 8;                 // 화면 흔들림 강도 (px, 6 → 8)
+  spawnHitBurst(p.x, p.y + BODY_OFF_Y, ctx.now);
 
   // 넉백 — 공격 방향으로 24px (충돌 체크)
   let kx = 0, ky = 0;

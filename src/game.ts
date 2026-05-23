@@ -5,6 +5,7 @@ import { connect, type Net } from './net';
 import { setupInput, consumeMentalAttack } from './input';
 import { pickInsult } from './insults';
 import { playEnterVoice } from './audio';
+import { colorFromName } from './colors';
 import { setupTouchControls } from './controls';
 import { setupCanvas } from './canvas';
 import {
@@ -14,12 +15,13 @@ import { TILE, makeCamera, triggerShake, updateCamera } from './world';
 import { getViewport } from './viewport';
 import { randomCharColor, randomCharIdx, prescaleCharacter, CHAR_H } from './sprites';
 import {
-  ATTACK_SWING_DUR,
+  ATTACK_SWING_DUR, BODY_OFF_Y,
   makeLocalPlayer, MAX_HP, onAttackBroadcast, startDance, updateLocalPlayer, clampToWorld,
   type UpdateCtx,
 } from './player';
 import { attackPhaseFor, renderFrame, type RenderableRemote } from './render';
 import { setBubble, syncBubbles } from './bubbles';
+import { spawnHitBurst, updateAndRenderParticles } from './particles';
 import { loadMap, type TileMap } from './map';
 import { setupDebugPanel, updateDebugInfo, type DebugState } from './debug';
 import type {
@@ -116,10 +118,11 @@ async function startGameAsync(name: string): Promise<void> {
   let net!: Net;
 
   // ===== 채팅 =====
+  const localChatColor = colorFromName(name);
   const chat: ChatBinding = setupChat(ui, (text) => {
     local.chatText = text;
     local.chatUntil = nowSec() + 4;
-    pushChatLog(ui, local.name, text);
+    pushChatLog(ui, local.name, text, localChatColor);
     net.sendChat({ id: local.id, text });
   });
 
@@ -191,7 +194,7 @@ async function startGameAsync(name: string): Promise<void> {
       if (!r) return;
       r.chatText = c.text;
       r.chatUntil = nowSec() + 4;
-      pushChatLog(ui, r.name, c.text);
+      pushChatLog(ui, r.name, c.text, colorFromName(r.name));
     },
     onAttack: (a: AttackPayload) => {
       const r = remotes.get(a.id);
@@ -211,7 +214,10 @@ async function startGameAsync(name: string): Promise<void> {
     onHp: (h: HpPayload) => {
       const r = remotes.get(h.id);
       if (!r) return;
-      if (h.hp < r.hp) r.hitFlashUntil = nowSec() + 0.2;
+      if (h.hp < r.hp) {
+        r.hitFlashUntil = nowSec() + 0.2;
+        spawnHitBurst(r.renderX, r.renderY + BODY_OFF_Y, nowSec());
+      }
       r.hp = h.hp;
       if (r.dead && h.hp > 0) r.dead = false;
     },
@@ -321,7 +327,7 @@ async function startGameAsync(name: string): Promise<void> {
     const text = pickInsult();
     local.chatText = text;
     local.chatUntil = now + 4;
-    pushChatLog(ui, local.name, text);
+    pushChatLog(ui, local.name, text, localChatColor);
     net.sendChat({ id: local.id, text });
   }
 
@@ -380,10 +386,16 @@ async function startGameAsync(name: string): Promise<void> {
     }
     lastPosMoving = movingNow;
 
-    // 카메라는 실제 dt 로 항상 갱신 (정지 중에도 흔들림 진행)
-    // 채팅 입력 활성/키보드 열림 → 캐릭터를 위쪽으로 옮겨 채팅바·키보드가 가린 영역 회피.
+    // 카메라는 실제 dt 로 항상 갱신 (정지 중에도 흔들림 진행).
+    // 키보드/채팅바가 화면 하단을 가리면, "보이는 영역의 정중앙"에 캐릭터가 오도록
+    // centerY 를 동적으로 줄임. 가시 비율 = 1 - bottomOffset/cssHeight (대략).
     const vp = getViewport();
-    const centerY = (chat.isActive() || vp.keyboardOpen) ? 0.32 : 0.5;
+    const cssH = canvas.clientHeight || vp.height || window.innerHeight || 1;
+    const hiddenRatio = Math.max(0, Math.min(0.6, vp.bottomOffset / cssH));
+    // 채팅 활성인데 키보드 감지 못 한 경우 (PC) → 채팅바 높이(~60px)만큼 가려졌다 치고 fallback.
+    const fallback = chat.isActive() && hiddenRatio < 0.05 ? Math.min(0.18, 60 / cssH) : 0;
+    const effectiveHidden = Math.max(hiddenRatio, fallback);
+    const centerY = (1 - effectiveHidden) / 2;  // 가시 영역의 절반
     updateCamera(camera, local.x, local.y, map.pixelW, map.pixelH, realDt, centerY);
     updateDebugInfo(debug, local.x, local.y, TILE);
 
@@ -416,6 +428,7 @@ async function startGameAsync(name: string): Promise<void> {
     ctx2d.fillStyle = '#000';
     ctx2d.fillRect(0, 0, canvas.width, canvas.height);
     renderFrame(ctx2d, map, camera, local, renderables, now, debug);
+    updateAndRenderParticles(ctx2d, camera.x, camera.y, realDt, now);
 
     // ===== 말풍선 (DOM 오버레이) =====
     // 좌표 변환: 백버퍼(논리) px → CSS px (정수배 scale)

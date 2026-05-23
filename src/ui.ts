@@ -76,13 +76,15 @@ export function updateRanking(ui: UiHandles, local: RankEntry, remotes: Iterable
 
 // 좌상단 채팅 로그 — 영구 표시, 새 메시지가 아래에 append 되며 오래된 건 위로 밀려 mask 로 페이드.
 // 최대 N개 유지 후 그 이상은 오래된 것부터 삭제 (DOM 누적 방지).
+// nameColor: 사용자별 고유 색 (colors.ts:colorFromName 으로 닉네임에서 생성).
 const MAX_CHAT_LOG = 20;
-export function pushChatLog(ui: UiHandles, name: string, text: string): void {
+export function pushChatLog(ui: UiHandles, name: string, text: string, nameColor: string): void {
   const item = document.createElement('div');
   item.className = 'chat-log-item';
   const n = document.createElement('span');
   n.className = 'chat-log-name';
   n.textContent = name;
+  n.style.color = nameColor;
   item.appendChild(n);
   item.appendChild(document.createTextNode(text));
   ui.chatLog.appendChild(item);
@@ -191,9 +193,14 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
   // 드롭으로 이미지/파일 끌어다 넣는 거 차단.
   ui.chatInput.addEventListener('drop', (e) => e.preventDefault());
 
-  // maxlength 강제 — 100 자 초과하면 자르고 caret 을 끝으로.
+  // maxlength 강제 + iOS IME 잔여 commit 차단.
   ui.chatInput.addEventListener('input', () => {
-    // 줄바꿈 노드(<br>, <div>)가 들어오면 plain text 로 정규화 — 항상 한 줄 유지.
+    // iOS 한글 IME 잔여 commit 안전망 — send 직후 300ms 내, 조합 중 아닐 때 들어오는 텍스트는
+    // 이전 메시지의 마지막 자모가 IME 내부 버퍼에서 새 입력칸으로 주입되는 케이스. 무시하고 clear.
+    if (!composing && performance.now() - recentSendAt < 300 && getText().length > 0) {
+      clear();
+      return;
+    }
     const text = getText();
     if (text.length > MAX_LEN) {
       ui.chatInput.textContent = text.slice(0, MAX_LEN);
