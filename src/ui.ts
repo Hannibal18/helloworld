@@ -99,20 +99,25 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
 
   // ===== 모바일 키보드 위로 채팅바 끌어올리기 (visualViewport) =====
   // iOS Safari, Android Chrome 둘 다 지원. 키보드가 열리면 visualViewport.height 가 줄어듦.
+  // iOS Safari URL 바 / Android Chrome URL 바 / 키보드 모두 visualViewport.height 를 줄이므로
+  // 그 차이만큼 CSS 변수로 푸시. 채팅바·조이스틱·공격버튼이 같은 변수를 참조 → 함께 위로 이동.
   const vv = window.visualViewport;
+  const touchControls = document.getElementById('touch-controls') as HTMLElement | null;
+  const adjust = () => {
+    const offset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+    document.documentElement.style.setProperty('--vp-bottom', `${offset}px`);
+    // 키보드 열림 — 조이스틱/공격버튼 임시 숨김 (사용자는 타이핑 중)
+    if (touchControls) {
+      const keyboardOpen = offset > 150;
+      touchControls.classList.toggle('typing', keyboardOpen);
+    }
+  };
   if (vv) {
-    const adjust = () => {
-      const keyboardOffset = window.innerHeight - vv.height - vv.offsetTop;
-      if (keyboardOffset > 80) {
-        // 키보드 위에 딱 붙임 (gap 0)
-        ui.chatBar.style.bottom = `${keyboardOffset}px`;
-      } else {
-        ui.chatBar.style.bottom = '';
-      }
-    };
     vv.addEventListener('resize', adjust);
     vv.addEventListener('scroll', adjust);
   }
+  adjust();
+  setTimeout(adjust, 300); // iOS 가 visualViewport 안정화에 약간 걸릴 수 있음
 
   return { isActive: () => active, focus, blur };
 }
