@@ -42,18 +42,49 @@ export function onViewportChange(cb: Listener): () => void {
   return () => { listeners.delete(cb); };
 }
 
+// ===== 디버그 오버레이 (URL ?kbdebug=1 로 활성화) =====
+// 실제 iOS 환경에서 챗바·키보드 동작 추적용. 콘솔 못 보는 폰에서 화면에 직접 출력.
+const KBDBG = typeof location !== 'undefined' && /[?&]kbdebug=1/.test(location.search);
+let dbgEl: HTMLElement | null = null;
+let dbgLog: HTMLElement | null = null;
+const dbgEvents: string[] = [];
+function dbgInit() {
+  if (!KBDBG || dbgEl) return;
+  dbgEl = document.createElement('div');
+  dbgEl.style.cssText = 'position:fixed;top:8px;right:8px;z-index:99999;background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.3 monospace;padding:6px 8px;border:1px solid #0f0;pointer-events:none;max-width:240px;white-space:pre;';
+  document.body.appendChild(dbgEl);
+  dbgLog = document.createElement('div');
+  dbgLog.style.cssText = 'margin-top:4px;color:#ff0;';
+  dbgEl.appendChild(dbgLog);
+}
+function dbgEvent(msg: string) {
+  if (!KBDBG) return;
+  const t = (performance.now() / 1000).toFixed(2);
+  dbgEvents.push(`${t} ${msg}`);
+  if (dbgEvents.length > 10) dbgEvents.shift();
+}
+export { dbgEvent };
+function dbgRender(info: { vvH: number; innerH: number; bO: number; t: number; c: number; hint: boolean; ko: boolean; cached: number }) {
+  if (!KBDBG || !dbgEl) return;
+  const header = `vvH=${info.vvH.toFixed(0)} winH=${info.innerH}\nbO=${info.bO.toFixed(0)} ko=${info.ko ? 'Y' : 'n'} cache=${info.cached.toFixed(0)}\ntgt=${info.t.toFixed(0)} cur=${info.c.toFixed(0)} ${info.hint ? '[HINT]' : ''}`;
+  dbgEl.firstChild!.textContent = header;
+  if (dbgLog) dbgLog.textContent = dbgEvents.join('\n');
+}
+
 // 사용자 제스처로 키보드가 곧 올라온다는 힌트 — vv.resize 기다리지 말고
 // 미리 챗바·컨트롤을 올려둠. iOS 키보드 애니메이션 시작과 동시에 움직이는 효과.
 export function hintKeyboardOpening(): void {
   const h = cachedKeyboardHeight > 0 ? cachedKeyboardHeight : DEFAULT_KEYBOARD_HEIGHT;
   hintOpenAt = performance.now();
   setBottomTarget(h);
+  dbgEvent(`hintOpen → ${h}`);
 }
 
 // 사용자 제스처로 키보드가 곧 닫힘 — 즉시 target=0 으로 snap.
 export function hintKeyboardClosing(): void {
-  hintOpenAt = 0; // 가드 해제 — vv 가 0 보고하면 그대로 반영
+  hintOpenAt = 0;
   setBottomTarget(0);
+  dbgEvent('hintClose');
 }
 
 export function setupViewport(): void {
@@ -84,6 +115,16 @@ export function setupViewport(): void {
       if (stick) stick.style.bottom = '';
       if (touchRight) touchRight.style.bottom = '';
     }
+    dbgRender({
+      vvH: window.visualViewport?.height ?? window.innerHeight,
+      innerH: window.innerHeight,
+      bO: current.bottomOffset,
+      t: targetBottom,
+      c: currentBottom,
+      hint: hintOpenAt > 0 && performance.now() - hintOpenAt < HINT_OPEN_WINDOW_MS,
+      ko: current.keyboardOpen,
+      cached: cachedKeyboardHeight,
+    });
   };
 
   const tick = (now: number) => {
@@ -145,6 +186,7 @@ export function setupViewport(): void {
       bottomOffset !== current.bottomOffset ||
       keyboardOpen !== current.keyboardOpen;
 
+    if (changed) dbgEvent(`vv bO=${bottomOffset.toFixed(0)}`);
     current = { width, height, bottomOffset, keyboardOpen };
 
     // 키보드 열림으로 판정될 때마다 높이 캐시 갱신 — 다음 오픈 시 즉시 그 높이로 점프.
@@ -189,17 +231,21 @@ export function setupViewport(): void {
   //   target=0 으로 snap → 키보드 사라지는 모션과 같이 챗바도 바로 내려간다.
   //   (게임 화면에 다른 입력이 없어서 focusout 은 항상 키보드 닫힘을 의미)
   window.addEventListener('focusin', () => {
+    dbgEvent('focusin');
     update();
     setTimeout(update, 120);
     setTimeout(update, 300);
     setTimeout(update, 600);
   });
   window.addEventListener('focusout', () => {
+    dbgEvent('focusout');
     setTarget(0);
     // 안전망: 뒤늦게 vv 가 다른 값을 보고하면 맞춰 갱신
     setTimeout(update, 300);
   });
 
+  dbgInit();
+  dbgEvent('setup');
   update();
   setTimeout(update, 300);
 }

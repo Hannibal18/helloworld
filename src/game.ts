@@ -12,7 +12,7 @@ import {
   setupChat, setRosterCount, setKills, showGame, uiHandles, pushChatLog, showBanner, updateRanking, type ChatBinding,
 } from './ui';
 import { TILE, makeCamera, triggerShake, updateCamera } from './world';
-import { getViewport, hintKeyboardClosing } from './viewport';
+import { getViewport, hintKeyboardClosing, dbgEvent } from './viewport';
 import { randomCharColor, randomCharIdx, prescaleCharacter, CHAR_H } from './sprites';
 import {
   ATTACK_SWING_DUR, BODY_OFF_Y,
@@ -135,13 +135,14 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
 
   // 게임 화면(캔버스) 탭 → 채팅 입력 포커스 해제 → 모바일 키보드 닫힘.
   // hintKeyboardClosing 으로 vv.resize 대기 없이 챗바·컨트롤을 즉시 아래로 snap.
+  // activeElement 체크 없이 항상 hint — 잘못된 케이스라도 setTarget(0) 은 no-op 에 가깝다.
   canvas.addEventListener('pointerdown', (e) => {
     const target = e.target as HTMLElement | null;
     if (target && target.closest('#chat-bar')) return;
-    if (document.activeElement === ui.chatInput) {
-      hintKeyboardClosing();
-      ui.chatInput.blur();
-    }
+    const wasFocused = document.activeElement === ui.chatInput;
+    dbgEvent(`canvas pointerdown focused=${wasFocused ? 'Y' : 'n'}`);
+    hintKeyboardClosing();
+    if (wasFocused) ui.chatInput.blur();
   });
 
   // ===== 원격 플레이어 맵 =====
