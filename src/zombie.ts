@@ -16,7 +16,7 @@
 import type { TileMap } from './map';
 import type { Camera } from './world';
 import type { LocalPlayer } from './player';
-import { ATTACK_DAMAGE as PLAYER_ATTACK_DAMAGE, BODY_HH, BODY_HW, BODY_OFF_Y, SPEED as PLAYER_SPEED, attackerHitbox } from './player';
+import { ATTACK_COOLDOWN as PLAYER_ATTACK_COOLDOWN, ATTACK_DAMAGE as PLAYER_ATTACK_DAMAGE, BODY_HH, BODY_HW, BODY_OFF_Y, SPEED as PLAYER_SPEED, attackerHitbox } from './player';
 import type { AttackPayload, Dir, RemotePlayer } from './types';
 
 export const ZOMBIE_WAVE_DURATION_SEC = 120;     // 한 웨이브 길이 (2분)
@@ -24,15 +24,16 @@ export const ZOMBIE_WAVE_INTERVAL_SEC = 300;     // 웨이브 간 간격 (5분: 
 const INITIAL_SPAWN = 8;
 const SPAWN_INTERVAL_SEC = 4;
 const MAX_ZOMBIES = 30;
-const ZOMBIE_SPEED_PX = PLAYER_SPEED * 0.7;      // 플레이어 속도의 70% (= 84 px/s)
-const ZOMBIE_BODY_HW = 10;                       // 캐릭터 8 의 1.2×
-const ZOMBIE_BODY_HH = 17;                       // 캐릭터 14 의 1.2×
-const ATTACK_RANGE_PX = 22;                      // 닿았다고 판정할 거리 (1.2× 스케일에 맞춰 18→22)
+const ZOMBIE_SPEED_PX = PLAYER_SPEED * 0.3;      // 플레이어 속도의 30% (= 36 px/s)
+const ZOMBIE_BODY_HW = BODY_HW;                  // 캐릭터와 동일 크기
+const ZOMBIE_BODY_HH = BODY_HH;
+const ATTACK_RANGE_PX = 18;                      // 닿았다고 판정할 거리
 const ATTACK_DAMAGE = Math.round(PLAYER_ATTACK_DAMAGE / 2);  // 캐릭터 펀치의 1/2 (= 10)
-const ATTACK_COOLDOWN_SEC = 1.2;
+// 공격 속도 = 플레이어 공격 속도의 30% → 쿨다운 = 플레이어 쿨다운 / 0.3
+const ATTACK_COOLDOWN_SEC = PLAYER_ATTACK_COOLDOWN / 0.3;    // ≈ 1.67s
 const ATTACK_MOTION_SEC = 0.45;                  // spellcast 1회 모션 길이
 // 좀비 hitbox 반경 — 플레이어 공격이 좀비를 죽이는 판정용. 좀비 몸통 중심 기준.
-const ZOMBIE_HIT_RADIUS = 16;
+const ZOMBIE_HIT_RADIUS = 14;
 
 // LPC 행
 const ROW_SPELL: Record<Dir, number> = { up: 0, left: 1, down: 2, right: 3 };
@@ -133,7 +134,7 @@ function makeId(): string {
 }
 
 // ===== 총알 vs 좀비 — 한 발 맞으면 죽음. 적중한 좀비 id 목록 반환 (호출자가 총알 제거에 사용). =====
-const ZOMBIE_BULLET_HIT_RADIUS = 22; // 시각 크기(1.2×) 보다 살짝 여유
+const ZOMBIE_BULLET_HIT_RADIUS = 18; // 시각 크기 + 약간 여유
 export function bulletHitsZombie(wave: ZombieWave, bx: number, by: number): string | null {
   if (!wave.active) return null;
   const R2 = ZOMBIE_BULLET_HIT_RADIUS * ZOMBIE_BULLET_HIT_RADIUS;
@@ -246,13 +247,13 @@ function dirFromVec(dx: number, dy: number): Dir {
 }
 
 // ===== 렌더 =====
-// camera 좌표계 사용. 캐릭터 prescale (0.5) 의 1.2배 = 0.6 으로 그림.
+// camera 좌표계 사용. 캐릭터와 동일한 prescale (0.5) 로 그림.
 export function drawZombies(
   ctx: CanvasRenderingContext2D,
   camera: Camera,
   wave: ZombieWave,
   now: number,
-  charScale: number = 0.6,
+  charScale: number = 0.5,
 ): void {
   if (!wave.active || !sheetReady) return;
   ctx.save();
