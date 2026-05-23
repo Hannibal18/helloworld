@@ -187,12 +187,14 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
   }
   p.moving = moving;
 
-  // 공격 — 총 보유 중이면 사격, 아니면 펀치.
+  // 공격 — 총 보유 중이면 사격(누르고 있으면 자동 연사), 아니면 펀치(단발).
   const wantsAttack = consumeAttack();
-  if (wantsAttack && !chatActive) {
-    const hasGun = now < p.gunUntil;
+  const hasGun = now < p.gunUntil;
+  if (!chatActive) {
     if (hasGun) {
-      if (now - p.lastShotAt >= GUN_FIRE_COOLDOWN_SEC) {
+      // attackHeld 도 트리거 → 버튼 누르고 있으면 쿨다운마다 자동 사격
+      const wantsShoot = wantsAttack || input.attackHeld;
+      if (wantsShoot && now - p.lastShotAt >= GUN_FIRE_COOLDOWN_SEC) {
         p.lastShotAt = now;
         // 8방향 사격: 움직이는 중이면 input 방향, 정지 중이면 마지막 바라본 방향(4방향).
         let nx = 0, ny = 0;
@@ -210,13 +212,13 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
             case 'down':  nx = 0; ny =  1; break;
           }
         }
-        // 총구 위치는 정규화된 방향으로 살짝 앞쪽.
         const muzzleOff = 10;
         const mx = p.x + nx * muzzleOff;
         const my = (p.y + BODY_OFF_Y) + ny * muzzleOff;
         ctx.fireBullet(mx, my, nx * BULLET_SPEED, ny * BULLET_SPEED);
       }
-    } else if (now >= p.attackCooldownUntil) {
+    } else if (wantsAttack && now >= p.attackCooldownUntil) {
+      // 펀치 — 단발 (edge-trigger 만 인정)
       p.attackCooldownUntil = now + ATTACK_COOLDOWN;
       p.attackUntil = now + ATTACK_SWING_DUR;
       ctx.sendAttack({ id: p.id, x: p.x, y: p.y, dir: p.dir });

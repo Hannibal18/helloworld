@@ -9,12 +9,15 @@ export interface InputState {
   // 스틱 raw vector (모바일에서 0~1 부드러운 값, PC는 정수 ±1)
   stickX: number;
   stickY: number;
-  attackQueued: boolean; // 다음 게임 틱에서 소비
+  attackQueued: boolean; // 다음 게임 틱에서 소비 (edge-trigger: 펀치 단발용)
+  attackHeld: boolean;   // 공격 버튼/키 누르고 있는 동안 true (총 자동 사격용)
   mentalAttackQueued: boolean; // 멘탈 공격(욕 채팅) — 다음 틱에서 소비
 }
 
 export const input: InputState = {
-  moveX: 0, moveY: 0, stickX: 0, stickY: 0, attackQueued: false, mentalAttackQueued: false,
+  moveX: 0, moveY: 0, stickX: 0, stickY: 0,
+  attackQueued: false, attackHeld: false,
+  mentalAttackQueued: false,
 };
 
 let isChatActive: () => boolean = () => false;
@@ -45,6 +48,7 @@ export function setupInput(opts: { isChatActive: () => boolean }): void {
     }
     if (k === ' ') {
       if (!keys.has(' ')) input.attackQueued = true;
+      input.attackHeld = true;
       keys.add(' ');
       return;
     }
@@ -60,6 +64,7 @@ export function setupInput(opts: { isChatActive: () => boolean }): void {
   window.addEventListener('keyup', (e) => {
     const k = e.key.toLowerCase();
     keys.delete(k);
+    if (k === ' ') input.attackHeld = false;
     if (isChatActive()) return;
     recomputeMoveFromKeys();
   });
@@ -68,14 +73,18 @@ export function setupInput(opts: { isChatActive: () => boolean }): void {
   window.addEventListener('blur', () => {
     keys.clear();
     input.moveX = 0; input.moveY = 0; input.stickX = 0; input.stickY = 0;
+    input.attackHeld = false;
   });
 
-  // 마우스 클릭 = 공격 (캔버스 위에서만)
+  // 마우스 클릭 = 공격 (캔버스 위에서만). 누르고 있는 동안 총 자동 사격.
   const canvas = document.getElementById('canvas') as HTMLCanvasElement | null;
   if (canvas) {
     canvas.addEventListener('mousedown', (e) => {
       if (isChatActive()) return;
-      if (e.button === 0) input.attackQueued = true;
+      if (e.button === 0) { input.attackQueued = true; input.attackHeld = true; }
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) input.attackHeld = false;
     });
   }
 }
@@ -104,10 +113,16 @@ export function setStick(sx: number, sy: number): void {
   input.moveY = Math.abs(sy) < dead ? 0 : Math.sign(sy);
 }
 
-// 가상 공격 버튼이 호출.
+// 가상 공격 버튼이 호출 (touchstart).
 export function pressAttack(): void {
   if (isChatActive()) return;
   input.attackQueued = true;
+  input.attackHeld = true;
+}
+
+// 가상 공격 버튼 touchend — 자동 사격 해제용.
+export function releaseAttack(): void {
+  input.attackHeld = false;
 }
 
 // 가상 멘탈 공격 버튼이 호출.
