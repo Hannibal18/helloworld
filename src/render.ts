@@ -425,3 +425,21 @@ export function drawGunOverlay(
 
   ctx.restore();
 }
+
+// ===== 데미지 플래시 오버레이 =====
+// HP 감소 직후 화면 전체에 짧은 붉은 번쩍임. damageFlashUntil 만료까지 0.3초.
+export function drawDamageFlash(
+  ctx: CanvasRenderingContext2D,
+  damageFlashUntil: number,
+  now: number,
+): void {
+  const remain = damageFlashUntil - now;
+  if (remain <= 0) return;
+  const total = 0.3;
+  const t = Math.max(0, Math.min(1, remain / total)); // 1 → 0
+  const alpha = t * 0.45;                              // 0 → 0.45
+  ctx.save();
+  ctx.fillStyle = `rgba(255, 30, 30, ${alpha})`;
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.restore();
+}

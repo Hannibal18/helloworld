@@ -76,6 +76,8 @@ export interface LocalPlayer {
   gunUntil: number;
   // 마지막 사격 시각 (사격 쿨다운 체크용).
   lastShotAt: number;
+  // 화면 붉은 플래시 종료 시각 — HP 감소(어떤 출처든) 감지 시 set.
+  damageFlashUntil: number;
 }
 
 export function makeLocalPlayer(id: string, name: string, color: string, charIdx: number, spawn: { x: number; y: number }): LocalPlayer {
@@ -97,6 +99,7 @@ export function makeLocalPlayer(id: string, name: string, color: string, charIdx
     danceUntil: 0, danceStart: 0,
     hitPauseUntil: 0, shakePending: 0,
     gunUntil: 0, lastShotAt: 0,
+    damageFlashUntil: 0,
   };
 }
 

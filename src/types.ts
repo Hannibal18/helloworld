@@ -74,6 +74,11 @@ export interface BulletPayload {
   vy: number;       // px/sec
 }
 
+// 좀비 웨이브 시작 — 호스트가 broadcast. 받는 즉시 각 클라이언트가 자기 좀비 시뮬 시작.
+export interface ZombieWaveStartPayload {
+  startedAt: number; // 호스트 기준 sec (참고용 — 실제 클라이언트는 자기 now 사용)
+}
+
 // 원격 플레이어의 시각용 상태 (수신 측에서 유지)
 export interface RemotePlayer {
   id: string;

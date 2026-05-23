@@ -34,10 +34,20 @@ import {
   type GunDrop,
   type GunState,
 } from './gun';
-import { ensureGunSprite, drawGunOverlay } from './render';
+import { ensureGunSprite, drawGunOverlay, drawDamageFlash } from './render';
+import {
+  drawWaveAmbient,
+  drawWaveTimer,
+  drawZombies,
+  makeZombieWave,
+  maybeTriggerWave,
+  startWave,
+  updateWave,
+  type ZombieWave,
+} from './zombie';
 import type {
   AttackPayload, BulletPayload, ChatPayload, DeathPayload, GunDropPayload, GunPickupPayload,
-  HpPayload, PosPayload, PresenceMeta, RemotePlayer,
+  HpPayload, PosPayload, PresenceMeta, RemotePlayer, ZombieWaveStartPayload,
 } from './types';
 
 const POS_SEND_INTERVAL = 1 / 10;
@@ -209,6 +219,15 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     addBullet(gunState, p.bid, p.ownerId, p.ownerName, p.x, p.y, p.vx, p.vy, nowSec());
   };
 
+  // ===== 좀비 웨이브 =====
+  const zombieWave: ZombieWave = makeZombieWave(nowSec());
+  const applyZombieWaveStart = (_p: ZombieWaveStartPayload) => {
+    const now = nowSec();
+    startWave(zombieWave, now, map);
+    showBanner(ui, 'info', '🧟 좀비의 습격이 시작됐습니다');
+    pushChatLog(ui, '🧟 시스템', '좀비 타임 — 2분간 살아남아라', '#ff5d5d');
+  };
+
   const updateCtx = (): UpdateCtx => ({
     dt: 0, now: nowSec(), map, chatActive: false,
     sendAttack: (p) => {
@@ -274,6 +293,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     onGunDrop: (p: GunDropPayload) => applyGunDrop(p, nowSec()),
     onGunPickup: (p: GunPickupPayload) => applyGunPickup(p),
     onBullet: (p: BulletPayload) => applyBullet(p),
+    onZombieWaveStart: (p: ZombieWaveStartPayload) => applyZombieWaveStart(p),
     onDeath: (d: DeathPayload) => {
       const now = nowSec();
       const r = remotes.get(d.id);
@@ -397,6 +417,8 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   let posTimer = 0;
   let lastPosMoving = false;
   let heartbeatTimer = 0;
+  // HP 감소 감지 → 데미지 플래시. 매 프레임 비교.
+  let prevLocalHp = local.hp;
 
   function loop(t: number): void {
     const realDt = Math.min(0.05, (t - lastT) / 1000);
@@ -440,6 +462,36 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     }
     // 총알 위치 갱신 + 만료/벽 충돌 시 제거
     stepBullets(gunState, dt, now, map);
+
+    // ===== 좀비 웨이브 =====
+    maybeTriggerWave(zombieWave, now, isLocalHost(), () => {
+      // 호스트가 트리거 → 자기도 즉시 시작 + broadcast
+      applyZombieWaveStart({ startedAt: now });
+      net.sendZombieWaveStart({ startedAt: now });
+    });
+    updateWave(zombieWave, dt, now, map, local, remotes.values(), {
+      onLocalHit: (dmg) => {
+        if (local.dead || now < local.iFrameUntil) return;
+        local.hp = Math.max(0, local.hp - dmg);
+        local.iFrameUntil = now + 0.25;
+        local.hitFlashUntil = now + 0.2;
+        spawnHitBurst(local.x, local.y + BODY_OFF_Y, now);
+        net.sendHp({ id: local.id, hp: local.hp });
+        if (local.hp <= 0) {
+          local.dead = true;
+          local.gunUntil = 0;
+          local.deadUntil = now + 4;
+          local.deaths += 1;
+          net.sendDeath({ id: local.id, killerId: null });
+          showBanner(ui, 'death', '쓰러졌다…', '좀비에게 당함');
+          refreshRanking();
+        }
+      },
+    });
+
+    // HP 감소 감지 → 화면 붉은 플래시 (출처 무관)
+    if (local.hp < prevLocalHp) local.damageFlashUntil = now + 0.3;
+    prevLocalHp = local.hp;
     // 자기 몸통(BODY AABB) 에 들어온 총알(자기 자신이 쏜 것 제외) 처리
     if (!local.dead && now >= local.iFrameUntil) {
       const me = { x0: local.x - BODY_HW, x1: local.x + BODY_HW, y0: local.y + BODY_OFF_Y - BODY_HH, y1: local.y + BODY_OFF_Y + BODY_HH };
@@ -539,7 +591,17 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     }
     drawGunOverlay(ctx2d, camera, gunState.drops.values(), gunState.bullets, heldOwners, now);
 
+    // 좀비 — 캐릭터 위에 그림 (Y-소트는 v1 단순화로 캐릭터 위쪽 고정)
+    drawZombies(ctx2d, camera, zombieWave, now);
+    // 좀비 타임 ambient — 빨간 비네팅 + 박동. 캐릭터/좀비 다 그린 후 위에 덧칠.
+    drawWaveAmbient(ctx2d, zombieWave, now);
+    // 좀비 타이머 — HUD 캔버스 화면 중앙 상단
+    drawWaveTimer(hudCtx, zombieWave, now);
+
     updateAndRenderParticles(ctx2d, camera.x, camera.y, realDt, now);
+
+    // 데미지 플래시 — 최상단 (다른 모든 오버레이 위에 빨간 번쩍임)
+    drawDamageFlash(ctx2d, local.damageFlashUntil, now);
 
     // 보스 — 게임 캔버스 위에 스프라이트/슬리퍼/AOE, HUD 캔버스 상단에 HP 바 그림.
     boss?.draw(ctx2d, hudCtx, camera, displayScale, now);

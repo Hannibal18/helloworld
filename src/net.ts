@@ -10,6 +10,7 @@ import type {
   HpPayload,
   PosPayload,
   PresenceMeta,
+  ZombieWaveStartPayload,
 } from './types';
 
 // ===== 타입 가드 =====
@@ -41,6 +42,7 @@ export interface NetHandlers {
   onGunDrop: (p: GunDropPayload) => void;
   onGunPickup: (p: GunPickupPayload) => void;
   onBullet: (p: BulletPayload) => void;
+  onZombieWaveStart: (p: ZombieWaveStartPayload) => void;
   onPresenceSync: (members: PresenceMeta[]) => void;
   onPresenceJoin: (members: PresenceMeta[]) => void;
   onPresenceLeave: (members: PresenceMeta[]) => void;
@@ -57,6 +59,7 @@ export interface Net {
   sendGunDrop: (p: GunDropPayload) => void;
   sendGunPickup: (p: GunPickupPayload) => void;
   sendBullet: (p: BulletPayload) => void;
+  sendZombieWaveStart: (p: ZombieWaveStartPayload) => void;
   unsubscribe: () => Promise<void>;
 }
 
@@ -86,6 +89,7 @@ export function connect(meta: PresenceMeta, handlers: NetHandlers): Net {
     .on('broadcast', { event: 'gun_drop' },   ({ payload }) => handlers.onGunDrop(payload as GunDropPayload))
     .on('broadcast', { event: 'gun_pickup' }, ({ payload }) => handlers.onGunPickup(payload as GunPickupPayload))
     .on('broadcast', { event: 'bullet' },     ({ payload }) => handlers.onBullet(payload as BulletPayload))
+    .on('broadcast', { event: 'zombie_wave_start' }, ({ payload }) => handlers.onZombieWaveStart(payload as ZombieWaveStartPayload))
     .on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState() as Record<string, readonly unknown[]>;
       const all: PresenceMeta[] = [];
@@ -116,9 +120,10 @@ export function connect(meta: PresenceMeta, handlers: NetHandlers): Net {
     sendAttack:    (p) => send('attack', p),
     sendHp:        (p) => send('hp', p),
     sendDeath:     (p) => send('death', p),
-    sendGunDrop:   (p) => send('gun_drop', p),
-    sendGunPickup: (p) => send('gun_pickup', p),
-    sendBullet:    (p) => send('bullet', p),
+    sendGunDrop:        (p) => send('gun_drop', p),
+    sendGunPickup:      (p) => send('gun_pickup', p),
+    sendBullet:         (p) => send('bullet', p),
+    sendZombieWaveStart:(p) => send('zombie_wave_start', p),
     unsubscribe: async () => {
       try { await channel.untrack(); } catch { /* ignore */ }
       await channel.unsubscribe();
