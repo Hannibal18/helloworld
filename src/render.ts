@@ -225,7 +225,7 @@ function drawRemote(ctx: CanvasRenderingContext2D, camera: Camera, r: Renderable
 function drawNameHpKills(
   ctx: CanvasRenderingContext2D, camera: Camera, displayScale: number,
   worldX: number, worldY: number,
-  name: string, color: string,
+  name: string, _color: string,
   hp: number, maxHp: number, kills: number,
   isLocal: boolean,
   dancing: boolean,
@@ -254,10 +254,6 @@ function drawNameHpKills(
     ctx.fillStyle = i < filledSegs ? fillColor : '#3a1212';
     ctx.fillRect(segX, by, segW, barH);
   }
-  // 캐릭터 컬러 칩 — HP 바 왼쪽
-  ctx.fillStyle = color;
-  ctx.fillRect(bx - 5, by, 3, barH);
-
   // ===== 이름 — 발 아래. CSS px 기준 크기. HUD 캔버스라 1:1 픽셀에 안티앨리어싱 살아있음. =====
   ctx.font = `600 14px 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif`;
   ctx.textAlign = 'center';
