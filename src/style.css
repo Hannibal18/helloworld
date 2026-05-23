@@ -394,8 +394,8 @@ input[type="text"], textarea {
 }
 
 /* ===== 채팅 바 (카카오톡 스타일) =====
-   #app 이 100dvh + viewport meta 의 'interactive-widget=resizes-content' 덕에
-   키보드 열리면 dvh 자체가 줄어든다 → 채팅바는 그냥 #app 의 BOTTOM 에 absolute 로 붙이면 자동으로 키보드 위. */
+   viewport meta 에 interactive-widget 옵션 없음(기본 resizes-visual) → 키보드가 떠도 layout viewport(#app) 는 그대로.
+   #app 안의 게임 캔버스도 그대로 유지된다. 키보드 위로 띄워야 하는 요소들만 --vp-bottom 만큼 올려준다. */
 .chat-bar {
   position: absolute;
   left: 50%;
@@ -412,9 +412,9 @@ input[type="text"], textarea {
   box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.12);
   /* transition 없음 — 키보드 애니메이션 동안 발생하는 변화에 따라가다가 시각적으로 튀는 걸 막음 */
 }
-/* 키보드 열림 — home indicator 가 키보드에 가려지므로 safe-area 제거 */
+/* 키보드 열림 — layout viewport 는 그대로이므로 채팅바를 키보드 위로 직접 올린다 */
 .keyboard-open .chat-bar {
-  bottom: 0;
+  bottom: var(--vp-bottom, 0px);
 }
 @media (min-width: 600px) {
   .chat-bar {
@@ -519,6 +519,12 @@ input[type="text"], textarea {
   align-items: flex-end;
   pointer-events: none;
   transition: opacity 0.15s;
+}
+
+/* 키보드 열림 — 게임 화면(#app)은 그대로, 조이스틱/공격/멘탈만 키보드 위로 올라가도록 */
+.keyboard-open .stick,
+.keyboard-open .touch-right {
+  bottom: calc(64px + var(--vp-bottom, 0px));
 }
 
 .touch-btn {

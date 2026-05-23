@@ -17,3 +17,8 @@ dist/
 
 # Claude Code 에이전트 상태
 .claude/
+
+# scripts/extract-*.mjs 로 생성되는 진단용 비교 이미지 (재생성 가능)
+/broken-chars.png
+/impact-frames.png
+/walk-vs-thrust.png

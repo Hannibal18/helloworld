@@ -59,8 +59,13 @@ tombstone.src = '/sprites/tombstone.png';
 let tombstoneReady = false;
 tombstone.onload = () => { tombstoneReady = true; };
 
+// 01, 02, 06, 07 은 LPC thrust 프레임에 몸 레이어가 빠져 있어 펀치 시 머리만 보임.
+// (scripts/extract-broken-chars.mjs 로 확인) 추후 시트 재생성 전까지 랜덤 풀에서 제외.
+const USABLE_CHAR_INDICES: readonly number[] = [0, 3, 4, 5, 8, 9];
+
 export function randomCharIdx(): number {
-  return Math.floor(Math.random() * CHARACTER_COUNT);
+  const i = Math.floor(Math.random() * USABLE_CHAR_INDICES.length);
+  return USABLE_CHAR_INDICES[i];
 }
 
 // 인트로 미리보기용 — prescale 전이라도 원본 시트에서 직접 한 프레임 그려준다.
