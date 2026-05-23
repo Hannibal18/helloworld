@@ -381,91 +381,6 @@ input[type="text"], textarea {
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1.0); }
 }
 
-/* ===== 채팅 바 (카카오톡 스타일) =====
-   viewport meta 에 interactive-widget 옵션 없음(기본 resizes-visual) → 키보드가 떠도 layout viewport(#app) 는 그대로.
-   #app 안의 게임 캔버스도 그대로 유지된다. 키보드 위로 띄워야 하는 요소들만 --vp-bottom 만큼 올려준다. */
-.chat-bar {
-  position: absolute;
-  left: 50%;
-  bottom: env(safe-area-inset-bottom);
-  transform: translateX(-50%);
-  width: min(560px, 100vw);
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 16px;
-  background: rgba(255, 255, 255, 0.97);
-  border-radius: 0;
-  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.12);
-  /* bottom 트랜지션 없음 — viewport.ts 의 rAF 보간이 매 프레임 직접 갱신하므로
-     CSS transition 을 걸면 둘이 충돌해 오히려 끊겨 보인다. */
-}
-/* 키보드 열림 — layout viewport 는 그대로이므로 채팅바를 키보드 위로 직접 올린다 */
-.keyboard-open .chat-bar {
-  bottom: var(--vp-bottom, 0px);
-}
-@media (min-width: 600px) {
-  .chat-bar {
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    border-radius: 24px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-    width: min(560px, 92vw);
-  }
-}
-.chat-input {
-  flex: 1;
-  min-width: 0;
-  /* box-sizing: border-box (* 룰) 와 line/padding 합산 잘림 회피용 explicit 픽셀 — 한글 디센더 안전 */
-  height: 44px;
-  padding: 10px 0;
-  font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif;
-  font-size: 15px;
-  font-weight: 400;
-  line-height: 24px;
-  background: transparent;
-  color: #1a1a1a;
-  border: none;
-  outline: none;
-  white-space: nowrap;  /* 가로 한 줄 강제 */
-  overflow-x: auto;     /* 긴 텍스트는 가로 스크롤 */
-  overflow-y: hidden;
-  letter-spacing: 0;
-  -webkit-user-select: text;
-  user-select: text;
-  cursor: text;
-  word-break: keep-all;
-}
-/* contenteditable placeholder — 비어 있을 때만 data-placeholder 텍스트 표시 */
-.chat-input:empty::before {
-  content: attr(data-placeholder);
-  color: #aaa;
-  pointer-events: none;
-}
-/* 전송 버튼 — 입력란 우측에 붙어 한 손 엄지 닿기 쉽게 */
-.chat-send-btn {
-  flex: 0 0 auto;
-  margin-left: 6px;
-  padding: 8px 14px;
-  height: 34px;
-  font: inherit;
-  font-family: "Galmuri11", "NeoDunggeunmo", monospace;
-  font-size: 13px;
-  letter-spacing: 2px;
-  color: #fff7a8;
-  background: linear-gradient(180deg, #c8a04a, #8a6232);
-  border: 2px solid #5d4220;
-  border-radius: 18px;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-.chat-send-btn:active { transform: translateY(1px); }
-.chat-send-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 /* ===== 모바일 가상 컨트롤 ===== */
 .touch-controls {
   position: absolute;
@@ -508,12 +423,6 @@ input[type="text"], textarea {
   align-items: flex-end;
   pointer-events: none;
   transition: opacity 0.15s;
-}
-
-/* 키보드 열림 — 게임 화면(#app)은 그대로, 조이스틱/공격/멘탈만 키보드 위로 올라가도록 */
-.keyboard-open .stick,
-.keyboard-open .touch-right {
-  bottom: calc(64px + var(--vp-bottom, 0px));
 }
 
 .touch-btn {

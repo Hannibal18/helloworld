@@ -52,18 +52,6 @@
         <!-- 킬/사망 중앙 배너 -->
         <div id="banner" class="banner"></div>
 
-        <!-- 채팅 입력창 (카카오톡 스타일) — contenteditable div 사용:
-             1) iOS 의 input/textarea 자동 스크롤 (포커스 시 페이지 튀어오름) 회피
-             2) iOS 의 키보드 위 accessory toolbar (이전/다음/완료) 자동 표시 회피
-             3) iOS 연락처/비밀번호 autofill 대상 아님 -->
-        <div id="chat-bar" class="chat-bar">
-          <div id="chat-input" class="chat-input" contenteditable="true" role="textbox"
-               aria-label="메시지 입력" data-placeholder="바르고 고운말을 사용해주세요"
-               inputmode="text" enterkeyhint="send"
-               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></div>
-          <button id="chat-send" class="chat-send-btn" type="button" aria-label="전송">전송</button>
-        </div>
-
         <!-- 모바일 가상 컨트롤 -->
         <div id="touch-controls" class="touch-controls hidden">
           <div id="stick" class="stick">

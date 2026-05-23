@@ -9,10 +9,9 @@ import { colorFromName } from './colors';
 import { setupTouchControls } from './controls';
 import { setupCanvas } from './canvas';
 import {
-  setupChat, setRosterCount, setKills, showGame, uiHandles, pushChatLog, showBanner, updateRanking, type ChatBinding,
+  setRosterCount, setKills, showGame, uiHandles, pushChatLog, showBanner, updateRanking,
 } from './ui';
 import { TILE, makeCamera, triggerShake, updateCamera } from './world';
-import { getViewport, hintKeyboardClosing, dbgEvent } from './viewport';
 import { randomCharColor, randomCharIdx, prescaleCharacter, CHAR_H } from './sprites';
 import {
   ATTACK_SWING_DUR, BODY_OFF_Y,
@@ -120,30 +119,18 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   // 네트워크 핸들 (forward — closure 캡처용)
   let net!: Net;
 
-  // ===== 채팅 =====
+  // ===== 채팅 broadcast — 멘탈 공격(욕) 자동 송신 전용 =====
+  // 직접 타이핑 UI 는 제거됨. 로컬에서 fireMentalAttack 이 텍스트를 만들어
+  // local.chatText 에 박고 sendChat 으로 다른 플레이어에게 broadcast.
   const localChatColor = colorFromName(name);
-  const chat: ChatBinding = setupChat(ui, (text) => {
-    local.chatText = text;
-    local.chatUntil = nowSec() + 4;
+  const broadcastLocalChat = (text: string) => {
     pushChatLog(ui, local.name, text, localChatColor);
     net.sendChat({ id: local.id, text });
-  });
+  };
 
   // ===== 입력 =====
-  setupInput({ isChatActive: () => chat.isActive() });
+  setupInput({ isChatActive: () => false });
   setupTouchControls();
-
-  // 게임 화면(캔버스) 탭 → 채팅 입력 포커스 해제 → 모바일 키보드 닫힘.
-  // hintKeyboardClosing 으로 vv.resize 대기 없이 챗바·컨트롤을 즉시 아래로 snap.
-  // activeElement 체크 없이 항상 hint — 잘못된 케이스라도 setTarget(0) 은 no-op 에 가깝다.
-  canvas.addEventListener('pointerdown', (e) => {
-    const target = e.target as HTMLElement | null;
-    if (target && target.closest('#chat-bar')) return;
-    const wasFocused = document.activeElement === ui.chatInput;
-    dbgEvent(`canvas pointerdown focused=${wasFocused ? 'Y' : 'n'}`);
-    hintKeyboardClosing();
-    if (wasFocused) ui.chatInput.blur();
-  });
 
   // ===== 원격 플레이어 맵 =====
   const remotes = new Map<string, RemotePlayer>();
@@ -179,7 +166,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   const refreshRanking = () => updateRanking(ui, local, remotes.values());
 
   const updateCtx = (): UpdateCtx => ({
-    dt: 0, now: nowSec(), map, chatActive: chat.isActive(),
+    dt: 0, now: nowSec(), map, chatActive: false,
     sendAttack: (p) => {
       net.sendAttack(p);
       // 보스 명중 체크 — boss 가 null 이면 그냥 noop.
@@ -341,14 +328,13 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   const MENTAL_COOLDOWN = 0.4;
   let mentalCooldownUntil = 0;
   function fireMentalAttack(now: number): void {
-    if (chat.isActive() || local.dead) return;
+    if (local.dead) return;
     if (now < mentalCooldownUntil) return;
     mentalCooldownUntil = now + MENTAL_COOLDOWN;
     const text = pickInsult();
     local.chatText = text;
     local.chatUntil = now + 4;
-    pushChatLog(ui, local.name, text, localChatColor);
-    net.sendChat({ id: local.id, text });
+    broadcastLocalChat(text);
   }
 
   // ===== 루프 =====
@@ -410,16 +396,9 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     lastPosMoving = movingNow;
 
     // 카메라는 실제 dt 로 항상 갱신 (정지 중에도 흔들림 진행).
-    // 키보드/채팅바가 화면 하단을 가리면, "보이는 영역의 정중앙"에 캐릭터가 오도록
-    // centerY 를 동적으로 줄임. 가시 비율 = 1 - bottomOffset/cssHeight (대략).
-    const vp = getViewport();
-    const cssH = canvas.clientHeight || vp.height || window.innerHeight || 1;
-    const hiddenRatio = Math.max(0, Math.min(0.6, vp.bottomOffset / cssH));
-    // 채팅 활성인데 키보드 감지 못 한 경우 (PC) → 채팅바 높이(~60px)만큼 가려졌다 치고 fallback.
-    const fallback = chat.isActive() && hiddenRatio < 0.05 ? Math.min(0.18, 60 / cssH) : 0;
-    const effectiveHidden = Math.max(hiddenRatio, fallback);
-    const centerY = (1 - effectiveHidden) / 2;  // 가시 영역의 절반
-    updateCamera(camera, local.x, local.y, map.pixelW, map.pixelH, realDt, centerY);
+    // 키보드가 화면 하단을 가리는 케이스는 더 이상 발생 안 함 (채팅 입력 UI 제거).
+    // 단순히 화면 정중앙에 캐릭터.
+    updateCamera(camera, local.x, local.y, map.pixelW, map.pixelH, realDt, 0.5);
     updateDebugInfo(debug, local.x, local.y, TILE);
 
     const renderables: RenderableRemote[] = [];
