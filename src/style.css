@@ -239,25 +239,6 @@ input[type="text"], textarea {
   color: #f0e6d0;
   letter-spacing: 1px;
 }
-/* 우상단 BGM 토글 — 픽셀 폰트 유지 */
-.hud-btn {
-  margin-left: auto;
-  font-family: "Galmuri11", "NeoDunggeunmo", monospace;
-  font-size: 11px;
-  letter-spacing: 1px;
-  padding: 4px 10px;
-  background: rgba(20, 14, 8, 0.75);
-  border: 1px solid #6a4a2a;
-  color: #f0e6d0;
-  cursor: pointer;
-  pointer-events: auto;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.hud-btn:hover { background: rgba(40, 28, 18, 0.85); }
-.hud-btn:active { background: rgba(60, 42, 26, 0.9); }
-.hud-btn.off { color: #999; border-color: #444; }
-
 /* ===== 좌상단 KDA 랭킹 ===== */
 .ranking {
   position: absolute;

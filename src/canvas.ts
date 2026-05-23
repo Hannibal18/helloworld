@@ -101,8 +101,7 @@ export function setupCanvas(opts: CanvasSetupOpts): CanvasController {
       target.closest('#stick') ||
       target.closest('#btn-attack') ||
       target.closest('#chat-bar') ||
-      target.closest('#debug-panel') ||
-      target.closest('#btn-bgm')
+      target.closest('#debug-panel')
     );
   };
   const gameTouches = (e: TouchEvent): Touch[] => {

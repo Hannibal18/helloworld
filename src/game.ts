@@ -4,8 +4,6 @@
 import { connect, type Net } from './net';
 import { setupInput, consumeMentalAttack } from './input';
 import { pickInsult } from './insults';
-import { playEnterVoice } from './audio';
-import { playSfx } from './sfx';
 import { BOSS_ENABLED, spawnBoss, type BossSystem } from './boss';
 import { colorFromName } from './colors';
 import { setupTouchControls } from './controls';
@@ -50,9 +48,6 @@ export function startGame(name: string, charIdx?: number): void {
 async function startGameAsync(name: string, charIdxArg?: number): Promise<void> {
   const ui = uiHandles();
   showGame(ui);
-
-  // 입장 후 1초 뒤 전투장 진입 보이스 1회 재생.
-  window.setTimeout(playEnterVoice, 1000);
 
   // ===== 맵 로드 =====
   let map: TileMap;
@@ -141,7 +136,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   // 게임 화면(캔버스) 탭 → 채팅 입력 포커스 해제 → 모바일 키보드 닫힘
   canvas.addEventListener('pointerdown', (e) => {
     const target = e.target as HTMLElement | null;
-    if (target && (target.closest('#chat-bar') || target.closest('#btn-bgm'))) return;
+    if (target && target.closest('#chat-bar')) return;
     if (document.activeElement === ui.chatInput) ui.chatInput.blur();
   });
 
@@ -229,9 +224,6 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       if (h.hp < r.hp) {
         r.hitFlashUntil = nowSec() + 0.2;
         spawnHitBurst(r.renderX, r.renderY + BODY_OFF_Y, nowSec());
-        // 가까이서 일어난 타격일 때만 소리 (멀리서 일어난 전투 소리로 시끄러워지지 않게)
-        const dx = r.x - local.x, dy = r.y - local.y;
-        if (dx * dx + dy * dy < 400 * 400) playSfx('punch_hit');
       }
       r.hp = h.hp;
       if (r.dead && h.hp > 0) r.dead = false;

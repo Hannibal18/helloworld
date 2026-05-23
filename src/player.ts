@@ -6,7 +6,6 @@ import { isBlocked, type TileMap } from './map';
 import type { AttackPayload, Dir, PosPayload } from './types';
 import { consumeAttack, dirFromInput, input } from './input';
 import { spawnHitBurst } from './particles';
-import { playSfx } from './sfx';
 
 // 공격 사양 (spec §7) — LPC 표준 32px 타일 기준.
 // HP 14칸 × 10HP = 140. 공격 1대 = 20HP = 2칸. 7방 맞으면 사망.
@@ -181,7 +180,6 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
     p.attackCooldownUntil = now + ATTACK_COOLDOWN;
     p.attackUntil = now + ATTACK_SWING_DUR;
     ctx.sendAttack({ id: p.id, x: p.x, y: p.y, dir: p.dir });
-    playSfx('punch_swing');
   }
 
   // 부유 텍스트 정리
@@ -264,14 +262,12 @@ export function onAttackBroadcast(p: LocalPlayer, atk: AttackPayload, ctx: Updat
   });
 
   ctx.sendHp(p.hp);
-  playSfx('punch_hit');
 
   if (p.hp <= 0) {
     p.dead = true;
     p.deadUntil = ctx.now + RESPAWN;
     p.deaths += 1;
     ctx.sendDeath(atk.id);
-    playSfx('death');
   }
 }
 

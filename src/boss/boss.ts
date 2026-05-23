@@ -18,7 +18,6 @@ import type { Camera } from '../world';
 import type { LocalPlayer } from '../player';
 import { BODY_OFF_Y } from '../player';
 import type { Dir } from '../types';
-import { playSfx } from '../sfx';
 
 // ===== 튜닝 =====
 const BOSS_MAX_HP = 800;
@@ -165,13 +164,11 @@ export function spawnBoss(map: TileMap, now: number, callbacks: BossCallbacks): 
       y: local.y + BODY_OFF_Y - 24,
       birth: now,
     });
-    playSfx('punch_hit');
     callbacks.sendHp(local.hp);
     if (local.hp <= 0) {
       local.dead = true;
       local.deadUntil = now + 4;
       local.deaths += 1;
-      playSfx('death');
       callbacks.sendDeath(null);     // killer = boss (null 로 표기)
     }
   }
