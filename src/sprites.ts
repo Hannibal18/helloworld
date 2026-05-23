@@ -14,7 +14,8 @@ function rect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
 }
 
 // ===== 캐릭터 (LPC 스프라이트시트 기반) =====
-// public/sprites/character-spritesheet.png : 832×3456, 64×64 프레임 × 13 cols × 54 rows.
+// public/sprites/characters/00.png ~ 09.png : 각 832×3456, 64×64 프레임 × 13 cols × 54 rows.
+// LPC 생성기로 미리 만들어 둔 10개의 랜덤 캐릭터 — 입장 시 한 명당 하나 배정.
 // LPC (Liberated Pixel Cup) 표준 행 배치:
 //   4~7:   Thrust (Up/Left/Down/Right) — 8 frames (공격 → 펀치처럼 보임, 손/팔 앞으로 뻗음)
 //   8~11:  Walk    — 9 frames (0=idle, 1-8=walk cycle)
@@ -26,39 +27,64 @@ function rect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h:
 const SOURCE_FRAME = 64;            // 원본 LPC 프레임 크기
 const SOURCE_FOOT_Y = 58;           // 프레임 안에서 발 y 위치
 
+export const CHARACTER_COUNT = 10;  // public/sprites/characters/ 안의 시트 개수
+
 // 기본값 — prescaleCharacter 가 호출되면 갱신됨. 캐논 LPC 비례 32×48 가까이.
 export let CHAR_W = 32;
 export let CHAR_H = 48;
 
-const spritesheet = new Image();
-spritesheet.src = '/sprites/character-spritesheet.png';
-let spriteReady = false;
-const loadPromise = new Promise<void>((resolve) => {
-  spritesheet.onload = () => { spriteReady = true; resolve(); };
-});
+const spritesheets: HTMLImageElement[] = [];
+const readyFlags: boolean[] = [];
+const loadPromises: Promise<void>[] = [];
+for (let i = 0; i < CHARACTER_COUNT; i++) {
+  const img = new Image();
+  const idx = String(i).padStart(2, '0');
+  img.src = `/sprites/characters/${idx}.png`;
+  spritesheets.push(img);
+  readyFlags.push(false);
+  loadPromises.push(new Promise<void>((resolve) => {
+    img.onload = () => { readyFlags[i] = true; resolve(); };
+    img.onerror = () => { readyFlags[i] = false; resolve(); };
+  }));
+}
 
-let prescaledSheet: HTMLCanvasElement | null = null;
+const prescaledSheets: (HTMLCanvasElement | null)[] = new Array(CHARACTER_COUNT).fill(null);
 let prescaledFrame = SOURCE_FRAME;
 let prescaledFootY = SOURCE_FOOT_Y;
 let pendingScale: number | null = null;
 
+export function randomCharIdx(): number {
+  return Math.floor(Math.random() * CHARACTER_COUNT);
+}
+
 // 시작 시 1회, 또는 디버그 패널 슬라이더에서 호출.
 // scale 은 일반적으로 0.3~0.7 사이. 32 ÷ 64 = 0.5 가 기본.
+// 시트가 아직 로딩 중이면, 끝난 시트만 먼저 prescale 하고 나머지는 로딩 완료 시 채운다.
 export function prescaleCharacter(scale: number): void {
-  if (!spriteReady) {
-    pendingScale = scale;
-    void loadPromise.then(() => {
-      if (pendingScale !== null) {
-        const s = pendingScale;
-        pendingScale = null;
-        prescaleCharacter(s);
-      }
-    });
-    return;
-  }
+  pendingScale = scale;
   const F = Math.max(8, Math.round(SOURCE_FRAME * scale));
-  const w = Math.round(spritesheet.width * scale);
-  const h = Math.round(spritesheet.height * scale);
+  prescaledFrame = F;
+  prescaledFootY = Math.round(SOURCE_FOOT_Y * scale);
+  // 시각 영역 추정 (캐릭터 픽셀이 프레임의 약 50% 폭, 75% 높이를 차지)
+  CHAR_W = Math.round(F * 0.55);
+  CHAR_H = Math.round(F * 0.78);
+
+  for (let i = 0; i < CHARACTER_COUNT; i++) {
+    if (readyFlags[i]) {
+      prescaleOne(i, scale);
+    } else {
+      const target = scale;
+      void loadPromises[i].then(() => {
+        if (readyFlags[i] && pendingScale === target) prescaleOne(i, target);
+      });
+    }
+  }
+}
+
+function prescaleOne(i: number, scale: number): void {
+  const src = spritesheets[i];
+  const w = Math.round(src.width * scale);
+  const h = Math.round(src.height * scale);
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
@@ -66,13 +92,8 @@ export function prescaleCharacter(scale: number): void {
   // 다운스케일 품질 — 한 번만 일어나므로 bilinear/이중 보간 ON.
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = 'high';
-  cx.drawImage(spritesheet, 0, 0, w, h);
-  prescaledSheet = c;
-  prescaledFrame = F;
-  prescaledFootY = Math.round(SOURCE_FOOT_Y * scale);
-  // 시각 영역 추정 (캐릭터 픽셀이 프레임의 약 50% 폭, 75% 높이를 차지)
-  CHAR_W = Math.round(F * 0.55);
-  CHAR_H = Math.round(F * 0.78);
+  cx.drawImage(src, 0, 0, w, h);
+  prescaledSheets[i] = c;
 }
 
 const ROW_WALK:   Record<Dir, number> = { up: 8, left: 9,  down: 10, right: 11 };
@@ -89,19 +110,22 @@ function shade(hex: string, amt: number): string {
 }
 
 // footX, footY = 화면(캔버스, 백버퍼 논리 좌표) 기준 — 발의 가운데/아래.
+// charIdx = 어느 캐릭터 시트를 쓸지 (0 ~ CHARACTER_COUNT-1).
 // attackPhase: -1 = 비공격, 0~1 = 공격 진행률.
 // now: 걷기 사이클 시간 (performance.now()/1000).
 export function drawCharacter(
   ctx: CanvasRenderingContext2D,
   footX: number,
   footY: number,
+  charIdx: number,
   dir: Dir,
   moving: boolean,
   attackPhase: number,
   dead: boolean,
   now: number,
 ): void {
-  const sheet = prescaledSheet;
+  const safeIdx = ((charIdx % CHARACTER_COUNT) + CHARACTER_COUNT) % CHARACTER_COUNT;
+  const sheet = prescaledSheets[safeIdx];
   if (!sheet) {
     // 스프라이트시트/prescale 준비 전 폴백 — 회색 원
     ctx.save();

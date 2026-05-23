@@ -17,7 +17,10 @@ import type {
 function isPresenceMeta(x: unknown): x is PresenceMeta {
   if (!x || typeof x !== 'object') return false;
   const o = x as Record<string, unknown>;
-  return typeof o.id === 'string' && typeof o.name === 'string' && typeof o.color === 'string';
+  return typeof o.id === 'string'
+    && typeof o.name === 'string'
+    && typeof o.color === 'string'
+    && typeof o.charIdx === 'number';
 }
 
 function asPresenceList(arr: readonly unknown[]): PresenceMeta[] {

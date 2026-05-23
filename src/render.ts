@@ -18,6 +18,7 @@ export interface RenderableRemote {
   id: string;
   name: string;
   color: string;
+  charIdx: number;
   x: number;       // 화면용 (renderX)
   y: number;
   dir: RemotePlayer['dir'];
@@ -172,7 +173,7 @@ function drawLocal(ctx: CanvasRenderingContext2D, camera: Camera, p: LocalPlayer
   const flash = now < p.hitFlashUntil;
   if (flash) {
     ctx.save();
-    drawCharacter(ctx, footX, footY, p.dir, p.moving, attackPhase, p.dead, now);
+    drawCharacter(ctx, footX, footY, p.charIdx, p.dir, p.moving, attackPhase, p.dead, now);
     ctx.globalCompositeOperation = 'source-atop';
     ctx.fillStyle = 'rgba(255, 60, 60, 0.55)';
     ctx.fillRect(overlayX, overlayY, CHAR_W, CHAR_H);
@@ -181,10 +182,10 @@ function drawLocal(ctx: CanvasRenderingContext2D, camera: Camera, p: LocalPlayer
     const blink = Math.floor(now * 12) % 2 === 0;
     ctx.save();
     if (!blink) ctx.globalAlpha = 0.5;
-    drawCharacter(ctx, footX, footY, p.dir, p.moving, attackPhase, p.dead, now);
+    drawCharacter(ctx, footX, footY, p.charIdx, p.dir, p.moving, attackPhase, p.dead, now);
     ctx.restore();
   } else {
-    drawCharacter(ctx, footX, footY, p.dir, p.moving, attackPhase, p.dead, now);
+    drawCharacter(ctx, footX, footY, p.charIdx, p.dir, p.moving, attackPhase, p.dead, now);
   }
 }
 
@@ -204,13 +205,13 @@ function drawRemote(ctx: CanvasRenderingContext2D, camera: Camera, r: Renderable
 
   if (r.hitFlash) {
     ctx.save();
-    drawCharacter(ctx, footX, footY, r.dir, r.moving, r.attackPhase, r.dead, now);
+    drawCharacter(ctx, footX, footY, r.charIdx, r.dir, r.moving, r.attackPhase, r.dead, now);
     ctx.globalCompositeOperation = 'source-atop';
     ctx.fillStyle = 'rgba(255, 60, 60, 0.55)';
     ctx.fillRect(overlayX, overlayY, CHAR_W, CHAR_H);
     ctx.restore();
   } else {
-    drawCharacter(ctx, footX, footY, r.dir, r.moving, r.attackPhase, r.dead, now);
+    drawCharacter(ctx, footX, footY, r.charIdx, r.dir, r.moving, r.attackPhase, r.dead, now);
   }
 }
 

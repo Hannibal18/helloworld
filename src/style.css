@@ -232,7 +232,7 @@ input[type="text"], textarea {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 6px 6px 16px;
+  padding: 6px 16px;
   background: rgba(255, 255, 255, 0.97);
   border-radius: 0;
   box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.12);
@@ -253,13 +253,13 @@ input[type="text"], textarea {
 .chat-input {
   flex: 1;
   min-width: 0;
-  min-height: 1.4em;    /* 단일 라인 — contenteditable div, white-space: nowrap 으로 줄바꿈 차단 */
-  max-height: 1.4em;
-  padding: 8px 0;
+  /* box-sizing: border-box (* 룰) 와 line/padding 합산 잘림 회피용 explicit 픽셀 — 한글 디센더 안전 */
+  height: 44px;
+  padding: 10px 0;
   font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif;
   font-size: 15px;
   font-weight: 400;
-  line-height: 1.4;
+  line-height: 24px;
   background: transparent;
   color: #1a1a1a;
   border: none;
@@ -279,25 +279,6 @@ input[type="text"], textarea {
   color: #aaa;
   pointer-events: none;
 }
-.chat-send {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: #fae100;          /* 카카오 노란 */
-  color: #3c1e1e;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  touch-action: manipulation;
-  transition: background 0.1s, transform 0.05s;
-}
-.chat-send:hover { background: #f0d600; }
-.chat-send:active { background: #d4bd00; transform: scale(0.94); }
-.chat-send svg { display: block; }
 
 /* ===== 모바일 가상 컨트롤 ===== */
 .touch-controls {
@@ -343,12 +324,6 @@ input[type="text"], textarea {
   transition: opacity 0.15s;
 }
 
-/* 키보드 떠 있는 동안 — 사용자는 타이핑 중 → 컨트롤 임시 숨김 */
-.keyboard-open .stick,
-.keyboard-open .touch-right {
-  opacity: 0;
-  pointer-events: none;
-}
 .touch-btn {
   pointer-events: auto;
   width: 88px;

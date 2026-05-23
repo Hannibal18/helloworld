@@ -8,6 +8,7 @@ export interface PresenceMeta {
   id: string;
   name: string;
   color: string; // hex like '#aabbcc'
+  charIdx: number; // 0..CHARACTER_COUNT-1 — 입장 시 랜덤 배정된 LPC 캐릭터 인덱스
 }
 
 // 이동 위치 broadcast
@@ -51,6 +52,7 @@ export interface RemotePlayer {
   id: string;
   name: string;
   color: string;
+  charIdx: number;
   x: number;          // 보간 목표
   y: number;
   renderX: number;    // 실제 그려지는 위치 (lerp)

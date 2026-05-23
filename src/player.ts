@@ -39,6 +39,7 @@ export interface LocalPlayer {
   id: string;
   name: string;
   color: string;
+  charIdx: number;
   x: number;
   y: number;
   dir: Dir;
@@ -66,9 +67,9 @@ export interface LocalPlayer {
   shakePending: number;
 }
 
-export function makeLocalPlayer(id: string, name: string, color: string, spawn: { x: number; y: number }): LocalPlayer {
+export function makeLocalPlayer(id: string, name: string, color: string, charIdx: number, spawn: { x: number; y: number }): LocalPlayer {
   return {
-    id, name, color,
+    id, name, color, charIdx,
     x: spawn.x, y: spawn.y,
     dir: 'down',
     moving: false,

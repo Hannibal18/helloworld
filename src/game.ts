@@ -9,7 +9,7 @@ import {
   setupChat, setRosterCount, setKills, showGame, uiHandles, type ChatBinding,
 } from './ui';
 import { TILE, makeCamera, triggerShake, updateCamera } from './world';
-import { randomCharColor, prescaleCharacter, CHAR_H } from './sprites';
+import { randomCharColor, randomCharIdx, prescaleCharacter, CHAR_H } from './sprites';
 import {
   ATTACK_SWING_DUR,
   makeLocalPlayer, MAX_HP, onAttackBroadcast, startDance, updateLocalPlayer, clampToWorld,
@@ -58,10 +58,11 @@ async function startGameAsync(name: string): Promise<void> {
   // ===== 로컬 플레이어 =====
   const id = crypto.randomUUID();
   const color = randomCharColor();
+  const charIdx = randomCharIdx();
   const spawn = map.spawns.length > 0
     ? map.spawns[Math.floor(Math.random() * map.spawns.length)]
     : { x: map.pixelW / 2, y: map.pixelH / 2 };
-  const local = makeLocalPlayer(id, name, color, spawn);
+  const local = makeLocalPlayer(id, name, color, charIdx, spawn);
 
   // ===== 캐릭터 LPC prescale =====
   prescaleCharacter(DEFAULT_CHAR_SCALE);
@@ -134,7 +135,7 @@ async function startGameAsync(name: string): Promise<void> {
     let r = remotes.get(m.id);
     if (!r) {
       r = {
-        id: m.id, name: m.name, color: m.color,
+        id: m.id, name: m.name, color: m.color, charIdx: m.charIdx,
         x: local.x, y: local.y, renderX: local.x, renderY: local.y,
         dir: 'down', moving: false,
         hp: MAX_HP, maxHp: MAX_HP,
@@ -150,6 +151,7 @@ async function startGameAsync(name: string): Promise<void> {
     } else {
       r.name = m.name;
       r.color = m.color;
+      r.charIdx = m.charIdx;
     }
     setRosterCount(ui, remotes.size + 1);
   };
@@ -163,7 +165,7 @@ async function startGameAsync(name: string): Promise<void> {
   });
 
   // ===== 네트워크 =====
-  const meta: PresenceMeta = { id: local.id, name, color };
+  const meta: PresenceMeta = { id: local.id, name, color, charIdx };
   net = connect(meta, {
     onPos: (p: PosPayload) => {
       const r = remotes.get(p.id);
@@ -305,6 +307,7 @@ async function startGameAsync(name: string): Promise<void> {
         id: r.id,
         name: r.name,
         color: r.color,
+        charIdx: r.charIdx,
         x: r.renderX,
         y: r.renderY,
         dir: r.dir,

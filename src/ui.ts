@@ -101,16 +101,6 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
     }
   });
 
-  // 전송 버튼 (카카오톡식)
-  const sendBtn = document.getElementById('chat-send');
-  if (sendBtn) {
-    // pointerdown 으로 즉시 — touchstart/click 보다 빠르고 OS 키보드 닫힘 전에 동작
-    sendBtn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      if (active) send();
-    });
-  }
-
   // Enter 처리 — 모바일은 enterkeyhint="send" 라 송신 키, PC 는 일반 Enter.
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -125,6 +115,16 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
       }
     } else if (e.key === 'Escape' && active) {
       blur();
+    }
+  });
+
+  // iOS Safari 백업 — 소프트 키보드 Enter 가 keydown 을 누락하고 곧장 beforeinput(insertParagraph/LineBreak)
+  // 으로 오는 케이스. contenteditable 이 줄바꿈 삽입하기 전에 가로채서 send() 호출.
+  ui.chatInput.addEventListener('beforeinput', (e) => {
+    const ev = e as InputEvent;
+    if (ev.inputType === 'insertParagraph' || ev.inputType === 'insertLineBreak') {
+      ev.preventDefault();
+      if (active) send();
     }
   });
 
