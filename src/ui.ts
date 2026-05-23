@@ -49,6 +49,11 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
   const MAX_LEN = 100;
   let active = false;
 
+  // iOS 한글 IME 상태 추적 — 조합 중에 전송 누르면 compositionend 잔여 commit 이 clear 후 입력칸에 글자 남기는 버그 방지
+  let composing = false;
+  let sendPending = false;
+  let recentSendAt = 0;
+
   const getText = () => (ui.chatInput.textContent ?? '');
   const clear = () => { ui.chatInput.textContent = ''; };
 
@@ -58,7 +63,27 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
     if (text.length > 0) onSend(text.slice(0, MAX_LEN));
     clear();
     ui.chatInput.focus();
+    recentSendAt = performance.now();
   };
+
+  // 조합 중이면 즉시 보내지 않고 compositionend 까지 대기 — 마지막 자모 commit 후 안전하게 송신.
+  const requestSend = () => {
+    if (!active) return;
+    if (composing) sendPending = true;
+    else send();
+  };
+
+  ui.chatInput.addEventListener('compositionstart', () => { composing = true; });
+  ui.chatInput.addEventListener('compositionend', () => {
+    composing = false;
+    if (sendPending) {
+      sendPending = false;
+      send();
+    } else if (performance.now() - recentSendAt < 200) {
+      // 안전망 — send 직후 들어오는 IME 잔여 commit 차단 (compositionstart 누락 케이스)
+      clear();
+    }
+  });
 
   const focus = () => {
     active = true;
@@ -104,11 +129,11 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
   // Enter 처리 — 모바일은 enterkeyhint="send" 라 송신 키, PC 는 일반 Enter.
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      // 한글 IME 조합 중 Enter 는 조합 완료 — 전송 트리거 X
+      // PC 한글 IME 조합 중 Enter 는 조합 완료 전용 — 전송 트리거 X (한 번 더 눌러야 보내짐, 표준 동작)
       if (e.isComposing || (e as KeyboardEvent & { keyCode: number }).keyCode === 229) return;
       if (active) {
         e.preventDefault();
-        send();
+        requestSend();
       } else if (!ui.game.classList.contains('hidden')) {
         e.preventDefault();
         focus();
@@ -118,13 +143,13 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
     }
   });
 
-  // iOS Safari 백업 — 소프트 키보드 Enter 가 keydown 을 누락하고 곧장 beforeinput(insertParagraph/LineBreak)
-  // 으로 오는 케이스. contenteditable 이 줄바꿈 삽입하기 전에 가로채서 send() 호출.
+  // iOS Safari 소프트 키보드 전송 — keydown 누락하고 beforeinput(insertParagraph/LineBreak) 로 옴.
+  // 조합 중일 수도 있으니 requestSend() 로 통일.
   ui.chatInput.addEventListener('beforeinput', (e) => {
     const ev = e as InputEvent;
     if (ev.inputType === 'insertParagraph' || ev.inputType === 'insertLineBreak') {
       ev.preventDefault();
-      if (active) send();
+      requestSend();
     }
   });
 
