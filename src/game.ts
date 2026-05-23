@@ -39,13 +39,13 @@ const DEFAULT_CHAR_SCALE = 0.75;
 
 let gameStarted = false;
 
-export function startGame(name: string): void {
+export function startGame(name: string, charIdx?: number): void {
   if (gameStarted) return;
   gameStarted = true;
-  void startGameAsync(name);
+  void startGameAsync(name, charIdx);
 }
 
-async function startGameAsync(name: string): Promise<void> {
+async function startGameAsync(name: string, charIdxArg?: number): Promise<void> {
   const ui = uiHandles();
   showGame(ui);
 
@@ -66,7 +66,7 @@ async function startGameAsync(name: string): Promise<void> {
   // ===== 로컬 플레이어 =====
   const id = crypto.randomUUID();
   const color = randomCharColor();
-  const charIdx = randomCharIdx();
+  const charIdx = charIdxArg ?? randomCharIdx();
   const spawn = map.spawns.length > 0
     ? map.spawns[Math.floor(Math.random() * map.spawns.length)]
     : { x: map.pixelW / 2, y: map.pixelH / 2 };

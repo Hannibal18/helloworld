@@ -65,6 +65,31 @@ input[type="text"], textarea {
   color: #c9b58d;
   font-size: 13px;
 }
+.char-preview {
+  display: flex; align-items: center; justify-content: center;
+  width: 144px; height: 144px;
+  margin: 0 auto 8px;
+  background: #1a120b;
+  border: 2px solid #6a4a2a;
+  box-shadow: inset 0 0 0 1px #2a1a10;
+}
+.char-preview-canvas {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  width: 128px; height: 128px;   /* 64px 내부 → 2× 표시 (정수배, 픽셀 또렷) */
+}
+.reroll-btn {
+  display: block; width: 100%;
+  margin: 0 0 12px;
+  padding: 8px;
+  font: inherit; font-size: 14px; letter-spacing: 2px;
+  background: linear-gradient(180deg, #4a3422, #2e2014);
+  color: #e0c890;
+  border: 2px solid #1a0e08;
+  cursor: pointer;
+}
+.reroll-btn:active { transform: translateY(1px); }
 .nick-input {
   display: block; width: 100%;
   padding: 10px 12px;

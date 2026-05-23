@@ -63,6 +63,27 @@ export function randomCharIdx(): number {
   return Math.floor(Math.random() * CHARACTER_COUNT);
 }
 
+// 인트로 미리보기용 — prescale 전이라도 원본 시트에서 직접 한 프레임 그려준다.
+// 캔버스 사이즈는 호출자가 정한 (정수배 2× 권장). 걷기 행의 idle 프레임(col 0) 사용.
+// 시트가 아직 로딩 중이면 로드 대기 후 그린다.
+export async function drawCharacterPreview(
+  ctx: CanvasRenderingContext2D,
+  charIdx: number,
+  dir: Dir = 'down',
+): Promise<void> {
+  const safe = ((charIdx % CHARACTER_COUNT) + CHARACTER_COUNT) % CHARACTER_COUNT;
+  await loadPromises[safe];
+  if (!readyFlags[safe]) return;
+  const sheet = spritesheets[safe];
+  const row = ROW_WALK[dir];
+  const F = SOURCE_FRAME;
+  const cw = ctx.canvas.width;
+  const ch = ctx.canvas.height;
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.drawImage(sheet, 0, row * F, F, F, 0, 0, cw, ch);
+}
+
 // 시작 시 1회, 또는 디버그 패널 슬라이더에서 호출.
 // scale 은 일반적으로 0.3~0.7 사이. 32 ÷ 64 = 0.5 가 기본.
 // 시트가 아직 로딩 중이면, 끝난 시트만 먼저 prescale 하고 나머지는 로딩 완료 시 채운다.
