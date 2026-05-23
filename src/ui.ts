@@ -93,18 +93,26 @@ export function pushChatLog(ui: UiHandles, name: string, text: string, nameColor
 }
 
 // 화면 중앙 K.O.! / 사망 배너 — kind 에 따라 색깔 다름.
-export function showBanner(ui: UiHandles, kind: 'kill' | 'death', title: string, sub: string): void {
+// 'info' 는 한 줄짜리 시스템 알림 (작은 폰트, sub 무시).
+export function showBanner(
+  ui: UiHandles,
+  kind: 'kill' | 'death' | 'info',
+  title: string,
+  sub: string = '',
+): void {
   const el = ui.banner;
   el.className = `banner ${kind}`;
   el.innerHTML = '';
   const t = document.createElement('div');
   t.className = 'banner-title';
   t.textContent = title;
-  const s = document.createElement('div');
-  s.className = 'banner-sub';
-  s.textContent = sub;
   el.appendChild(t);
-  el.appendChild(s);
+  if (kind !== 'info' && sub) {
+    const s = document.createElement('div');
+    s.className = 'banner-sub';
+    s.textContent = sub;
+    el.appendChild(s);
+  }
   // 강제 reflow → 같은 배너 연속으로 띄울 때도 애니메이션 재시작.
   void el.offsetWidth;
   el.classList.add('show');

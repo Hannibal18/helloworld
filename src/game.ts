@@ -192,7 +192,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   const applyGunDrop = (p: GunDropPayload, spawnedAt: number) => {
     gunState.drops.set(p.id, { id: p.id, x: p.x, y: p.y, spawnedAt });
     // 화면 중앙 배너 + 좌상단 채팅 로그에 알림
-    showBanner(ui, 'kill', '🔫 총이 떨어졌습니다', '맵에서 찾아 주워봐');
+    showBanner(ui, 'info', '🔫 총이 떨어졌습니다');
     pushChatLog(ui, '📦 시스템', '맵 어딘가에 총이 떨어졌습니다', '#ffd84a');
   };
   const applyGunPickup = (p: GunPickupPayload) => {
