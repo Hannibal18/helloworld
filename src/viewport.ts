@@ -145,17 +145,24 @@ export function setupViewport(): void {
   window.addEventListener('resize', update);
   window.addEventListener('orientationchange', update);
 
-  // input focus/blur 안전망 — 일부 iOS Safari 버전에서 visualViewport.resize 이벤트가
-  // 늦게 발사되거나 누락되어 키보드 떴는데도 target 갱신이 안 되는 케이스 방어.
-  // 키보드 애니메이션 시작 직후·중간·끝에 update 를 한 번씩.
-  const onFocusChange = () => {
+  // input focus/blur 안전망.
+  // - focusin: 키보드가 곧 올라옴. visualViewport.resize 이벤트가 늦게 발사돼도
+  //   잡히도록 여러 시점에 update.
+  // - focusout: iOS Safari 는 vv.resize 를 키보드 다 닫힌 뒤에야 발사해서
+  //   챗바가 키보드 닫히는 ~250ms 동안 떠 있다 뚝 내려옴. 그래서 focusout 즉시
+  //   target=0 으로 snap → 키보드 사라지는 모션과 같이 챗바도 바로 내려간다.
+  //   (게임 화면에 다른 입력이 없어서 focusout 은 항상 키보드 닫힘을 의미)
+  window.addEventListener('focusin', () => {
     update();
     setTimeout(update, 120);
     setTimeout(update, 300);
     setTimeout(update, 600);
-  };
-  window.addEventListener('focusin', onFocusChange);
-  window.addEventListener('focusout', onFocusChange);
+  });
+  window.addEventListener('focusout', () => {
+    setTarget(0);
+    // 안전망: 뒤늦게 vv 가 다른 값을 보고하면 맞춰 갱신
+    setTimeout(update, 300);
+  });
 
   update();
   setTimeout(update, 300);
