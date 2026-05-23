@@ -16,12 +16,21 @@ export interface ViewportInfo {
 type Listener = (info: ViewportInfo) => void;
 
 const KEYBOARD_THRESHOLD_PX = 150;
+const DEFAULT_KEYBOARD_HEIGHT = 300; // 캐시 없는 첫 오픈용 추정값 (iOS 표준 키보드 ≈ 260~340)
 
 let current: ViewportInfo = {
   width: 0, height: 0, bottomOffset: 0, keyboardOpen: false,
 };
 const listeners = new Set<Listener>();
 let started = false;
+// 키보드 열린 동안 관측한 bottomOffset 의 최댓값 — 다음 오픈 시 즉시 그 높이로 점프.
+let cachedKeyboardHeight = 0;
+// 외부에서 setTarget 호출하도록 후크.
+let setBottomTarget: ((b: number) => void) = () => {};
+// hintKeyboardOpening 호출 시각 — 이 시점부터 iOS 키보드 애니메이션이 끝날 때까지
+// (~600ms) vv.height 가 아직 갱신 안 된 0 값으로 hint 를 덮어쓰는 걸 막는다.
+let hintOpenAt = 0;
+const HINT_OPEN_WINDOW_MS = 600;
 
 export function getViewport(): ViewportInfo {
   return current;
@@ -29,9 +38,22 @@ export function getViewport(): ViewportInfo {
 
 export function onViewportChange(cb: Listener): () => void {
   listeners.add(cb);
-  // 구독 즉시 현재 상태 1회 호출 (시작 후라면)
   if (started) cb(current);
   return () => { listeners.delete(cb); };
+}
+
+// 사용자 제스처로 키보드가 곧 올라온다는 힌트 — vv.resize 기다리지 말고
+// 미리 챗바·컨트롤을 올려둠. iOS 키보드 애니메이션 시작과 동시에 움직이는 효과.
+export function hintKeyboardOpening(): void {
+  const h = cachedKeyboardHeight > 0 ? cachedKeyboardHeight : DEFAULT_KEYBOARD_HEIGHT;
+  hintOpenAt = performance.now();
+  setBottomTarget(h);
+}
+
+// 사용자 제스처로 키보드가 곧 닫힘 — 즉시 target=0 으로 snap.
+export function hintKeyboardClosing(): void {
+  hintOpenAt = 0; // 가드 해제 — vv 가 0 보고하면 그대로 반영
+  setBottomTarget(0);
 }
 
 export function setupViewport(): void {
@@ -83,8 +105,7 @@ export function setupViewport(): void {
   const setTarget = (b: number) => {
     if (b === targetBottom) return;
     targetBottom = b;
-    // 키보드 내려갈 때(target=0)는 보간 없이 즉시 snap — 키보드가 이미
-    // 닫힌 뒤라 챗바가 천천히 따라 내려오는 게 어색하게 보임.
+    // 키보드 내려갈 때(target=0)는 보간 없이 즉시 snap.
     if (b === 0) {
       if (rafId !== 0) {
         cancelAnimationFrame(rafId);
@@ -99,6 +120,8 @@ export function setupViewport(): void {
       rafId = requestAnimationFrame(tick);
     }
   };
+  // 외부 hint 함수가 호출할 수 있도록 노출
+  setBottomTarget = setTarget;
 
   const update = () => {
     // iOS Safari 자동 스크롤 차단 — input focus 시 페이지를 위로 끌어올려
@@ -124,15 +147,28 @@ export function setupViewport(): void {
 
     current = { width, height, bottomOffset, keyboardOpen };
 
-    // CSS 변수 — 외부에서 var(--vp-bottom) 참조 가능 (현재 직접 쓰는 곳은 없음)
+    // 키보드 열림으로 판정될 때마다 높이 캐시 갱신 — 다음 오픈 시 즉시 그 높이로 점프.
+    if (keyboardOpen && bottomOffset > cachedKeyboardHeight) {
+      cachedKeyboardHeight = bottomOffset;
+    }
+
+    // CSS 변수 — 외부에서 var(--vp-bottom) 참조 가능
     const root = document.documentElement;
     root.style.setProperty('--vp-width', `${width}px`);
     root.style.setProperty('--vp-height', `${height}px`);
     root.style.setProperty('--vp-bottom', `${bottomOffset}px`);
     root.classList.toggle('keyboard-open', keyboardOpen);
 
-    // 새 target 으로 rAF 보간 시작 (현재 진행 중인 보간이 있으면 그쪽으로 추적 방향만 바뀜)
-    setTarget(bottomOffset);
+    // 새 target 으로 rAF 보간 시작.
+    // 단, hintKeyboardOpening 직후 ~600ms 동안 vv 가 아직 0 으로 보고하는
+    // (= iOS 키보드 애니메이션이 진행 중인) 구간에는 vv=0 으로 hint 를 덮어쓰지 않는다.
+    const inHintOpenWindow =
+      hintOpenAt > 0 && performance.now() - hintOpenAt < HINT_OPEN_WINDOW_MS;
+    if (!(bottomOffset === 0 && inHintOpenWindow)) {
+      setTarget(bottomOffset);
+      // 키보드가 실제로 떴음을 vv 가 확인 → 가드 해제
+      if (bottomOffset > 0) hintOpenAt = 0;
+    }
 
     if (changed) for (const cb of listeners) cb(current);
   };

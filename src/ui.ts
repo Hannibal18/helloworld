@@ -1,6 +1,7 @@
 // 입장 화면, 채팅 입력창, HUD 갱신 등 DOM 조작 모음.
 
 import { input } from './input';
+import { hintKeyboardOpening } from './viewport';
 
 export interface UiHandles {
   intro: HTMLElement;
@@ -209,6 +210,10 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
     // 터치 가상 스틱은 setStick 으로 재기록되므로 영향 X.
     input.moveX = 0; input.moveY = 0; input.stickX = 0; input.stickY = 0;
   });
+  // 사용자가 챗 입력칸 탭한 순간 → 키보드 곧 올라옴.
+  // visualViewport.resize 늦게 발사되는 거 안 기다리고 캐시된 키보드 높이로
+  // 챗바·컨트롤을 미리 올린다.
+  ui.chatInput.addEventListener('pointerdown', () => { hintKeyboardOpening(); });
   ui.chatInput.addEventListener('blur', () => { active = false; ui.chatBar.classList.remove('active'); });
 
   // 전송 버튼 — pointerdown 으로 잡아서 input blur(키보드 닫힘) 전에 발사.

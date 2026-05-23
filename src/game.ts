@@ -12,7 +12,7 @@ import {
   setupChat, setRosterCount, setKills, showGame, uiHandles, pushChatLog, showBanner, updateRanking, type ChatBinding,
 } from './ui';
 import { TILE, makeCamera, triggerShake, updateCamera } from './world';
-import { getViewport } from './viewport';
+import { getViewport, hintKeyboardClosing } from './viewport';
 import { randomCharColor, randomCharIdx, prescaleCharacter, CHAR_H } from './sprites';
 import {
   ATTACK_SWING_DUR, BODY_OFF_Y,
@@ -133,11 +133,15 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   setupInput({ isChatActive: () => chat.isActive() });
   setupTouchControls();
 
-  // 게임 화면(캔버스) 탭 → 채팅 입력 포커스 해제 → 모바일 키보드 닫힘
+  // 게임 화면(캔버스) 탭 → 채팅 입력 포커스 해제 → 모바일 키보드 닫힘.
+  // hintKeyboardClosing 으로 vv.resize 대기 없이 챗바·컨트롤을 즉시 아래로 snap.
   canvas.addEventListener('pointerdown', (e) => {
     const target = e.target as HTMLElement | null;
     if (target && target.closest('#chat-bar')) return;
-    if (document.activeElement === ui.chatInput) ui.chatInput.blur();
+    if (document.activeElement === ui.chatInput) {
+      hintKeyboardClosing();
+      ui.chatInput.blur();
+    }
   });
 
   // ===== 원격 플레이어 맵 =====
