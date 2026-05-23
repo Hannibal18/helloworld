@@ -36,10 +36,16 @@ export function updateCamera(
   if (worldH <= cam.viewH) cy = (worldH - cam.viewH) / 2;
   else cy = Math.max(0, Math.min(worldH - cam.viewH, cy));
 
-  // 부드럽게 따라오기 — 시간 상수 ~100ms
+  // 부드럽게 따라오기 — 시간 상수 ~100ms.
+  // viewH 변화(iOS URL 바 collapse 시 dvh 변동)로 cy 점프가 발생하면 카메라 smooth lerp 가
+  // 작동해서 월드가 화면에서 위/아래로 흐르는 시각적 artifact 가 생김. lerp 결과는 round 한 정수 픽셀.
   const k = 1 - Math.exp(-dt / 0.1);
   cam.smoothX += (cx - cam.smoothX) * k;
   cam.smoothY += (cy - cam.smoothY) * k;
+  // 작은 잔차 (sub-pixel) 는 강제 snap — 부드러운 lerp 가 거의 끝났을 때 분수 cam.y 가
+  // tile round 위치를 미세하게 바꾸면서 가로선 artifact 유발할 수 있음. 0.5px 미만이면 target 으로 lock.
+  if (Math.abs(cx - cam.smoothX) < 0.5) cam.smoothX = cx;
+  if (Math.abs(cy - cam.smoothY) < 0.5) cam.smoothY = cy;
 
   // 흔들림 decay — 60ms
   if (cam.shakeStrength > 0) {

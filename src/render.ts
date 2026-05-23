@@ -254,15 +254,16 @@ function drawNameHpKills(
   ctx.textBaseline = 'alphabetic';
   const textY = footScreenY + 16;  // 발 아래 충분히 띄움
 
-  // 두꺼운 검정 외곽선 — canvas stroke 로 한 번에. lineWidth 3 = 양쪽 1.5px → 두께 충분.
+  // 두꺼운 검정 외곽선 — canvas stroke 로 한 번에. save/restore 로 lineJoin/lineWidth state 누수 방지.
+  ctx.save();
   ctx.lineJoin = 'round';
   ctx.miterLimit = 2;
   ctx.lineWidth = 3;
   ctx.strokeStyle = '#000';
   ctx.strokeText(label, baseX, textY);
-
   ctx.fillStyle = isLocal ? '#fff7a8' : '#ffffff';
   ctx.fillText(label, baseX, textY);
+  ctx.restore();
 }
 
 function drawHitboxes(

@@ -53,6 +53,12 @@ let prescaledFrame = SOURCE_FRAME;
 let prescaledFootY = SOURCE_FOOT_Y;
 let pendingScale: number | null = null;
 
+// ===== 비석 (사망 시 캐릭터 대신 표시) =====
+const tombstone = new Image();
+tombstone.src = '/sprites/tombstone.png';
+let tombstoneReady = false;
+tombstone.onload = () => { tombstoneReady = true; };
+
 export function randomCharIdx(): number {
   return Math.floor(Math.random() * CHARACTER_COUNT);
 }
@@ -99,7 +105,6 @@ function prescaleOne(i: number, scale: number): void {
 const ROW_WALK:  Record<Dir, number> = { up: 8,  left: 9,  down: 10, right: 11 };
 const ROW_SLASH: Record<Dir, number> = { up: 12, left: 13, down: 14, right: 15 };
 const SLASH_FRAMES = 6;
-const ROW_HURT = 20;
 
 // 색을 약간 어둡게/밝게 (댄스 모듈이 사용).
 function shade(hex: string, amt: number): string {
@@ -138,13 +143,31 @@ export function drawCharacter(
     return;
   }
 
+  // 사망 시: 캐릭터 스프라이트 대신 비석을 그린다.
+  // 발 위치(footX, footY)에 비석 바닥이 오도록 — 비석을 발 위에 세움.
+  if (dead) {
+    if (tombstoneReady) {
+      const tw = tombstone.naturalWidth;
+      const th = tombstone.naturalHeight;
+      const dx = Math.round(footX - tw / 2);
+      const dy = Math.round(footY - th);
+      ctx.drawImage(tombstone, dx, dy);
+    } else {
+      // 비석 로드 전 폴백 — 회색 십자 원
+      ctx.save();
+      ctx.fillStyle = '#888';
+      ctx.beginPath();
+      ctx.ellipse(footX, footY - 8, 6, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    return;
+  }
+
   let row: number;
   let frame: number;
   let idleBobY = 0;
-  if (dead) {
-    row = ROW_HURT;
-    frame = 5;
-  } else if (attackPhase >= 0) {
+  if (attackPhase >= 0) {
     // Slash: 6 프레임. 옆으로 휘두름 → 훅 펀치 느낌.
     row = ROW_SLASH[dir];
     frame = Math.min(SLASH_FRAMES - 1, Math.max(0, Math.floor(attackPhase * SLASH_FRAMES)));
@@ -162,10 +185,7 @@ export function drawCharacter(
   const dx = Math.round(footX - F / 2);
   const dy = Math.round(footY - prescaledFootY) + idleBobY;
 
-  if (dead) ctx.save();
-  if (dead) ctx.globalAlpha = 0.55;
   ctx.drawImage(sheet, frame * F, row * F, F, F, dx, dy, F, F);
-  if (dead) ctx.restore();
 }
 
 // 더 이상 색 구분 안 함 (이름/HP바로 구분). 댄스 모듈 호환을 위해 더미 유지.
