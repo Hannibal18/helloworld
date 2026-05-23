@@ -27,13 +27,17 @@ input[type="text"], textarea {
 }
 
 #app {
-  /* position: fixed + 100vh — 키보드 떠도 #app 자체가 줄거나 위로 밀리지 않는다.
-     dvh 는 iOS Safari 가 키보드를 반영해 줄여버리는 케이스가 있어 사용 안 함.
-     키보드 위로 띄울 UI 는 var(--vp-bottom) 기준으로 따로 처리. */
+  /* iOS Safari 하단 URL 바가 100vh 안쪽을 가려서 챗바·터치 컨트롤이
+     보이지 않는 문제. svh = 모바일 UI 바가 보이는 상태의 viewport 높이라
+     #app 이 바로 가시 영역에 들어맞아 그 안쪽 UI 가 자동으로 위쪽으로 정렬된다.
+     svh 는 (dvh 와 달리) 키보드에는 반응하지 않아서 키보드 떴을 때
+     #app 자체가 줄지 않음 — 키보드 위로 띄울 UI 만 var(--vp-bottom) 으로 따로 처리.
+     vh 폴백은 svh 미지원 브라우저(iOS 15.4 이전 등) 대응. */
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
+  height: 100svh;
   overflow: hidden;
 }
 
