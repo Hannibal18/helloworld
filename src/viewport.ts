@@ -38,6 +38,57 @@ export function setupViewport(): void {
   if (started) return;
   started = true;
 
+  // ===== rAF 보간 =====
+  // 키보드 애니메이션 동안 visualViewport.resize 가 2~3 회만 띄엄띄엄 발사돼서
+  // 직접 style.bottom 을 박으면 그 사이에 챗바·컨트롤이 계단식으로 점프한다.
+  // CSS transition 은 매 이벤트마다 재시작돼 오히려 더 끊겨 보임.
+  // → 별도 currentBottom 을 두고 매 프레임 target 쪽으로 지수 보간해 60fps 로 그린다.
+  const HALF_LIFE_MS = 55; // 약 0.16초만에 목표의 ~88% 도달 — iOS 키보드와 비슷한 속도
+  let targetBottom = 0;
+  let currentBottom = 0;
+  let rafId = 0;
+  let lastTime = 0;
+
+  const applyPositions = () => {
+    const chatBar = document.getElementById('chat-bar') as HTMLElement | null;
+    const stick = document.getElementById('stick') as HTMLElement | null;
+    const touchRight = document.querySelector('.touch-right') as HTMLElement | null;
+    if (currentBottom > 0) {
+      if (chatBar) chatBar.style.bottom = `${currentBottom}px`;
+      if (stick) stick.style.bottom = `${64 + currentBottom}px`;
+      if (touchRight) touchRight.style.bottom = `${64 + currentBottom}px`;
+    } else {
+      if (chatBar) chatBar.style.bottom = '';
+      if (stick) stick.style.bottom = '';
+      if (touchRight) touchRight.style.bottom = '';
+    }
+  };
+
+  const tick = (now: number) => {
+    const dt = now - lastTime;
+    lastTime = now;
+    const factor = 1 - Math.pow(0.5, dt / HALF_LIFE_MS);
+    const next = currentBottom + (targetBottom - currentBottom) * factor;
+    if (Math.abs(targetBottom - next) < 0.3) {
+      currentBottom = targetBottom;
+      applyPositions();
+      rafId = 0;
+      return;
+    }
+    currentBottom = next;
+    applyPositions();
+    rafId = requestAnimationFrame(tick);
+  };
+
+  const setTarget = (b: number) => {
+    if (b === targetBottom) return;
+    targetBottom = b;
+    if (rafId === 0) {
+      lastTime = performance.now();
+      rafId = requestAnimationFrame(tick);
+    }
+  };
+
   const update = () => {
     // iOS Safari 자동 스크롤 차단 — input focus 시 페이지를 위로 끌어올려
     // fixed/absolute UI 가 키보드 뒤로 사라지는 케이스를 막는다.
@@ -62,29 +113,15 @@ export function setupViewport(): void {
 
     current = { width, height, bottomOffset, keyboardOpen };
 
-    // CSS 변수 노출 — UI 가 직접 var(--vp-bottom) 등을 참조해 위치 조정
+    // CSS 변수 — 외부에서 var(--vp-bottom) 참조 가능 (현재 직접 쓰는 곳은 없음)
     const root = document.documentElement;
     root.style.setProperty('--vp-width', `${width}px`);
     root.style.setProperty('--vp-height', `${height}px`);
     root.style.setProperty('--vp-bottom', `${bottomOffset}px`);
-    // 키보드 떠 있는 동안에만 .keyboard-open 클래스 토글 → 조이스틱 숨김 등 CSS 가 처리.
     root.classList.toggle('keyboard-open', keyboardOpen);
 
-    // iOS Safari 하단 툴바(주소창)와 키보드가 모두 visualViewport 를 줄인다.
-    // 둘 다 챗바를 가리므로, bottomOffset > 0 이면 키보드 여부와 무관하게 챗바·컨트롤을 올려준다.
-    // bottomOffset === 0 이면 inline style 비워서 CSS 기본값(desktop 12px 갭 포함) 살린다.
-    const chatBar = document.getElementById('chat-bar') as HTMLElement | null;
-    const stick = document.getElementById('stick') as HTMLElement | null;
-    const touchRight = document.querySelector('.touch-right') as HTMLElement | null;
-    if (bottomOffset > 0) {
-      if (chatBar) chatBar.style.bottom = `${bottomOffset}px`;
-      if (stick) stick.style.bottom = `${64 + bottomOffset}px`;
-      if (touchRight) touchRight.style.bottom = `${64 + bottomOffset}px`;
-    } else {
-      if (chatBar) chatBar.style.bottom = '';
-      if (stick) stick.style.bottom = '';
-      if (touchRight) touchRight.style.bottom = '';
-    }
+    // 새 target 으로 rAF 보간 시작 (현재 진행 중인 보간이 있으면 그쪽으로 추적 방향만 바뀜)
+    setTarget(bottomOffset);
 
     if (changed) for (const cb of listeners) cb(current);
   };
@@ -98,11 +135,11 @@ export function setupViewport(): void {
   window.addEventListener('orientationchange', update);
 
   // input focus/blur 안전망 — 일부 iOS Safari 버전에서 visualViewport.resize 이벤트가
-  // 늦게 발사되거나 누락되어 키보드 떴는데도 UI 위치 보정이 안 되는 케이스 방어.
-  // 키보드 애니메이션 진행 중 여러 시점에 update 를 호출.
+  // 늦게 발사되거나 누락되어 키보드 떴는데도 target 갱신이 안 되는 케이스 방어.
+  // 키보드 애니메이션 시작 직후·중간·끝에 update 를 한 번씩.
   const onFocusChange = () => {
     update();
-    setTimeout(update, 100);
+    setTimeout(update, 120);
     setTimeout(update, 300);
     setTimeout(update, 600);
   };
@@ -110,6 +147,5 @@ export function setupViewport(): void {
   window.addEventListener('focusout', onFocusChange);
 
   update();
-  // iOS Safari 가 첫 페이지 로드 시 visualViewport 늦게 안정화 — 300ms 후 한 번 더
   setTimeout(update, 300);
 }
