@@ -398,7 +398,10 @@ input[type="text"], textarea {
   background: rgba(255, 255, 255, 0.97);
   border-radius: 0;
   box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.12);
-  /* transition 없음 — 키보드 애니메이션 동안 발생하는 변화에 따라가다가 시각적으로 튀는 걸 막음 */
+  /* iOS 키보드 애니메이션(~0.25s ease-out)에 맞춰 부드럽게 따라가게 한다.
+     visualViewport resize 가 중간에 여러 번 발사돼도 transition 이 보간해서
+     계단처럼 끊기는 느낌을 줄여준다. */
+  transition: bottom 0.22s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 /* 키보드 열림 — layout viewport 는 그대로이므로 채팅바를 키보드 위로 직접 올린다 */
 .keyboard-open .chat-bar {
@@ -484,7 +487,8 @@ input[type="text"], textarea {
   border: 2px solid rgba(202, 160, 74, 0.7);
   pointer-events: auto;
   touch-action: none;
-  transition: opacity 0.15s;
+  /* opacity + bottom 둘 다 부드럽게 — bottom 은 키보드 따라 올라갈 때 부드럽게 */
+  transition: opacity 0.15s, bottom 0.22s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 .stick-knob {
   position: absolute;
@@ -506,7 +510,8 @@ input[type="text"], textarea {
   gap: 12px;
   align-items: flex-end;
   pointer-events: none;
-  transition: opacity 0.15s;
+  /* 키보드 따라 올라갈 때 부드럽게 */
+  transition: opacity 0.15s, bottom 0.22s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 /* 키보드 열림 — 게임 화면(#app)은 그대로, 조이스틱/공격/멘탈만 키보드 위로 올라가도록 */
