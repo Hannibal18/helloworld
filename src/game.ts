@@ -3,7 +3,8 @@
 
 import { connect, type Net } from './net';
 import { setupInput } from './input';
-import { setupTouchControls, isTouchDevice } from './controls';
+import { setupTouchControls } from './controls';
+import { setupCanvas } from './canvas';
 import {
   setupChat, setRosterCount, setKills, showGame, uiHandles, type ChatBinding,
 } from './ui';
@@ -65,7 +66,7 @@ async function startGameAsync(name: string): Promise<void> {
   // ===== 캐릭터 LPC prescale =====
   prescaleCharacter(DEFAULT_CHAR_SCALE);
 
-  // ===== 디버그 상태 =====
+  // ===== 디버그 상태 (DOM 패널은 canvasCtrl 정의된 이후에 띄움) =====
   const debug: DebugState = {
     visible: false,
     showCollision: false,
@@ -74,11 +75,6 @@ async function startGameAsync(name: string): Promise<void> {
     charScale: DEFAULT_CHAR_SCALE,
     viewTilesWide: DEFAULT_VIEW_TILES_PC,
   };
-  setupDebugPanel(
-    debug,
-    (newScale) => prescaleCharacter(newScale),
-    () => resizeCanvas(),
-  );
 
   // ===== 카메라 + 캔버스 =====
   const camera = makeCamera(320, 240);
@@ -87,42 +83,29 @@ async function startGameAsync(name: string): Promise<void> {
   camera.smoothY = local.y - camera.viewH / 2;
   camera.x = camera.smoothX;
   camera.y = camera.smoothY;
-  const viewport = document.getElementById('viewport') as HTMLElement | null;
   const canvas = ui.canvas;
   const ctx2d = canvas.getContext('2d')!;
   ctx2d.imageSmoothingEnabled = false;
 
-  // 백버퍼는 가변 해상도, CSS 는 viewport 100% — 화면 꽉 차게.
-  // image-rendering: pixelated 가 fractional 스케일도 또렷하게 처리.
-  const resizeCanvas = () => {
-    const cssW = window.innerWidth;
-    const cssH = window.innerHeight;
-    const wantTiles = (isTouchDevice() && cssW < cssH) ? TARGET_TILES_WIDE_MOBILE : debug.viewTilesWide;
-    const targetLogicalW = wantTiles * TILE;
+  // 캔버스 리사이즈 + 사용자 줌 (PC 휠 / 모바일 핀치 / iOS gesture) 은 canvas.ts 에 일임.
+  const canvasCtrl = setupCanvas({
+    canvas,
+    getViewTiles: () => debug.viewTilesWide,
+    setViewTiles: (n) => { debug.viewTilesWide = n; },
+    mobileTilesWide: TARGET_TILES_WIDE_MOBILE,
+    zoomMin: 14,
+    zoomMax: 40,
+    onSized: (w, h) => { camera.viewW = w; camera.viewH = h; },
+  });
 
-    // 보일 가로 타일 수 ⇒ 스케일 ⇒ 논리 해상도. logicalH 는 화면 비율 따라감.
-    const scale = Math.max(1, cssW / targetLogicalW);
-    const logicalW = Math.round(cssW / scale);
-    const logicalH = Math.round(cssH / scale);
+  // 디버그 패널 — 슬라이더에서 viewTilesWide 변경 시 canvasCtrl 가 처리.
+  setupDebugPanel(
+    debug,
+    (newScale) => prescaleCharacter(newScale),
+    (newTiles) => canvasCtrl.setZoom(newTiles),
+  );
 
-    canvas.width  = logicalW;
-    canvas.height = logicalH;
-    if (viewport) {
-      viewport.style.width  = `${cssW}px`;
-      viewport.style.height = `${cssH}px`;
-    }
-    canvas.style.width  = `${cssW}px`;
-    canvas.style.height = `${cssH}px`;
-
-    camera.viewW = logicalW;
-    camera.viewH = logicalH;
-    ctx2d.imageSmoothingEnabled = false;
-  };
-  resizeCanvas();
-  window.addEventListener('resize', resizeCanvas);
-  window.addEventListener('orientationchange', resizeCanvas);
-
-  // ===== 네트워크 핸들 (closure 캡처용 forward 선언) =====
+  // 네트워크 핸들 (forward — closure 캡처용)
   let net!: Net;
 
   // ===== 채팅 =====
@@ -137,111 +120,11 @@ async function startGameAsync(name: string): Promise<void> {
   setupTouchControls();
 
   // 게임 화면(캔버스) 탭 → 채팅 입력 포커스 해제 → 모바일 키보드 닫힘
-  // (단, 채팅바 위 탭은 별도 — 카톡식 UX)
-  const closeKeyboardOnTap = (e: Event) => {
+  canvas.addEventListener('pointerdown', (e) => {
     const target = e.target as HTMLElement | null;
-    // 채팅바/입력칸/전송 버튼 위에서 탭한 경우는 통과
     if (target && (target.closest('#chat-bar') || target.closest('#btn-bgm'))) return;
     if (document.activeElement === ui.chatInput) ui.chatInput.blur();
-  };
-  canvas.addEventListener('pointerdown', closeKeyboardOnTap);
-
-  // ===== 사용자 줌 컨트롤 (PC 휠 + 모바일 핀치) =====
-  const ZOOM_MIN = 14, ZOOM_MAX = 40;
-  const setZoom = (n: number): void => {
-    n = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(n)));
-    if (n === debug.viewTilesWide) return;
-    debug.viewTilesWide = n;
-    resizeCanvas();
-    // 디버그 패널 슬라이더 DOM 동기화
-    const slider = document.getElementById('dbg-view') as HTMLInputElement | null;
-    const valEl  = document.getElementById('dbg-view-val');
-    if (slider) slider.value = String(n);
-    if (valEl)  valEl.textContent = String(n);
-  };
-
-  // PC: 마우스 휠
-  canvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const step = e.deltaY > 0 ? 1 : -1; // 휠 아래 = 줌 아웃 (더 많은 타일)
-    setZoom(debug.viewTilesWide + step);
-  }, { passive: false });
-
-  // 모바일: 두 손가락 핀치 (document 레벨에서 듣고 UI 버튼 위 터치만 제외)
-  let pinchStartDist = 0;
-  let pinchStartView = 0;
-  let pinchActive = false;
-
-  // 가상 조이스틱/공격/채팅 버튼 위에서 시작된 터치는 제외 (그것들은 자기 핸들러가 처리).
-  const isOnGameUi = (t: Touch): boolean => {
-    const target = t.target as HTMLElement | null;
-    if (!target) return false;
-    return !!(
-      target.closest('#stick') ||
-      target.closest('#btn-attack') ||
-      target.closest('#btn-chat') ||
-      target.closest('#chat-bar') ||
-      target.closest('#debug-panel')
-    );
-  };
-  const gameTouches = (e: TouchEvent): Touch[] => {
-    const out: Touch[] = [];
-    for (const t of Array.from(e.touches)) {
-      if (!isOnGameUi(t)) out.push(t);
-    }
-    return out;
-  };
-  const dist2 = (a: Touch, b: Touch) =>
-    Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-
-  document.addEventListener('touchstart', (e) => {
-    const ct = gameTouches(e);
-    if (ct.length >= 2) {
-      pinchStartDist = dist2(ct[0], ct[1]);
-      pinchStartView = debug.viewTilesWide;
-      pinchActive = true;
-      e.preventDefault();
-    }
-  }, { passive: false });
-
-  document.addEventListener('touchmove', (e) => {
-    if (!pinchActive) return;
-    const ct = gameTouches(e);
-    if (ct.length < 2) { pinchActive = false; return; }
-    e.preventDefault();
-    const d = dist2(ct[0], ct[1]);
-    if (d > 0 && pinchStartDist > 0) {
-      // 손가락 멀어지면 줌 인 (타일 수 감소), 가까워지면 줌 아웃.
-      const ratio = pinchStartDist / d;
-      setZoom(pinchStartView * ratio);
-    }
-  }, { passive: false });
-
-  const endPinch = () => { pinchActive = false; };
-  document.addEventListener('touchend', endPinch);
-  document.addEventListener('touchcancel', endPinch);
-
-  // iOS Safari fallback — multi-touch 를 native gesture 이벤트로 가로챔.
-  // standard touch event 가 multi-touch 에서 안정적이지 않을 때 이게 작동.
-  type GestureEvent = Event & { scale: number; clientX?: number; clientY?: number };
-  let gestureStartView = 0;
-  document.addEventListener('gesturestart', (e) => {
-    const ge = e as GestureEvent;
-    ge.preventDefault?.();
-    gestureStartView = debug.viewTilesWide;
-  }, { passive: false } as AddEventListenerOptions);
-  document.addEventListener('gesturechange', (e) => {
-    const ge = e as GestureEvent;
-    ge.preventDefault?.();
-    // scale: 1 = 시작, >1 = 벌리는 중(줌인), <1 = 오므리는 중(줌아웃)
-    if (ge.scale && ge.scale > 0) {
-      setZoom(gestureStartView / ge.scale);
-    }
-  }, { passive: false } as AddEventListenerOptions);
-  document.addEventListener('gestureend', (e) => {
-    const ge = e as GestureEvent;
-    ge.preventDefault?.();
-  }, { passive: false } as AddEventListenerOptions);
+  });
 
   // ===== 원격 플레이어 맵 =====
   const remotes = new Map<string, RemotePlayer>();

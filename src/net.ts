@@ -9,6 +9,23 @@ import type {
   PresenceMeta,
 } from './types';
 
+// ===== 타입 가드 =====
+// Supabase Realtime 은 임의 페이로드를 전달할 수 있으므로 신뢰 경계에서 검증.
+// (분산형 게임이라 클라이언트가 다른 클라이언트를 100% 신뢰하지는 않지만, 최소한
+//  형태가 맞는지만 검증해서 undefined 접근 같은 즉시 크래시는 막는다.)
+
+function isPresenceMeta(x: unknown): x is PresenceMeta {
+  if (!x || typeof x !== 'object') return false;
+  const o = x as Record<string, unknown>;
+  return typeof o.id === 'string' && typeof o.name === 'string' && typeof o.color === 'string';
+}
+
+function asPresenceList(arr: readonly unknown[]): PresenceMeta[] {
+  const out: PresenceMeta[] = [];
+  for (const p of arr) if (isPresenceMeta(p)) out.push(p);
+  return out;
+}
+
 export interface NetHandlers {
   onPos: (p: PosPayload) => void;
   onChat: (p: ChatPayload) => void;
@@ -48,14 +65,6 @@ export function connect(meta: PresenceMeta, handlers: NetHandlers): Net {
     },
   });
 
-  const flatten = (state: Record<string, unknown[]>): PresenceMeta[] => {
-    const out: PresenceMeta[] = [];
-    for (const arr of Object.values(state)) {
-      for (const p of arr) out.push(p as unknown as PresenceMeta);
-    }
-    return out;
-  };
-
   channel
     .on('broadcast', { event: 'pos' },    ({ payload }) => handlers.onPos(payload as PosPayload))
     .on('broadcast', { event: 'chat' },   ({ payload }) => handlers.onChat(payload as ChatPayload))
@@ -63,13 +72,16 @@ export function connect(meta: PresenceMeta, handlers: NetHandlers): Net {
     .on('broadcast', { event: 'hp' },     ({ payload }) => handlers.onHp(payload as HpPayload))
     .on('broadcast', { event: 'death' },  ({ payload }) => handlers.onDeath(payload as DeathPayload))
     .on('presence', { event: 'sync' }, () => {
-      handlers.onPresenceSync(flatten(channel.presenceState() as Record<string, unknown[]>));
+      const state = channel.presenceState() as Record<string, readonly unknown[]>;
+      const all: PresenceMeta[] = [];
+      for (const arr of Object.values(state)) all.push(...asPresenceList(arr));
+      handlers.onPresenceSync(all);
     })
     .on('presence', { event: 'join' }, ({ newPresences }) => {
-      handlers.onPresenceJoin(newPresences as unknown as PresenceMeta[]);
+      handlers.onPresenceJoin(asPresenceList(newPresences as readonly unknown[]));
     })
     .on('presence', { event: 'leave' }, ({ leftPresences }) => {
-      handlers.onPresenceLeave(leftPresences as unknown as PresenceMeta[]);
+      handlers.onPresenceLeave(asPresenceList(leftPresences as readonly unknown[]));
     })
     .subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {

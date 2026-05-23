@@ -2,6 +2,7 @@
 
 import { startGame } from './game';
 import { setupBgm, toggleBgm, isBgmPlaying } from './audio';
+import { setupViewport } from './viewport';
 
 function ready(fn: () => void): void {
   if (document.readyState === 'loading') {
@@ -15,6 +16,9 @@ ready(() => {
   const nick = document.getElementById('nick') as HTMLInputElement;
   const btn = document.getElementById('enter') as HTMLButtonElement;
   if (!nick || !btn) return;
+
+  // viewport(visible viewport) 추적 시작 — 입장 화면부터 CSS 변수 노출
+  setupViewport();
 
   // 입장 화면부터 BGM 재생 시작 (브라우저 정책에 따라 첫 클릭/키 입력 직후 시작될 수 있음)
   setupBgm();
