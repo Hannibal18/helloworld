@@ -50,3 +50,17 @@ export function toggleBgm(): boolean {
 export function isBgmPlaying(): boolean {
   return !!(audio && !audio.paused);
 }
+
+// 전투장 입장 시 1회 재생되는 보이스. 입장 화면 → 게임 화면 전환 직후 1초 뒤에 호출한다.
+// 사용자가 BGM 을 끈 상태(userMuted)여도 명시 트리거이므로 일단 재생 시도.
+let enterVoice: HTMLAudioElement | null = null;
+export function playEnterVoice(): void {
+  if (!enterVoice) {
+    enterVoice = new Audio('/audio/enter-voice.mp3');
+    enterVoice.volume = 1.0;
+  }
+  enterVoice.currentTime = 0;
+  enterVoice.play().catch(() => {
+    // autoplay 차단되면 (입장 버튼 클릭 직후라 거의 풀려 있음) 조용히 무시.
+  });
+}

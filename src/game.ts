@@ -4,6 +4,7 @@
 import { connect, type Net } from './net';
 import { setupInput, consumeMentalAttack } from './input';
 import { pickInsult } from './insults';
+import { playEnterVoice } from './audio';
 import { setupTouchControls } from './controls';
 import { setupCanvas } from './canvas';
 import {
@@ -45,6 +46,9 @@ export function startGame(name: string): void {
 async function startGameAsync(name: string): Promise<void> {
   const ui = uiHandles();
   showGame(ui);
+
+  // 입장 후 1초 뒤 전투장 진입 보이스 1회 재생.
+  window.setTimeout(playEnterVoice, 1000);
 
   // ===== 맵 로드 =====
   let map: TileMap;

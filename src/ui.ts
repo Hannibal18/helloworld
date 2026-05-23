@@ -74,8 +74,9 @@ export function updateRanking(ui: UiHandles, local: RankEntry, remotes: Iterable
   });
 }
 
-// 상단 채팅 로그에 메시지 한 줄 추가. 6초 페이드, 최대 8개 유지.
-const MAX_CHAT_LOG = 8;
+// 좌상단 채팅 로그 — 영구 표시, 새 메시지가 아래에 append 되며 오래된 건 위로 밀려 mask 로 페이드.
+// 최대 N개 유지 후 그 이상은 오래된 것부터 삭제 (DOM 누적 방지).
+const MAX_CHAT_LOG = 20;
 export function pushChatLog(ui: UiHandles, name: string, text: string): void {
   const item = document.createElement('div');
   item.className = 'chat-log-item';
@@ -88,8 +89,6 @@ export function pushChatLog(ui: UiHandles, name: string, text: string): void {
   while (ui.chatLog.children.length > MAX_CHAT_LOG) {
     ui.chatLog.removeChild(ui.chatLog.firstChild!);
   }
-  // 페이드 끝나면 자동 제거 — CSS 애니메이션 길이와 동기.
-  window.setTimeout(() => item.remove(), 6200);
 }
 
 // 화면 중앙 K.O.! / 사망 배너 — kind 에 따라 색깔 다름.

@@ -279,46 +279,42 @@ input[type="text"], textarea {
   pointer-events: none;
 }
 
-/* ===== 채팅 로그 (상단 중앙, 페이드 아웃) ===== */
+/* ===== 채팅 로그 (좌상단, 영구 표시 — 새 메시지가 아래에 쌓이고 위로 페이드) ===== */
 .chat-log {
   position: absolute;
-  top: calc(40px + env(safe-area-inset-top));
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(420px, 70vw);
+  top: calc(170px + env(safe-area-inset-top));   /* 랭킹 패널 아래 */
+  left: calc(8px + env(safe-area-inset-left));
+  width: min(300px, 60vw);
+  max-height: 240px;
+  overflow: hidden;
   z-index: 4;
   pointer-events: none;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  align-items: center;
+  justify-content: flex-end;       /* 새 메시지 = DOM 끝 = 화면 아래 */
+  gap: 2px;
+  /* 위쪽 fade out — 오래된 메시지가 자연스럽게 사라짐 */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 35%, black 100%);
+          mask-image: linear-gradient(to bottom, transparent 0%, black 35%, black 100%);
 }
 .chat-log-item {
-  background: rgba(20, 14, 8, 0.78);
-  color: #f0e6d0;
-  border: 1px solid #6a4a2a;
-  padding: 4px 10px;
   font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Noto Sans KR', system-ui, sans-serif;
   font-size: 13px;
   letter-spacing: 0.2px;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  animation: chatLogFade 6s forwards;
+  color: #f0e6d0;
+  /* 배경 없이도 가독성 — 강한 검정 그림자 */
+  text-shadow:
+    1px 1px 0 #1a0e08, -1px 1px 0 #1a0e08, 1px -1px 0 #1a0e08, -1px -1px 0 #1a0e08,
+    2px 2px 0 #1a0e08;
+  word-break: break-word;
+  flex-shrink: 0;
 }
 .chat-log-item .chat-log-name {
   color: #ffd07a;
-  font-weight: 600;
+  font-weight: 700;
   margin-right: 6px;
   font-family: "Galmuri11", "NeoDunggeunmo", monospace;
   font-size: 12px;
-}
-@keyframes chatLogFade {
-  0%   { opacity: 0; transform: translateY(-6px); }
-  6%   { opacity: 1; transform: translateY(0); }
-  85%  { opacity: 1; }
-  100% { opacity: 0; }
 }
 
 /* ===== 킬/사망 중앙 배너 ===== */
