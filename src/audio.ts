@@ -5,8 +5,16 @@
 //   현재 사이클 안의 위치 = (Date.now() / 1000) mod totalDuration.
 //   모두 같은 epoch 시계를 보므로(약간의 OS 시계 오차 ±수백 ms 무시) 자동으로 동일 곡, 동일 시점 재생.
 //
-// 브라우저 자동재생 정책: 첫 사용자 제스처 전엔 play() 가 거부될 수 있다.
-// 그래서 1) 일단 즉시 시도, 2) 차단되면 첫 클릭/키/터치에 다시 시도.
+// 브라우저 자동재생 정책:
+//   - 자동재생은 보통 차단된다. 첫 사용자 제스처에서 재생을 시작한다.
+//   - iOS Safari/모바일 Chrome 은 "이 제스처에서 play() 호출된 audio 객체"만 unlock 한다.
+//     따라서 다음 곡 전환 시점(setTimeout/'ended' 콜백) 은 user gesture 컨텍스트가 아니라
+//     새 audio.play() 가 차단될 수 있다 → 첫 제스처에서 3개 audio 를 모두 한 번씩 unlock 한다.
+//
+// 곡 전환:
+//   - 일차 메커니즘: audio.ended 이벤트 → 다음 곡으로 sync.
+//   - 안전망: setTimeout (audio.duration 이 부정확하거나 ended 가 발사 안 되는 경우 대비).
+//     +500ms 여유를 둬 ended 가 먼저 발사되도록 한다.
 
 const TRACK_URLS: readonly string[] = [
   '/audio/Henesys Port Vibes.mp3',
@@ -14,26 +22,44 @@ const TRACK_URLS: readonly string[] = [
   '/audio/Future Lith.mp3',
 ] as const;
 
-type Track = { url: string; audio: HTMLAudioElement; duration: number };
+const VOLUME = 0.5;
+
+type Track = { url: string; audio: HTMLAudioElement };
 
 let tracks: Track[] = [];
-let totalDuration = 0;
 let currentIdx = -1;
 let userMuted = false;
-let advanceTimer: number | null = null;
 let setupStarted = false;
+let unlocked = false;
+let syncTimer: number | null = null;
+
+function durationOf(t: Track): number {
+  const d = t.audio.duration;
+  return isFinite(d) && d > 0 ? d : 0;
+}
+
+function totalDuration(): number {
+  let s = 0;
+  for (const t of tracks) s += durationOf(t);
+  return s;
+}
 
 async function loadTrack(url: string): Promise<Track> {
   const audio = new Audio(url);
   audio.preload = 'auto';
-  audio.volume = 0.5;
-  audio.loop = false; // 각 곡 끝나면 우리가 직접 다음 곡으로 전환
+  audio.volume = VOLUME;
+  audio.loop = false; // 우리가 직접 다음 곡으로 전환
   await new Promise<void>((resolve, reject) => {
     if (isFinite(audio.duration) && audio.duration > 0) return resolve();
     audio.addEventListener('loadedmetadata', () => resolve(), { once: true });
     audio.addEventListener('error', () => reject(new Error('audio load failed: ' + url)), { once: true });
   });
-  return { url, audio, duration: audio.duration };
+  const t: Track = { url, audio };
+  audio.addEventListener('ended', () => {
+    if (userMuted) return;
+    syncAndPlay();
+  });
+  return t;
 }
 
 export async function setupBgm(): Promise<void> {
@@ -47,38 +73,66 @@ export async function setupBgm(): Promise<void> {
     return;
   }
 
-  totalDuration = tracks.reduce((s, t) => s + t.duration, 0);
-  if (totalDuration <= 0) return;
+  if (totalDuration() <= 0) return;
 
+  // 자동재생 시도 (대개 차단됨)
   tryPlay();
 
   const gestureEvents: Array<keyof DocumentEventMap> = ['pointerdown', 'keydown', 'touchstart'];
   const onGesture = (): void => {
-    tryPlay();
+    // user gesture 컨텍스트에서 모든 audio unlock → 이후 콜백에서도 play() 가능
+    void unlockAll().then(() => {
+      if (!userMuted) syncAndPlay();
+    });
     for (const ev of gestureEvents) document.removeEventListener(ev, onGesture);
   };
   for (const ev of gestureEvents) document.addEventListener(ev, onGesture);
 }
 
+// 모든 audio 객체를 user-gesture 안에서 한 번 play() → pause() 처리해 unlock 한다.
+// 모바일/Safari 에서는 곡 전환 시점(콜백)에 새 audio.play() 가 차단되는 걸 방지.
+// volume=0 으로 시작해 잠시 동시 재생되는 소리가 새는 일을 막는다.
+async function unlockAll(): Promise<void> {
+  if (unlocked) return;
+  unlocked = true;
+  // 1) user-gesture 컨텍스트가 살아있는 동안 동기 루프로 play() 모두 호출
+  const promises: Array<Promise<unknown>> = [];
+  for (const t of tracks) {
+    t.audio.volume = 0;
+    promises.push(t.audio.play().catch(() => { /* ignore */ }));
+  }
+  // 2) 모두 시작된 뒤 즉시 정지하고 원래 볼륨으로
+  await Promise.allSettled(promises);
+  for (const t of tracks) {
+    t.audio.pause();
+    try { t.audio.currentTime = 0; } catch { /* ignore */ }
+    t.audio.volume = VOLUME;
+  }
+}
+
 function tryPlay(): void {
-  if (userMuted) return;
-  if (tracks.length === 0 || totalDuration <= 0) return;
+  if (userMuted || tracks.length === 0) return;
+  if (totalDuration() <= 0) return;
   syncAndPlay();
 }
 
 // 현재 epoch 시각 기준 어느 트랙의 어느 위치를 재생해야 하는지 계산해 맞춘다.
 function syncAndPlay(): void {
-  if (advanceTimer !== null) {
-    clearTimeout(advanceTimer);
-    advanceTimer = null;
+  if (syncTimer !== null) {
+    clearTimeout(syncTimer);
+    syncTimer = null;
   }
 
-  const pos = (Date.now() / 1000) % totalDuration;
+  const total = totalDuration();
+  if (total <= 0) return;
+
+  const pos = (Date.now() / 1000) % total;
   let idx = 0;
   let acc = 0;
   for (let i = 0; i < tracks.length; i++) {
-    if (pos < acc + tracks[i].duration) { idx = i; break; }
-    acc += tracks[i].duration;
+    const d = durationOf(tracks[i]);
+    if (pos < acc + d) { idx = i; break; }
+    acc += d;
   }
   const offset = pos - acc;
 
@@ -90,16 +144,17 @@ function syncAndPlay(): void {
   currentIdx = idx;
   const t = tracks[idx];
   try { t.audio.currentTime = offset; } catch { /* 일부 브라우저가 seek 직후 throw */ }
-  t.audio.play().catch(() => { /* autoplay 차단 — 다음 제스처에서 다시 시도 */ });
+  t.audio.play().catch(() => { /* autoplay 차단 — 다음 제스처에서 재시도 */ });
 
-  // 현재 곡이 끝나기 직전에 다음 곡으로 재동기화
-  const remaining = t.duration - offset;
+  // 안전망 setTimeout — ended 이벤트가 안 발사되거나 늦는 경우만 발사되도록 +500ms 여유.
+  // 정상 흐름은 audio.ended → syncAndPlay 가 먼저 실행되어 이 타이머를 clear 한다.
+  const remaining = durationOf(t) - offset;
   if (remaining > 0 && isFinite(remaining)) {
-    advanceTimer = window.setTimeout(() => {
-      advanceTimer = null;
+    syncTimer = window.setTimeout(() => {
+      syncTimer = null;
       if (userMuted) return;
       syncAndPlay();
-    }, remaining * 1000 + 50);
+    }, remaining * 1000 + 500);
   }
 }
 
@@ -113,9 +168,9 @@ export function toggleBgm(): boolean {
   if (isBgmPlaying()) {
     userMuted = true;
     for (const t of tracks) t.audio.pause();
-    if (advanceTimer !== null) {
-      clearTimeout(advanceTimer);
-      advanceTimer = null;
+    if (syncTimer !== null) {
+      clearTimeout(syncTimer);
+      syncTimer = null;
     }
     return false;
   } else {

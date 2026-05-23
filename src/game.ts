@@ -32,9 +32,9 @@ const POS_SEND_INTERVAL = 1 / 10;
 const POS_HEARTBEAT = 1.0;
 
 // 백버퍼 논리 해상도 — 디버그 패널 슬라이더로 실시간 조정 가능.
-// 디폴트: PC 24 타일 폭, 모바일 세로 9 타일. 캐릭터 prescale 0.75 (살짝 작게).
+// 디폴트: PC 24 타일 폭, 모바일 세로 10 타일. 캐릭터 prescale 0.75 (살짝 작게).
 const DEFAULT_VIEW_TILES_PC = 24;
-const TARGET_TILES_WIDE_MOBILE = 9;
+const TARGET_TILES_WIDE_MOBILE = 10;
 const DEFAULT_CHAR_SCALE = 0.75;
 
 let gameStarted = false;
@@ -317,8 +317,8 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     }
   }
 
-  // ===== 멘탈 공격(욕 자동 채팅) — 1.5초 쿨다운으로 스팸 방지 =====
-  const MENTAL_COOLDOWN = 1.5;
+  // ===== 멘탈 공격(욕 자동 채팅) — 짧은 쿨다운으로 연타 가능 =====
+  const MENTAL_COOLDOWN = 0.4;
   let mentalCooldownUntil = 0;
   function fireMentalAttack(now: number): void {
     if (chat.isActive() || local.dead) return;

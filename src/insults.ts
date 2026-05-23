@@ -14,6 +14,10 @@ export const INSULTS: readonly string[] = [
   '븅신 븅신 븅신',
   '똥 똥 똥',
   '줫밥 찌밥년 ㅎ~',
+  '씨빠썌꺄',
+  '나는 빡빡이다',
+  '미역국 먹을 자격도 없어 개쉐기야~!',
+  '어머련아',
 ];
 
 export function pickInsult(): string {
