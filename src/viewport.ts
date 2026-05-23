@@ -61,10 +61,7 @@ export function setupViewport(): void {
     root.style.setProperty('--vp-width', `${width}px`);
     root.style.setProperty('--vp-height', `${height}px`);
     root.style.setProperty('--vp-bottom', `${bottomOffset}px`);
-    // 채팅바를 visible viewport 의 BOTTOM 에 정확히 붙이기 위한 anchor.
-    // chat-bar 는 position:fixed + top:var(--chat-anchor-top) + translateY(-100%) 로 위치.
-    const anchorTop = (vv?.offsetTop ?? 0) + height;
-    root.style.setProperty('--chat-anchor-top', `${anchorTop}px`);
+    // 키보드 떠 있는 동안에만 .keyboard-open 클래스 토글 → 조이스틱 숨김 등 CSS 가 처리.
     root.classList.toggle('keyboard-open', keyboardOpen);
 
     if (changed) for (const cb of listeners) cb(current);
