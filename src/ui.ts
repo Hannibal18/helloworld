@@ -48,10 +48,12 @@ export interface ChatBinding {
 export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBinding {
   let active = false;
 
+  // 카톡식 — 전송해도 키보드는 유지 (입력칸 비우고 포커스만 유지).
   const send = () => {
     const text = ui.chatInput.value.trim();
     if (text.length > 0) onSend(text.slice(0, 100));
-    blur();
+    ui.chatInput.value = '';
+    ui.chatInput.focus();
   };
 
   const focus = () => {
@@ -62,7 +64,6 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
   const blur = () => {
     active = false;
     ui.chatBar.classList.remove('active');
-    ui.chatInput.value = '';
     ui.chatInput.blur();
   };
 
@@ -101,11 +102,10 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
   const vv = window.visualViewport;
   if (vv) {
     const adjust = () => {
-      // 키보드 안 떠 있으면 default bottom 유지
       const keyboardOffset = window.innerHeight - vv.height - vv.offsetTop;
       if (keyboardOffset > 80) {
-        // 키보드 떠 있음 — 그 위 12px 위치로
-        ui.chatBar.style.bottom = `${keyboardOffset + 12}px`;
+        // 키보드 위에 딱 붙임 (gap 0)
+        ui.chatBar.style.bottom = `${keyboardOffset}px`;
       } else {
         ui.chatBar.style.bottom = '';
       }

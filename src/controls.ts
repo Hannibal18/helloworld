@@ -1,4 +1,5 @@
-// 모바일 가상 컨트롤: 좌측 조이스틱 + 우측 공격/채팅 버튼.
+// 모바일 가상 컨트롤: 좌측 조이스틱 + 우측 공격 버튼.
+// 채팅은 입력칸 항상 표시되므로 별도 버튼 없음.
 // 멀티터치: 손가락마다 identifier가 다르므로, 조이스틱과 공격 버튼이 동시에 눌려도 둘 다 동작한다.
 
 import { setStick, pressAttack } from './input';
@@ -7,18 +8,13 @@ export function isTouchDevice(): boolean {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 }
 
-export interface ControlsOpts {
-  onChat: () => void;
-}
-
-export function setupTouchControls(opts: ControlsOpts): void {
+export function setupTouchControls(): void {
   const root = document.getElementById('touch-controls') as HTMLElement | null;
   const stick = document.getElementById('stick') as HTMLElement | null;
   const knob = document.getElementById('stick-knob') as HTMLElement | null;
   const btnAttack = document.getElementById('btn-attack') as HTMLElement | null;
-  const btnChat = document.getElementById('btn-chat') as HTMLElement | null;
 
-  if (!root || !stick || !knob || !btnAttack || !btnChat) return;
+  if (!root || !stick || !knob || !btnAttack) return;
 
   if (!isTouchDevice()) {
     root.classList.add('hidden');
@@ -98,12 +94,4 @@ export function setupTouchControls(opts: ControlsOpts): void {
   };
   btnAttack.addEventListener('touchstart', onAttackDown, { passive: false });
   btnAttack.addEventListener('mousedown', onAttackDown);
-
-  // ===== 채팅 버튼 =====
-  const onChatDown = (e: Event) => {
-    e.preventDefault();
-    opts.onChat();
-  };
-  btnChat.addEventListener('touchstart', onChatDown, { passive: false });
-  btnChat.addEventListener('click', onChatDown);
 }

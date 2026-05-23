@@ -1,7 +1,7 @@
 // 부트스트랩: 입장 화면 → 게임 시작.
 
 import { startGame } from './game';
-import { setupBgm } from './audio';
+import { setupBgm, toggleBgm, isBgmPlaying } from './audio';
 
 function ready(fn: () => void): void {
   if (document.readyState === 'loading') {
@@ -18,6 +18,21 @@ ready(() => {
 
   // 입장 화면부터 BGM 재생 시작 (브라우저 정책에 따라 첫 클릭/키 입력 직후 시작될 수 있음)
   setupBgm();
+
+  // 우상단 BGM 토글 버튼
+  const bgmBtn = document.getElementById('btn-bgm') as HTMLButtonElement | null;
+  if (bgmBtn) {
+    const updateLabel = () => {
+      bgmBtn.textContent = isBgmPlaying() ? '♪ ON' : '♪ OFF';
+      bgmBtn.classList.toggle('off', !isBgmPlaying());
+    };
+    bgmBtn.addEventListener('click', () => {
+      toggleBgm();
+      updateLabel();
+    });
+    // 약간 늦게 한 번 — 자동 재생 결과 반영
+    setTimeout(updateLabel, 500);
+  }
 
   // 모바일에서 입력창 자동 줌 방지를 위해 폰트 크기는 CSS 로 처리
   nick.focus();

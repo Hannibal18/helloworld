@@ -134,7 +134,17 @@ async function startGameAsync(name: string): Promise<void> {
 
   // ===== 입력 =====
   setupInput({ isChatActive: () => chat.isActive() });
-  setupTouchControls({ onChat: () => chat.focus() });
+  setupTouchControls();
+
+  // 게임 화면(캔버스) 탭 → 채팅 입력 포커스 해제 → 모바일 키보드 닫힘
+  // (단, 채팅바 위 탭은 별도 — 카톡식 UX)
+  const closeKeyboardOnTap = (e: Event) => {
+    const target = e.target as HTMLElement | null;
+    // 채팅바/입력칸/전송 버튼 위에서 탭한 경우는 통과
+    if (target && (target.closest('#chat-bar') || target.closest('#btn-bgm'))) return;
+    if (document.activeElement === ui.chatInput) ui.chatInput.blur();
+  };
+  canvas.addEventListener('pointerdown', closeKeyboardOnTap);
 
   // ===== 사용자 줌 컨트롤 (PC 휠 + 모바일 핀치) =====
   const ZOOM_MIN = 14, ZOOM_MAX = 40;

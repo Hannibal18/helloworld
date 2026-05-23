@@ -184,7 +184,9 @@ input[type="text"], textarea {
   position: absolute;
   top: calc(8px + env(safe-area-inset-top));
   left: calc(8px + env(safe-area-inset-left));
+  right: calc(8px + env(safe-area-inset-right));
   display: flex;
+  align-items: center;
   gap: 6px;
   z-index: 5;
   pointer-events: none;
@@ -197,26 +199,50 @@ input[type="text"], textarea {
   color: #f0e6d0;
   letter-spacing: 1px;
 }
+/* 우상단 BGM 토글 — 픽셀 폰트 유지 */
+.hud-btn {
+  margin-left: auto;
+  font-family: "Galmuri11", "NeoDunggeunmo", monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 4px 10px;
+  background: rgba(20, 14, 8, 0.75);
+  border: 1px solid #6a4a2a;
+  color: #f0e6d0;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.hud-btn:hover { background: rgba(40, 28, 18, 0.85); }
+.hud-btn:active { background: rgba(60, 42, 26, 0.9); }
+.hud-btn.off { color: #999; border-color: #444; }
 
-/* ===== 채팅 바 (카카오톡 스타일) ===== */
+/* ===== 채팅 바 (카카오톡 스타일 — 항상 화면 하단/키보드 위에 표시) ===== */
 .chat-bar {
   position: absolute;
   left: 50%;
-  bottom: calc(12px + env(safe-area-inset-bottom));
+  bottom: env(safe-area-inset-bottom);
   transform: translateX(-50%);
-  width: min(560px, 92vw);
+  width: min(560px, 100vw);
   z-index: 6;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 5px 5px 16px;
-  background: rgba(255, 255, 255, 0.96);
-  border-radius: 24px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  opacity: 0.85;
-  transition: opacity 0.15s, bottom 0.2s;
+  padding: 6px 6px 6px 16px;
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 0;
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.12);
+  transition: bottom 0.18s;
 }
-.chat-bar.active { opacity: 1; }
+@media (min-width: 600px) {
+  .chat-bar {
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    border-radius: 24px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    width: min(560px, 92vw);
+  }
+}
 .chat-input {
   flex: 1;
   min-width: 0;
