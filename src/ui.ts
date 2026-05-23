@@ -127,21 +127,44 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
   let active = false;
   const sendBtn = document.getElementById('chat-send') as HTMLButtonElement | null;
 
-  // iOS 한글 IME 상태 추적 — 조합 중에 전송 누르면 compositionend 잔여 commit 이 clear 후 입력칸에 글자 남기는 버그 방지
+  // iOS 한글 IME 상태 추적.
+  // - composing: 현재 IME 조합 중인지
+  // - sendPending: 조합 중에 전송 요청 → compositionend 후 안전하게 송신
+  // - lastSentFinalChar: 직전 전송 메시지의 마지막 한 글자. iOS IME 가 새 입력
+  //   시작 시 뒤늦게 commit 해서 새 입력칸 맨 앞에 박는 케이스가 있어, 이 글자와
+  //   매칭되면 잔여 commit 으로 보고 제거.
+  // - residualGuard: send 후 잔여 가드가 활성화된 상태. compositionstart 가
+  //   발사되거나 2초 경과하면 자동 해제 (영문/숫자 입력처럼 composition 없는
+  //   케이스에서도 일정 시간 후 풀려야 정상 입력을 막지 않음).
   let composing = false;
   let sendPending = false;
-  let recentSendAt = 0;
+  let lastSentFinalChar = '';
+  let residualGuard = false;
+  let residualTimer: number | null = null;
 
   const getText = () => (ui.chatInput.textContent ?? '');
   const clear = () => { ui.chatInput.textContent = ''; };
 
+  const armResidualGuard = () => {
+    residualGuard = true;
+    if (residualTimer !== null) window.clearTimeout(residualTimer);
+    residualTimer = window.setTimeout(() => { residualGuard = false; }, 2000);
+  };
+  const disarmResidualGuard = () => {
+    residualGuard = false;
+    if (residualTimer !== null) { window.clearTimeout(residualTimer); residualTimer = null; }
+  };
+
   // 카톡식 — 전송해도 키보드는 유지 (입력칸 비우고 포커스만 유지).
   const send = () => {
     const text = getText().trim();
-    if (text.length > 0) onSend(text.slice(0, MAX_LEN));
+    if (text.length > 0) {
+      onSend(text.slice(0, MAX_LEN));
+      lastSentFinalChar = text.slice(-1);
+    }
     clear();
     ui.chatInput.focus();
-    recentSendAt = performance.now();
+    armResidualGuard();
   };
 
   // 조합 중이면 즉시 보내지 않고 compositionend 까지 대기 — 마지막 자모 commit 후 안전하게 송신.
@@ -151,15 +174,20 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
     else send();
   };
 
-  ui.chatInput.addEventListener('compositionstart', () => { composing = true; });
+  ui.chatInput.addEventListener('compositionstart', () => {
+    composing = true;
+    // 진짜 새 조합 입력 시작 — 잔여 가드 해제
+    disarmResidualGuard();
+  });
   ui.chatInput.addEventListener('compositionend', () => {
     composing = false;
     if (sendPending) {
       sendPending = false;
       send();
-    } else if (performance.now() - recentSendAt < 200) {
-      // 안전망 — send 직후 들어오는 IME 잔여 commit 차단 (compositionstart 누락 케이스)
+    } else if (residualGuard && lastSentFinalChar && getText() === lastSentFinalChar) {
+      // send 직후 들어온 단독 commit 이 이전 메시지 마지막 글자와 같음 → 잔여
       clear();
+      disarmResidualGuard();
     }
   });
 
@@ -205,11 +233,30 @@ export function setupChat(ui: UiHandles, onSend: (text: string) => void): ChatBi
 
   // maxlength 강제 + iOS IME 잔여 commit 차단.
   ui.chatInput.addEventListener('input', () => {
-    // iOS 한글 IME 잔여 commit 안전망 — send 직후 300ms 내, 조합 중 아닐 때 들어오는 텍스트는
-    // 이전 메시지의 마지막 자모가 IME 내부 버퍼에서 새 입력칸으로 주입되는 케이스. 무시하고 clear.
-    if (!composing && performance.now() - recentSendAt < 300 && getText().length > 0) {
-      clear();
-      return;
+    // 잔여 commit 가드 — send 후 compositionstart 없이 들어온 텍스트가
+    // 정확히 이전 메시지 마지막 글자(또는 그것으로 시작) 일 때만 잔여로 간주.
+    // 영문/숫자처럼 매칭 안 되는 입력은 통과.
+    if (residualGuard && !composing && lastSentFinalChar) {
+      const t = getText();
+      if (t === lastSentFinalChar) {
+        clear();
+        disarmResidualGuard();
+        return;
+      }
+      // 잔여 + 새 입력이 함께 들어오는 경우 — 앞쪽 잔여만 잘라낸다.
+      if (t.length > lastSentFinalChar.length && t.startsWith(lastSentFinalChar)) {
+        ui.chatInput.textContent = t.slice(lastSentFinalChar.length);
+        const range = document.createRange();
+        range.selectNodeContents(ui.chatInput);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        disarmResidualGuard();
+        return;
+      }
+      // 잔여가 아닌 정상 입력 → 가드 해제하고 통상 처리
+      disarmResidualGuard();
     }
     const text = getText();
     if (text.length > MAX_LEN) {
