@@ -375,20 +375,20 @@ export function drawGunOverlay(
   }
 
   // ----- 보유 총: 캐릭터 옆 (방향에 따라 좌/우 어깨 높이) -----
-  const GUN_W_HELD = 20;
-  const GUN_H_HELD = 8;
+  // 4× 키운 크기 (기존 20×8 → 80×32) — 잘 보이게.
+  const GUN_W_HELD = 80;
+  const GUN_H_HELD = 32;
   if (gunReady) {
     for (const o of heldOwners) {
       const sx = Math.round(o.x - camera.x);
       const sy = Math.round(o.y - camera.y);
-      // 발 기준이라 살짝 위로 (몸통 중간)
-      const yOff = -14;
-      let xOff = 8; // 기본 우측
+      const yOff = -28;
+      let xOff = 6;
       let flip = false;
-      if (o.dir === 'left') { xOff = -8 - GUN_W_HELD; flip = true; }
-      else if (o.dir === 'right') { xOff = 8; flip = false; }
-      else if (o.dir === 'up') { xOff = 4; }
-      else { xOff = 4; }
+      if (o.dir === 'left') { xOff = -6 - GUN_W_HELD; flip = true; }
+      else if (o.dir === 'right') { xOff = 6; flip = false; }
+      else if (o.dir === 'up') { xOff = -GUN_W_HELD / 2; }
+      else { xOff = -GUN_W_HELD / 2; }
       ctx.save();
       if (flip) {
         ctx.translate(sx + xOff + GUN_W_HELD, sy + yOff);
