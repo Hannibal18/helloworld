@@ -39,6 +39,12 @@ export function setupViewport(): void {
   started = true;
 
   const update = () => {
+    // iOS Safari 자동 스크롤 차단 — input focus 시 페이지를 위로 끌어올려
+    // fixed/absolute UI 가 키보드 뒤로 사라지는 케이스를 막는다.
+    if (window.scrollY !== 0 || document.documentElement.scrollTop !== 0) {
+      window.scrollTo(0, 0);
+    }
+
     const vv = window.visualViewport;
     const width = vv?.width ?? window.innerWidth;
     const height = vv?.height ?? window.innerHeight;
@@ -64,6 +70,22 @@ export function setupViewport(): void {
     // 키보드 떠 있는 동안에만 .keyboard-open 클래스 토글 → 조이스틱 숨김 등 CSS 가 처리.
     root.classList.toggle('keyboard-open', keyboardOpen);
 
+    // 키보드 열렸을 때 모바일 UI 의 bottom 을 inline style 로 직접 못 박는다.
+    // iOS Safari 가 var(--vp-bottom) CSS 적용을 빠뜨리는 케이스/타이밍이 있어
+    // 안전망으로 JS 가 매번 위치 보정한다.
+    const chatBar = document.getElementById('chat-bar') as HTMLElement | null;
+    const stick = document.getElementById('stick') as HTMLElement | null;
+    const touchRight = document.querySelector('.touch-right') as HTMLElement | null;
+    if (keyboardOpen) {
+      if (chatBar) chatBar.style.bottom = `${bottomOffset}px`;
+      if (stick) stick.style.bottom = `${64 + bottomOffset}px`;
+      if (touchRight) touchRight.style.bottom = `${64 + bottomOffset}px`;
+    } else {
+      if (chatBar) chatBar.style.bottom = '';
+      if (stick) stick.style.bottom = '';
+      if (touchRight) touchRight.style.bottom = '';
+    }
+
     if (changed) for (const cb of listeners) cb(current);
   };
 
@@ -74,6 +96,18 @@ export function setupViewport(): void {
   }
   window.addEventListener('resize', update);
   window.addEventListener('orientationchange', update);
+
+  // input focus/blur 안전망 — 일부 iOS Safari 버전에서 visualViewport.resize 이벤트가
+  // 늦게 발사되거나 누락되어 키보드 떴는데도 UI 위치 보정이 안 되는 케이스 방어.
+  // 키보드 애니메이션 진행 중 여러 시점에 update 를 호출.
+  const onFocusChange = () => {
+    update();
+    setTimeout(update, 100);
+    setTimeout(update, 300);
+    setTimeout(update, 600);
+  };
+  window.addEventListener('focusin', onFocusChange);
+  window.addEventListener('focusout', onFocusChange);
 
   update();
   // iOS Safari 가 첫 페이지 로드 시 visualViewport 늦게 안정화 — 300ms 후 한 번 더
