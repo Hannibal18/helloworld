@@ -17,6 +17,13 @@ html, body {
   font-family: "Galmuri11", "NeoDunggeunmo", monospace;
   overflow: hidden;
   overscroll-behavior: none;
+  /* iOS Safari/Chrome 기본 핀치 줌·드래그 차단 — JS 가 핀치 제스처 직접 처리 */
+  touch-action: none;
+}
+
+/* 입력 박스만 예외 — 텍스트 선택/포커스 정상 동작 위해 */
+input[type="text"], textarea {
+  touch-action: auto;
 }
 
 #app {

@@ -161,23 +161,35 @@ async function startGameAsync(name: string): Promise<void> {
     setZoom(debug.viewTilesWide + step);
   }, { passive: false });
 
-  // 모바일: 두 손가락 핀치
-  // 캔버스 위에서 시작된 터치만 (스틱/버튼 위 터치는 자기 핸들러가 처리하니 무관).
+  // 모바일: 두 손가락 핀치 (document 레벨에서 듣고 UI 버튼 위 터치만 제외)
   let pinchStartDist = 0;
   let pinchStartView = 0;
   let pinchActive = false;
-  const canvasTouches = (e: TouchEvent): Touch[] => {
+
+  // 가상 조이스틱/공격/채팅 버튼 위에서 시작된 터치는 제외 (그것들은 자기 핸들러가 처리).
+  const isOnGameUi = (t: Touch): boolean => {
+    const target = t.target as HTMLElement | null;
+    if (!target) return false;
+    return !!(
+      target.closest('#stick') ||
+      target.closest('#btn-attack') ||
+      target.closest('#btn-chat') ||
+      target.closest('#chat-bar') ||
+      target.closest('#debug-panel')
+    );
+  };
+  const gameTouches = (e: TouchEvent): Touch[] => {
     const out: Touch[] = [];
     for (const t of Array.from(e.touches)) {
-      if (t.target === canvas) out.push(t);
+      if (!isOnGameUi(t)) out.push(t);
     }
     return out;
   };
   const dist2 = (a: Touch, b: Touch) =>
     Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 
-  canvas.addEventListener('touchstart', (e) => {
-    const ct = canvasTouches(e);
+  document.addEventListener('touchstart', (e) => {
+    const ct = gameTouches(e);
     if (ct.length >= 2) {
       pinchStartDist = dist2(ct[0], ct[1]);
       pinchStartView = debug.viewTilesWide;
@@ -186,9 +198,9 @@ async function startGameAsync(name: string): Promise<void> {
     }
   }, { passive: false });
 
-  canvas.addEventListener('touchmove', (e) => {
+  document.addEventListener('touchmove', (e) => {
     if (!pinchActive) return;
-    const ct = canvasTouches(e);
+    const ct = gameTouches(e);
     if (ct.length < 2) { pinchActive = false; return; }
     e.preventDefault();
     const d = dist2(ct[0], ct[1]);
@@ -200,8 +212,8 @@ async function startGameAsync(name: string): Promise<void> {
   }, { passive: false });
 
   const endPinch = () => { pinchActive = false; };
-  canvas.addEventListener('touchend', endPinch);
-  canvas.addEventListener('touchcancel', endPinch);
+  document.addEventListener('touchend', endPinch);
+  document.addEventListener('touchcancel', endPinch);
 
   // ===== 원격 플레이어 맵 =====
   const remotes = new Map<string, RemotePlayer>();
