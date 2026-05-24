@@ -121,6 +121,13 @@ let sheetReady = false;
 sheet.src = '/sprites/zombie.png';
 sheet.onload = () => { sheetReady = true; };
 
+// 틴트용 오프스크린 캔버스 — source-atop 이 메인 캔버스에선 잔디 같은
+// 불투명 배경까지 칠해버려 박스 전체가 보이는 버그 회피.
+// 좀비 1프레임만 그리고 그 안에서 source-atop 으로 픽셀만 색칠 후 main 으로 복사.
+const _tintCanvas: HTMLCanvasElement = (typeof document !== 'undefined') ? document.createElement('canvas') : null as unknown as HTMLCanvasElement;
+const _tintCtx: CanvasRenderingContext2D | null = _tintCanvas ? _tintCanvas.getContext('2d') : null;
+if (_tintCanvas) { _tintCanvas.width = 64; _tintCanvas.height = 64; }
+
 // ===== 호스트만 호출 — 첫 시작 트리거 (1회만). 이후 끝없이 진행. =====
 export function maybeTriggerWave(
   wave: ZombieWave,
@@ -394,17 +401,20 @@ export function drawZombies(
     }
     const dx = sx - Math.round(dstW / 2);
     const dy = sy - footY;
-    ctx.drawImage(sheet, col * FRAME, row * FRAME, FRAME, FRAME, dx, dy, dstW, dstH);
-    // 타입별 틴팅 (source-atop: 좀비 픽셀에만 색 입힘)
-    if (spec.tint) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(dx, dy, dstW, dstH);
-      ctx.clip();
-      ctx.globalCompositeOperation = 'source-atop';
-      ctx.fillStyle = spec.tint;
-      ctx.fillRect(dx, dy, dstW, dstH);
-      ctx.restore();
+    if (spec.tint && _tintCtx) {
+      // 1) 오프스크린에 1프레임 그리기 + 픽셀만 틴트
+      _tintCtx.globalCompositeOperation = 'source-over';
+      _tintCtx.clearRect(0, 0, FRAME, FRAME);
+      _tintCtx.imageSmoothingEnabled = false;
+      _tintCtx.drawImage(sheet, col * FRAME, row * FRAME, FRAME, FRAME, 0, 0, FRAME, FRAME);
+      _tintCtx.globalCompositeOperation = 'source-atop';
+      _tintCtx.fillStyle = spec.tint;
+      _tintCtx.fillRect(0, 0, FRAME, FRAME);
+      _tintCtx.globalCompositeOperation = 'source-over';
+      // 2) 메인 캔버스에 스케일 적용해 복사
+      ctx.drawImage(_tintCanvas, 0, 0, FRAME, FRAME, dx, dy, dstW, dstH);
+    } else {
+      ctx.drawImage(sheet, col * FRAME, row * FRAME, FRAME, FRAME, dx, dy, dstW, dstH);
     }
     // HP 바 (탱크/보스만)
     if (spec.showHpBar && z.hp < z.maxHp) {
