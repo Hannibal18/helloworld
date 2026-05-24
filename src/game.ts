@@ -50,6 +50,9 @@ import {
 import { addKill, commitBest, drawScoreHud, loadBest, makeScore, updateScore, type ScoreState, gradeFor } from './score';
 import {
   clearAllOwned as clearAllOwnedWeapons,
+  curseChargeLevel,
+  drawCurseCast,
+  drawIceCast,
   drawLightningClouds,
   drawOwnedIcons,
   drawProjectiles,
@@ -57,7 +60,10 @@ import {
   findPickup as findWeaponPickup,
   fireOwnedWeapons,
   grantOwnership,
+  handleCurseInput,
+  handleIceInput,
   handleLightningInput,
+  iceChargeLevel,
   lightningChargeLevel,
   makeWeaponsState,
   maybeSpawn as maybeSpawnWeapon,
@@ -314,17 +320,11 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     deathScreenShown = true;
   };
   void loadBest;
-  // 재도전 — 사망 화면 닫고 즉시 부활 + 점수 리셋
+  // 사망 = 게임 종료. 리스폰 불가. 버튼은 페이지 새로고침으로 새 게임.
   if (deathRetryEl) {
+    deathRetryEl.textContent = '🔄 새로고침으로 다시';
     deathRetryEl.addEventListener('click', () => {
-      hideDeathScreen();
-      // 부활 — deadUntil 무시
-      local.deadUntil = nowSec();
-      // 점수 리셋
-      const now = nowSec();
-      scoreState = makeScore(now);
-      nextWeaponBoonAt = now + 30;
-      lastHealKillThreshold = zombieWave.killCount;
+      location.reload();
     });
   }
   const applyZombieWaveStart = (_p: ZombieWaveStartPayload) => {
@@ -623,6 +623,9 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     }
     // 라이트닝 — press: 차지 시작, release: 차지량 비례 storm 발사
     handleLightningInput(weaponsState, now, input.attackHeld, prevAttackHeld, local, zombieWave, camera);
+    // ice / curse — 동일한 차지/방출 패턴 (lightning 패턴과 같음, 한 번에 한 무기만 보유하므로 충돌 없음)
+    handleIceInput(weaponsState, now, input.attackHeld, prevAttackHeld, local, zombieWave);
+    handleCurseInput(weaponsState, now, input.attackHeld, prevAttackHeld, local, zombieWave);
     prevAttackHeld = input.attackHeld;
     stepProjectiles(weaponsState, dt, now, zombieWave);
 
@@ -679,7 +682,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         // 30초마다 보너스 무기 부여 (랜덤). 보유 무기 있으면 갱신.
         if (now >= nextWeaponBoonAt) {
           nextWeaponBoonAt = now + 30;
-          const pool: WeaponType[] = ['garlic', 'pistol', 'missile', 'lightning'];
+          const pool: WeaponType[] = ['garlic', 'pistol', 'missile', 'lightning', 'ice', 'curse'];
           const t = pool[Math.floor(Math.random() * pool.length)];
           grantOwnership(weaponsState, t, now);
           local.gunUntil = 0;
@@ -817,10 +820,17 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     const ownedTypes: WeaponType[] = [];
     for (const [t, exp] of weaponsState.owned) if (now < exp) ownedTypes.push(t);
     if (!local.dead) {
-      const charge = lightningChargeLevel(weaponsState, now);
+      // 한 번에 한 무기만 보유 가능 → 동시에 진행 중인 차지는 최대 1개. max() 로 안전 통합.
+      const charge = Math.max(
+        lightningChargeLevel(weaponsState, now),
+        iceChargeLevel(weaponsState, now),
+        curseChargeLevel(weaponsState, now),
+      );
       drawOwnedIcons(ctx2d, camera, local.x, local.y, CHAR_H, ownedTypes, now < local.gunUntil, charge);
-      // 라이트닝 차지 — 1~7개 구름이 플레이어 주변 링 위치에 차례로 등장
+      // 차지/방출 비주얼 — 라이트닝 구름 + ice/curse 차지 마커 & 캐스트 애니메이션
       drawLightningClouds(ctx2d, camera, weaponsState, now, local.x, local.y);
+      drawIceCast(ctx2d, camera, weaponsState, now, local.x, local.y);
+      drawCurseCast(ctx2d, camera, weaponsState, now, local.x, local.y);
     }
 
     // 좀비 (zombie 모드만) — 캐릭터 위에 그림
