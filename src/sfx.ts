@@ -1,45 +1,68 @@
-// 가벼운 SFX 시스템 — HTMLAudioElement 기반.
-// 동시 재생 위해 매 play 마다 cloneNode 사용 (Web Audio API 대비 단순).
-// iOS 는 첫 사용자 제스처 후에야 재생 가능 → 입장 시 unlock 호출 필요.
+// Web Audio 기반 가벼운 SFX. iOS Safari 호환:
+//   - AudioContext 한 개만 생성. 첫 user gesture 에서 resume() (unlock).
+//   - mp3 한 번 decode → AudioBuffer 캐시. play 마다 BufferSource 새로 만들어
+//     n발 동시 재생 OK.
+//   - HTMLAudioElement.cloneNode 방식은 iOS 에서 unlock 상태가 복제되지 않아
+//     무음 되는 경우 있어서 폐기.
 
-const bank = new Map<string, HTMLAudioElement>();
-
-export function load(key: string, url: string, volume = 1.0): void {
-  if (bank.has(key)) return;
-  const a = new Audio(url);
-  a.preload = 'auto';
-  a.volume = volume;
-  bank.set(key, a);
+let ctx: AudioContext | null = null;
+function getCtx(): AudioContext | null {
+  if (ctx) return ctx;
+  const W = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
+  const AC = W.AudioContext ?? W.webkitAudioContext;
+  if (!AC) return null;
+  ctx = new AC();
+  return ctx;
 }
 
-// 한 키에 여러 변형 등록 — play 시 랜덤 picking.
+const buffers = new Map<string, AudioBuffer>();
+const volumes = new Map<string, number>();
 const variants = new Map<string, string[]>();
+
+export function load(key: string, url: string, volume = 1.0): void {
+  volumes.set(key, volume);
+  if (buffers.has(key)) return;
+  const c = getCtx();
+  if (!c) return;
+  fetch(url)
+    .then((r) => r.arrayBuffer())
+    .then((ab) => c.decodeAudioData(ab))
+    .then((buf) => { buffers.set(key, buf); })
+    .catch((e) => console.warn('[sfx] load failed', key, url, e));
+}
+
 export function loadVariants(key: string, urls: string[], volume = 1.0): void {
-  variants.set(key, urls.map((u, i) => {
-    const subKey = `${key}:${i}`;
-    load(subKey, u, volume);
-    return subKey;
-  }));
+  const subs = urls.map((u, i) => {
+    const sk = `${key}:${i}`;
+    load(sk, u, volume);
+    return sk;
+  });
+  variants.set(key, subs);
 }
 
 export function play(key: string): void {
+  const c = getCtx();
+  if (!c) return;
+  // suspended 면 자동 resume 시도 (gesture 안에서 호출됐을 때만 실제로 풀림)
+  if (c.state === 'suspended') c.resume().catch(() => {});
+
   let pickKey = key;
-  const vlist = variants.get(key);
-  if (vlist && vlist.length > 0) pickKey = vlist[Math.floor(Math.random() * vlist.length)];
-  const src = bank.get(pickKey);
-  if (!src) return;
-  // cloneNode 로 동시 재생 가능
-  const node = src.cloneNode() as HTMLAudioElement;
-  node.volume = src.volume;
-  node.play().catch(() => { /* autoplay 차단 등 — 조용히 무시 */ });
+  const vs = variants.get(key);
+  if (vs && vs.length > 0) pickKey = vs[Math.floor(Math.random() * vs.length)];
+
+  const buf = buffers.get(pickKey);
+  if (!buf) return;
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const gain = c.createGain();
+  gain.gain.value = volumes.get(pickKey) ?? 1.0;
+  src.connect(gain).connect(c.destination);
+  try { src.start(0); } catch { /* ignore */ }
 }
 
-// iOS Safari 자동 재생 차단 해제 — 첫 사용자 제스처 핸들러에서 호출.
-let unlocked = false;
+// 첫 사용자 제스처 핸들러 — AudioContext suspended 풀어줌.
 export function unlock(): void {
-  if (unlocked) return;
-  unlocked = true;
-  for (const a of bank.values()) {
-    a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => { /* ignore */ });
-  }
+  const c = getCtx();
+  if (!c) return;
+  if (c.state === 'suspended') c.resume().catch(() => {});
 }
