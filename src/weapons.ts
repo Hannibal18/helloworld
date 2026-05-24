@@ -358,22 +358,53 @@ function spawnLightningStorm(
 }
 
 // 매 프레임 storm 진행 — trigger 도달한 bolt 는 실제 좀비 죽이고 시각 효과 추가.
+// fire 시점 zombie 탐색 반경 — bullet 충돌(18px) 보다 훨씬 넓게.
+// 이유: spawn ~ fire 사이 stagger 동안 좀비가 이동 + 원래 후보가 부족했던 슬롯도
+// fire 시점에 새로 찾아질 수 있게.
+const LIGHTNING_FIRE_SEEK_RADIUS = 60;
+
+function findNearestZombieIn(wave: ZombieWave, x: number, y: number, radius: number, exclude: Set<string>) {
+  if (!wave.active) return null;
+  const r2 = radius * radius;
+  let best: { id: string; x: number; y: number } | null = null;
+  let bestD2 = r2;
+  for (const z of wave.zombies) {
+    if (exclude.has(z.id)) continue;
+    const dx = z.x - x;
+    const dy = z.y - y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) { bestD2 = d2; best = { id: z.id, x: z.x, y: z.y }; }
+  }
+  return best;
+}
+
 function stepStorms(state: WeaponsState, now: number, wave: ZombieWave): void {
   // 만료 제거
   state.storms = state.storms.filter((s) => now - s.bornAt < LIGHTNING_CLOUD_LIFE);
   for (const s of state.storms) {
+    // 같은 storm 안에서 이미 죽인 좀비 중복 제외 (다른 bolt 가 또 잡지 않게)
+    const claimed = new Set<string>();
     for (const b of s.bolts) {
       if (b.fired) continue;
       if (now < b.triggerAt) continue;
       b.fired = true;
-      // 가장 가까운 좀비 죽임 (target 위치 기준 반경 22)
-      const zid = bulletHitsZombie(wave, b.targetX, b.targetY);
-      if (zid) killZombieById(wave, zid);
-      // 시각 — 구름(bolt 자체 origin)→타깃 zigzag (가지치기 + 임팩트 섬광 동반)
-      const pts = buildZigzag(b.originX, b.originY, b.targetX, b.targetY, 5, 22);
+      // 1순위: 저장된 target 좌표 근처 (stagger 사이 이동 보정용 60px)
+      let hit = findNearestZombieIn(wave, b.targetX, b.targetY, LIGHTNING_FIRE_SEEK_RADIUS, claimed);
+      // 2순위: 못 찾으면 구름 origin 근처에서 전 viewport 범위로 다시 — 빈 슬롯도 명중 기회
+      if (!hit) {
+        hit = findNearestZombieIn(wave, b.originX, b.originY, LIGHTNING_RANGE_VIEW_PAD * 4, claimed);
+      }
+      let tx = b.targetX, ty = b.targetY;
+      if (hit) {
+        killZombieById(wave, hit.id);
+        claimed.add(hit.id);
+        // 시각도 실제 hit 위치로 갱신 — 좀비에게 정확히 꽂히는 그림
+        tx = hit.x; ty = hit.y;
+      }
+      const pts = buildZigzag(b.originX, b.originY, tx, ty, 5, 22);
       const branches = generateBranches(pts);
       state.bolts.push({ pts, branches, bornAt: now });
-      state.impacts.push({ x: b.targetX, y: b.targetY, bornAt: now });
+      state.impacts.push({ x: tx, y: ty, bornAt: now });
     }
   }
 }
