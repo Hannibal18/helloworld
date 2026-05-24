@@ -19,6 +19,9 @@ export interface ScoreState {
   comboCount: number;
   lastKillAt: number;
   maxCombo: number;
+  // 스테이지 — 사망 시점까지 도달한 최고 스테이지 (totalIdx 기준, 0-based).
+  maxStageReached: number;
+  maxStageName: string;
   // 시각 효과용 (HUD pop)
   lastKillScore: number;        // 마지막 킬로 얻은 점수
   killPopUntil: number;         // killScore 팝업 종료
@@ -36,6 +39,8 @@ export function makeScore(now: number): ScoreState {
     comboCount: 0,
     lastKillAt: -Infinity,
     maxCombo: 0,
+    maxStageReached: 0,
+    maxStageName: '',
     lastKillScore: 0,
     killPopUntil: 0,
     comboPopUntil: 0,
@@ -89,8 +94,9 @@ export interface BestRecord {
   kills: number;
   survivalSec: number;
   maxCombo: number;
+  maxStageReached: number;
 }
-const EMPTY_BEST: BestRecord = { score: 0, kills: 0, survivalSec: 0, maxCombo: 0 };
+const EMPTY_BEST: BestRecord = { score: 0, kills: 0, survivalSec: 0, maxCombo: 0, maxStageReached: 0 };
 
 export function loadBest(): BestRecord {
   try {
@@ -102,6 +108,7 @@ export function loadBest(): BestRecord {
       kills: Number(parsed.kills) || 0,
       survivalSec: Number(parsed.survivalSec) || 0,
       maxCombo: Number(parsed.maxCombo) || 0,
+      maxStageReached: Number(parsed.maxStageReached) || 0,
     };
   } catch {
     return { ...EMPTY_BEST };
@@ -114,10 +121,11 @@ export function commitBest(s: ScoreState, now: number): { updated: (keyof BestRe
   const cur = loadBest();
   const updated: (keyof BestRecord)[] = [];
   const next: BestRecord = { ...cur };
-  if (s.totalScore > cur.score)      { next.score = s.totalScore; updated.push('score'); }
-  if (s.kills > cur.kills)           { next.kills = s.kills; updated.push('kills'); }
-  if (survivalSec > cur.survivalSec) { next.survivalSec = survivalSec; updated.push('survivalSec'); }
-  if (s.maxCombo > cur.maxCombo)     { next.maxCombo = s.maxCombo; updated.push('maxCombo'); }
+  if (s.totalScore > cur.score)               { next.score = s.totalScore; updated.push('score'); }
+  if (s.kills > cur.kills)                    { next.kills = s.kills; updated.push('kills'); }
+  if (survivalSec > cur.survivalSec)          { next.survivalSec = survivalSec; updated.push('survivalSec'); }
+  if (s.maxCombo > cur.maxCombo)              { next.maxCombo = s.maxCombo; updated.push('maxCombo'); }
+  if (s.maxStageReached > cur.maxStageReached) { next.maxStageReached = s.maxStageReached; updated.push('maxStageReached'); }
   if (updated.length > 0) {
     try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch { /* 시크릿 모드 등 */ }
   }

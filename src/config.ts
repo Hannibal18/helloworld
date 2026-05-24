@@ -27,7 +27,15 @@ export interface StageConfig {
     maxDropsOnGround: number;
     allowed: Record<CfgWeaponType, boolean>;
     dropWeights: Record<CfgWeaponType, number>;
-    damageMult: number;         // 총알/투사체 데미지 배율
+    damageMult: number;         // 글로벌 데미지 배율 (모든 무기 공통)
+    perWeapon: Record<CfgWeaponType, { cooldownMult: number }>;  // 무기별 발사 간격 배율
+  };
+}
+
+function defaultPerWeapon(): Record<CfgWeaponType, { cooldownMult: number }> {
+  return {
+    garlic: { cooldownMult: 1 }, pistol: { cooldownMult: 1 }, missile: { cooldownMult: 1 },
+    lightning: { cooldownMult: 1 }, ice: { cooldownMult: 1 }, curse: { cooldownMult: 1 },
   };
 }
 
@@ -66,6 +74,7 @@ function mkStage(name: string, dur: number, z: Partial<StageConfig['zombie']>, w
       allowed: { garlic: true, pistol: true, missile: false, lightning: false, ice: false, curse: false, ...(w.allowed ?? {}) },
       dropWeights: { garlic: 5, pistol: 45, missile: 25, lightning: 12, ice: 8, curse: 5, ...(w.dropWeights ?? {}) },
       damageMult: w.damageMult ?? 1,
+      perWeapon: { ...defaultPerWeapon(), ...(w.perWeapon ?? {}) },
     },
   };
 }
@@ -144,6 +153,7 @@ function mergeStage(s: Partial<StageConfig>): StageConfig {
       allowed: { ...base.weapons.allowed, ...(s.weapons?.allowed ?? {}) },
       dropWeights: { ...base.weapons.dropWeights, ...(s.weapons?.dropWeights ?? {}) },
       damageMult: s.weapons?.damageMult ?? base.weapons.damageMult,
+      perWeapon: { ...defaultPerWeapon(), ...(s.weapons?.perWeapon ?? {}) },
     },
   };
 }

@@ -291,6 +291,31 @@ function renderWeaponsBlock(stage: StageConfig): HTMLElement {
   }
   block.append(wGrid);
 
+  // 무기별 쿨다운 배율 — 작을수록 빠른 발사 (0.5 = 두 배 빠르게)
+  const cdLabel = el('div', { className: 'field-label', text: '무기별 쿨다운 배율 (작을수록 빠른 발사)' });
+  cdLabel.style.marginTop = '10px';
+  block.append(cdLabel);
+  const cdGrid = el('div', { className: 'weight-grid' });
+  for (const w of CFG_WEAPON_TYPES) {
+    cdGrid.append(el('div', { className: 'weight-name', text: WEAPON_LABEL[w] }));
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'field-input';
+    input.min = '0.1'; input.step = '0.05';
+    input.value = String(stage.weapons.perWeapon?.[w]?.cooldownMult ?? 1);
+    input.addEventListener('input', () => {
+      const v = parseFloat(input.value);
+      if (!Number.isNaN(v)) {
+        if (!stage.weapons.perWeapon) {
+          stage.weapons.perWeapon = { garlic: { cooldownMult: 1 }, pistol: { cooldownMult: 1 }, missile: { cooldownMult: 1 }, lightning: { cooldownMult: 1 }, ice: { cooldownMult: 1 }, curse: { cooldownMult: 1 } };
+        }
+        stage.weapons.perWeapon[w].cooldownMult = Math.max(0.1, v);
+      }
+    });
+    cdGrid.append(input);
+  }
+  block.append(cdGrid);
+
   return block;
 }
 

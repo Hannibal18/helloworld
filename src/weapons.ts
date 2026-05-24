@@ -77,7 +77,7 @@ function pickWeaponByWeight(): WeaponType {
 // ===== !!! DEBUG: 라이트닝 테스트용 임시 모드 !!! =====
 // 라이트닝만 드랍, max 12개, 즉시 스폰 + 2초 주기. 테스트 끝나면 아래 3 상수와
 // pickWeaponByWeight / makeWeaponsState 의 nextSpawnAt 초기값을 원복.
-const DEBUG_LIGHTNING_ONLY = true;
+const DEBUG_LIGHTNING_ONLY = false;
 export const WEAPON_DROP_INTERVAL = DEBUG_LIGHTNING_ONLY ? 2 : 45;
 export const WEAPON_MAX_DROPS = DEBUG_LIGHTNING_ONLY ? 12 : 3;
 export const WEAPON_PICKUP_RADIUS = 18;
@@ -277,7 +277,9 @@ export function fireOwnedWeapons(
     // 차지/방출 무기들은 fireOwnedWeapons 가 처리하지 않음 (각자 handle*Input 호출 측에서)
     if (type === 'lightning' || type === 'ice' || type === 'curse') continue;
     const last = state.lastFire.get(type) ?? -Infinity;
-    if (now - last < COOLDOWN[type]) continue;
+    // 스테이지의 perWeapon.cooldownMult 적용 (기본 1). 작을수록 빠른 발사.
+    const cdMult = currentStageWeapons?.perWeapon?.[type]?.cooldownMult ?? 1;
+    if (now - last < COOLDOWN[type] * cdMult) continue;
     state.lastFire.set(type, now);
     fired(type);
     switch (type) {

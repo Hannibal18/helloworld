@@ -66,3 +66,52 @@ export function unlock(): void {
   if (!c) return;
   if (c.state === 'suspended') c.resume().catch(() => {});
 }
+
+// ===== 합성 효과음 (외부 파일 없이 WebAudio 로 즉석 생성) =====
+
+// 한 음 — type 의 wave 로 freq 헤르츠를 dur 초 재생, 부드러운 envelope.
+function tone(freq: number, durSec: number, type: OscillatorType, vol = 0.18, startOffset = 0): void {
+  const c = getCtx();
+  if (!c) return;
+  if (c.state === 'suspended') c.resume().catch(() => {});
+  const start = c.currentTime + startOffset;
+  const osc = c.createOscillator();
+  osc.type = type;
+  osc.frequency.value = freq;
+  const gain = c.createGain();
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(vol, start + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + durSec);
+  osc.connect(gain).connect(c.destination);
+  osc.start(start);
+  osc.stop(start + durSec + 0.02);
+}
+
+// 스테이지 전환 — 짧은 3음 상승 차임 (C5-E5-G5).
+export function playStageTransition(): void {
+  tone(523.25, 0.18, 'triangle', 0.16, 0);
+  tone(659.25, 0.18, 'triangle', 0.16, 0.08);
+  tone(783.99, 0.30, 'triangle', 0.18, 0.16);
+}
+
+// 보스 등장 — 낮은 사이렌 sweep.
+export function playBossAlert(): void {
+  const c = getCtx();
+  if (!c) return;
+  if (c.state === 'suspended') c.resume().catch(() => {});
+  const start = c.currentTime;
+  const osc = c.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(180, start);
+  osc.frequency.linearRampToValueAtTime(90,  start + 0.4);
+  osc.frequency.linearRampToValueAtTime(200, start + 0.8);
+  osc.frequency.linearRampToValueAtTime(110, start + 1.2);
+  const gain = c.createGain();
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(0.22, start + 0.05);
+  gain.gain.setValueAtTime(0.22, start + 1.05);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + 1.3);
+  osc.connect(gain).connect(c.destination);
+  osc.start(start);
+  osc.stop(start + 1.35);
+}

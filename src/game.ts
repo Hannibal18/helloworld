@@ -49,6 +49,7 @@ import {
 } from './zombie';
 import { addKill, commitBest, drawScoreHud, loadBest, makeScore, updateScore, type ScoreState, gradeFor } from './score';
 import { getConfig, getStageProgress } from './config';
+import { playStageTransition, playBossAlert } from './sfx';
 import {
   clearAllOwned as clearAllOwnedWeapons,
   curseChargeLevel,
@@ -314,13 +315,15 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       const badge = (k: string) => updated.includes(k as keyof typeof best) ? ' <span class="new-record">🏆 NEW</span>' : '';
       const bestMm = Math.floor(best.survivalSec / 60);
       const bestSs = Math.floor(best.survivalSec % 60).toString().padStart(2, '0');
+      const stageLabel = s.maxStageName ? `${s.maxStageName} (#${s.maxStageReached + 1})` : '시작 전';
       deathStatsEl.innerHTML = `
         ${isNewBestScore ? '<div class="new-record-banner">🏆 새 최고 기록!</div>' : ''}
+        <div class="row"><span>도달 스테이지</span><b>${stageLabel}${badge('maxStageReached')}</b></div>
         <div class="row"><span>점수</span><b>${s.totalScore.toLocaleString()}${badge('score')}</b></div>
         <div class="row"><span>킬</span><b>${s.kills}${badge('kills')}</b></div>
         <div class="row"><span>생존</span><b>${mm}:${ss}${badge('survivalSec')}</b></div>
         <div class="row"><span>최고 콤보</span><b>×${s.maxCombo}${badge('maxCombo')}</b></div>
-        <div class="row best-row"><span>전체 최고</span><b>${best.score.toLocaleString()} · ${best.kills}킬 · ${bestMm}:${bestSs}</b></div>
+        <div class="row best-row"><span>전체 최고</span><b>${best.score.toLocaleString()} · ${best.kills}킬 · ${bestMm}:${bestSs} · 최대 #${best.maxStageReached + 1}</b></div>
       `;
     }
     deathScreenEl.classList.remove('hidden');
@@ -570,6 +573,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
 
   // ===== 스테이지 진행 (config 의 stages 기반) =====
   let currentStageTotalIdx = -1;       // 변경 감지용
+  let prevBossCount = 0;               // 보스 출현 감지용 — 늘어나면 alert
   // 우상단 HUD 에 작은 스테이지 표시 — 동적으로 삽입.
   let stagePillEl: HTMLDivElement | null = null;
   if (isZombieMode) {
@@ -614,14 +618,29 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       const progress = getStageProgress(getConfig(), elapsed);
       setStageWeapons(progress.stage.weapons);
       if (progress.totalIdx !== currentStageTotalIdx) {
+        const isFirst = currentStageTotalIdx < 0;
         currentStageTotalIdx = progress.totalIdx;
         showBanner(ui, 'info', `🎯 ${progress.stage.name}`);
         pushChatLog(ui, '🎯 스테이지', progress.stage.name, '#ffae40');
+        if (!isFirst) playStageTransition();   // 첫 스테이지는 시작 배너만, 사운드 없음
+        // 사망 화면 표시용 — 도달한 최고 스테이지 갱신
+        if (scoreState && progress.totalIdx > scoreState.maxStageReached) {
+          scoreState.maxStageReached = progress.totalIdx;
+          scoreState.maxStageName = progress.rawStage.name;
+        }
       }
       if (stagePillEl) {
         const remain = Math.max(0, Math.floor(progress.remainingSec));
         stagePillEl.textContent = `🎯 ${progress.rawStage.name} · ${remain}s`;
       }
+      // 보스 출현 감지 — boss 타입 좀비 카운트가 늘어난 순간 사이렌.
+      let bossCount = 0;
+      for (const z of zombieWave.zombies) if (z.type === 'boss') bossCount++;
+      if (bossCount > prevBossCount) {
+        playBossAlert();
+        showBanner(ui, 'info', '👹 보스 출현');
+      }
+      prevBossCount = bossCount;
     } else if (isZombieMode) {
       // 웨이브 시작 전: 첫 스테이지 미리보기
       setStageWeapons(getConfig().stages[0]?.weapons ?? null);
