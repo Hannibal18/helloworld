@@ -70,10 +70,14 @@ const PISTOL_LIFE = 0.7;
 const MISSILE_SPEED = 280;
 const MISSILE_LIFE = 1.6;
 const MISSILE_HOMING_TURN_RATE = 6;  // radians/sec — 회전 한계
-const LIGHTNING_RANGE = 140;
-const LIGHTNING_CHAIN = 2;             // 추가 체인 점프 횟수
-const LIGHTNING_CHAIN_RANGE = 110;
-const LIGHTNING_LIFE = 0.18;           // 라이트닝 비주얼 지속
+// 라이트닝 — 차지/방출 시스템 (특수 메커니즘).
+const LIGHTNING_LIFE = 0.18;           // 단일 zigzag 라이트닝 비주얼 지속
+const LIGHTNING_MAX_CHARGE_SEC = 3.0;  // 풀차지까지 시간
+const LIGHTNING_MAX_BOLTS = 10;        // 풀차지 시 최대 번개 개수
+const LIGHTNING_MIN_BOLTS = 1;
+const LIGHTNING_BOLT_STAGGER = 0.08;   // 번개간 간격
+const LIGHTNING_CLOUD_LIFE = 1.2;      // 구름 표시 시간
+const LIGHTNING_RANGE_VIEW_PAD = 64;   // 카메라 viewport 밖 좀비도 약간 잡음
 
 // ===== 타입 =====
 export interface WeaponDrop {
@@ -96,16 +100,31 @@ interface LightningBolt {
   pts: { x: number; y: number }[];
   bornAt: number;
 }
+// 차지 발사 시 만들어지는 폭풍 — 구름 + 다발 번개.
+interface LightningStorm {
+  cloudWorldX: number;       // 카메라 fire 시점 기준 화면 가운데 위쪽
+  cloudWorldY: number;
+  bornAt: number;
+  bolts: {
+    triggerAt: number;       // 이 시각 되면 실제 zombie kill + visual 추가
+    targetX: number;
+    targetY: number;
+    fired: boolean;
+  }[];
+}
 
 export interface WeaponsState {
   drops: Map<string, WeaponDrop>;
   projectiles: Projectile[];
   bolts: LightningBolt[];
+  storms: LightningStorm[];
   // 보유 무기: 타입 → 만료 시각(sec). now < 만료 면 보유 중.
   owned: Map<WeaponType, number>;
   // 마지막 발사 시각 (쿨다운)
   lastFire: Map<WeaponType, number>;
   nextSpawnAt: number;
+  // 라이트닝 차지 시작 시각 (null = 차지 중 아님)
+  lightningChargeStartedAt: number | null;
 }
 
 export function makeWeaponsState(now: number): WeaponsState {
@@ -113,9 +132,11 @@ export function makeWeaponsState(now: number): WeaponsState {
     drops: new Map(),
     projectiles: [],
     bolts: [],
+    storms: [],
     owned: new Map(),
     lastFire: new Map(),
     nextSpawnAt: now + 25, // 첫 드랍 25초 후
+    lightningChargeStartedAt: null,
   };
 }
 
@@ -188,7 +209,123 @@ export function fireOwnedWeapons(
       case 'garlic':    fireGarlic(state, now, local, wave); break;
       case 'pistol':    firePistol(state, now, local); break;
       case 'missile':   fireMissile(state, now, local, wave); break;
-      case 'lightning': fireLightning(state, now, local, wave); break;
+      // lightning 은 차지/방출 — fireOwnedWeapons 에서 처리 안 함 (handleLightningInput)
+      case 'lightning': break;
+    }
+  }
+}
+
+// ===== 라이트닝 차지/방출 =====
+// game.ts 가 매 프레임 호출. attackHeld edge 감지해서:
+//   - false→true (press): 차지 시작
+//   - true→false (release): 차지량 비례 번개 storm 생성
+//   - 차지 중에도 무기 만료/사망 등 가드
+export function handleLightningInput(
+  state: WeaponsState,
+  now: number,
+  attackHeldNow: boolean,
+  attackHeldPrev: boolean,
+  local: LocalPlayer,
+  wave: ZombieWave,
+  camera: { x: number; y: number; viewW: number; viewH: number },
+): void {
+  const isLightning = !local.dead && (state.owned.get('lightning') ?? 0) > now;
+  if (!isLightning) {
+    state.lightningChargeStartedAt = null;
+    return;
+  }
+  // press
+  if (attackHeldNow && !attackHeldPrev) {
+    state.lightningChargeStartedAt = now;
+  }
+  // release
+  if (!attackHeldNow && attackHeldPrev && state.lightningChargeStartedAt !== null) {
+    const chargeFrac = Math.min(1, (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC);
+    state.lightningChargeStartedAt = null;
+    spawnLightningStorm(state, now, chargeFrac, wave, camera);
+  }
+}
+
+// 라이트닝 차지 진행률 (0..1) — UI 바 렌더용
+export function lightningChargeLevel(state: WeaponsState, now: number): number {
+  if (state.lightningChargeStartedAt === null) return 0;
+  return Math.min(1, (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC);
+}
+
+function spawnLightningStorm(
+  state: WeaponsState, now: number, chargeFrac: number, wave: ZombieWave,
+  camera: { x: number; y: number; viewW: number; viewH: number },
+): void {
+  const boltCount = Math.max(
+    LIGHTNING_MIN_BOLTS,
+    Math.round(LIGHTNING_MIN_BOLTS + chargeFrac * (LIGHTNING_MAX_BOLTS - LIGHTNING_MIN_BOLTS)),
+  );
+  // viewport 안 좀비 후보 — 카메라 박스 + pad
+  const minX = camera.x - LIGHTNING_RANGE_VIEW_PAD;
+  const maxX = camera.x + camera.viewW + LIGHTNING_RANGE_VIEW_PAD;
+  const minY = camera.y - LIGHTNING_RANGE_VIEW_PAD;
+  const maxY = camera.y + camera.viewH + LIGHTNING_RANGE_VIEW_PAD;
+  const candidates = wave.zombies.filter(
+    (z) => z.x >= minX && z.x <= maxX && z.y >= minY && z.y <= maxY,
+  );
+  // 셔플 후 N개 선택
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  const picks = candidates.slice(0, boltCount);
+
+  const storm: LightningStorm = {
+    cloudWorldX: camera.x + camera.viewW / 2,
+    cloudWorldY: camera.y + 28,
+    bornAt: now,
+    bolts: [],
+  };
+  for (let i = 0; i < picks.length; i++) {
+    storm.bolts.push({
+      triggerAt: now + i * LIGHTNING_BOLT_STAGGER,
+      targetX: picks[i].x,
+      targetY: picks[i].y,
+      fired: false,
+    });
+  }
+  // 좀비가 후보보다 많아도 boltCount 만큼 충분히 못 채웠으면 남은 슬롯도 랜덤 위치(허공)에 떨어트림
+  for (let i = picks.length; i < boltCount; i++) {
+    storm.bolts.push({
+      triggerAt: now + i * LIGHTNING_BOLT_STAGGER,
+      targetX: camera.x + Math.random() * camera.viewW,
+      targetY: camera.y + Math.random() * camera.viewH,
+      fired: false,
+    });
+  }
+  state.storms.push(storm);
+}
+
+// 매 프레임 storm 진행 — trigger 도달한 bolt 는 실제 좀비 죽이고 시각 효과 추가.
+function stepStorms(state: WeaponsState, now: number, wave: ZombieWave): void {
+  // 만료 제거
+  state.storms = state.storms.filter((s) => now - s.bornAt < LIGHTNING_CLOUD_LIFE);
+  for (const s of state.storms) {
+    for (const b of s.bolts) {
+      if (b.fired) continue;
+      if (now < b.triggerAt) continue;
+      b.fired = true;
+      // 가장 가까운 좀비 죽임 (target 위치 기준 반경 22)
+      const zid = bulletHitsZombie(wave, b.targetX, b.targetY);
+      if (zid) killZombieById(wave, zid);
+      // 시각 — 구름→타깃 zigzag
+      const pts: { x: number; y: number }[] = [];
+      pts.push({ x: s.cloudWorldX, y: s.cloudWorldY });
+      // 중간 1~2 단 zigzag (가로 흔들림)
+      const segs = 3;
+      for (let k = 1; k < segs; k++) {
+        const t = k / segs;
+        const ix = s.cloudWorldX + (b.targetX - s.cloudWorldX) * t + (Math.random() - 0.5) * 18;
+        const iy = s.cloudWorldY + (b.targetY - s.cloudWorldY) * t;
+        pts.push({ x: ix, y: iy });
+      }
+      pts.push({ x: b.targetX, y: b.targetY });
+      state.bolts.push({ pts, bornAt: now });
     }
   }
 }
@@ -235,24 +372,7 @@ function fireMissile(state: WeaponsState, now: number, local: LocalPlayer, wave:
   });
 }
 
-function fireLightning(state: WeaponsState, now: number, local: LocalPlayer, wave: ZombieWave): void {
-  const sx = local.x, sy = local.y + BODY_OFF_Y;
-  const first = nearestZombie(wave, sx, sy, LIGHTNING_RANGE);
-  if (!first) return;
-  const pts: { x: number; y: number }[] = [{ x: sx, y: sy }, { x: first.x, y: first.y }];
-  killZombieById(wave, first.id);
-  let last = first;
-  const exclude = new Set<string>([first.id]);
-  for (let i = 0; i < LIGHTNING_CHAIN; i++) {
-    const next = nearestZombie(wave, last.x, last.y, LIGHTNING_CHAIN_RANGE, exclude);
-    if (!next) break;
-    pts.push({ x: next.x, y: next.y });
-    killZombieById(wave, next.id);
-    exclude.add(next.id);
-    last = next;
-  }
-  state.bolts.push({ pts, bornAt: now });
-}
+// 구버전 자동 체인 라이트닝 제거 — 차지/방출 방식으로 대체 (spawnLightningStorm).
 
 function dirAngle(local: LocalPlayer): number {
   // 캐릭터 방향(p.dir) 기반 라디안 (오른쪽=0)
@@ -286,6 +406,8 @@ function nearestZombie(
 export function stepProjectiles(state: WeaponsState, dt: number, now: number, wave: ZombieWave): void {
   // 라이트닝 비주얼 만료
   state.bolts = state.bolts.filter((b) => now - b.bornAt <= LIGHTNING_LIFE);
+  // 라이트닝 폭풍 — 구름 + 다발 번개
+  stepStorms(state, now, wave);
   // 발사체
   state.projectiles = state.projectiles.filter((p) => {
     const life = p.type === 'pistol' ? PISTOL_LIFE : MISSILE_LIFE;
@@ -361,6 +483,40 @@ export function drawProjectiles(
   ctx: CanvasRenderingContext2D, camera: Camera, state: WeaponsState, now: number,
 ): void {
   ctx.save();
+  // 구름 (라이트닝 폭풍) — 절차적 구름. 추후 sprite 로 교체 가능.
+  for (const s of state.storms) {
+    const age = (now - s.bornAt) / LIGHTNING_CLOUD_LIFE;
+    if (age < 0 || age > 1) continue;
+    // 등장(0~0.15) / 유지 / 페이드(0.7~1)
+    let alpha = 1;
+    if (age < 0.15) alpha = age / 0.15;
+    else if (age > 0.7) alpha = 1 - (age - 0.7) / 0.3;
+    const cx = Math.round(s.cloudWorldX - camera.x);
+    const cy = Math.round(s.cloudWorldY - camera.y);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, alpha);
+    // 어두운 적운 — 회색 ellipse 3~5 개 겹쳐서
+    const blobs: [number, number, number, number][] = [
+      [-22, 4, 20, 11],
+      [-8, -2, 22, 13],
+      [10, 2, 22, 12],
+      [26, 6, 16, 10],
+      [-12, 10, 18, 8],
+    ];
+    for (const [ox, oy, rx, ry] of blobs) {
+      ctx.fillStyle = '#3a3a44';
+      ctx.beginPath(); ctx.ellipse(cx + ox, cy + oy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    for (const [ox, oy, rx, ry] of blobs) {
+      ctx.fillStyle = '#56565e';
+      ctx.beginPath(); ctx.ellipse(cx + ox, cy + oy - 2, rx * 0.85, ry * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // 깜빡이는 가운데 코어 — 번개 모이는 느낌
+    const flick = (Math.sin(now * 20) + 1) / 2;
+    ctx.fillStyle = `rgba(255, 240, 140, ${0.25 + flick * 0.35})`;
+    ctx.beginPath(); ctx.arc(cx, cy + 4, 8 + flick * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
   // 라이트닝
   for (const b of state.bolts) {
     const age = (now - b.bornAt) / LIGHTNING_LIFE;
@@ -433,6 +589,7 @@ export function drawOwnedIcons(
   ctx: CanvasRenderingContext2D, camera: Camera,
   ownerX: number, ownerY: number, charH: number,
   weapons: WeaponType[], hasGun: boolean,
+  chargeLevel: number = 0,  // 0..1, 라이트닝 차지 중일 때만 0보다 큼
 ): void {
   const items: IconItem[] = [];
   if (hasGun) items.push({ kind: 'ak' });
@@ -477,6 +634,30 @@ export function drawOwnedIcons(
       ctx.fillStyle = '#1a0e08';
       ctx.fillText(SYMBOL[it.type], sx, y + 1);
     }
+  }
+  // 라이트닝 차지 바 — 캐릭터 머리(charH 위쪽) 와 무기 아이콘 사이 중앙
+  if (chargeLevel > 0) {
+    const headTopY = Math.round(ownerY - camera.y - charH);
+    const iconBottomY = y + ICON_R + 1;
+    const barCx = Math.round(ownerX - camera.x);
+    const barCy = Math.round((headTopY + iconBottomY) / 2);
+    const barW = 32;
+    const barH = 5;
+    const bx = barCx - barW / 2;
+    const by = barCy - barH / 2;
+    // 외곽
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
+    ctx.fillStyle = 'rgba(60,60,60,0.95)';
+    ctx.fillRect(bx, by, barW, barH);
+    // 채움 (노란-주황 그라데이션 느낌)
+    const fillW = Math.round(barW * chargeLevel);
+    // 풀차지면 흰빛 펄스
+    const fullPulse = chargeLevel >= 1 ? (Math.sin(performance.now() / 80) + 1) / 2 : 0;
+    ctx.fillStyle = chargeLevel >= 1
+      ? `rgba(${255}, ${255}, ${180 + fullPulse * 75}, 1)`
+      : '#ffd84a';
+    ctx.fillRect(bx, by, fillW, barH);
   }
   ctx.restore();
 }

@@ -56,6 +56,8 @@ import {
   findPickup as findWeaponPickup,
   fireOwnedWeapons,
   grantOwnership,
+  handleLightningInput,
+  lightningChargeLevel,
   makeWeaponsState,
   maybeSpawn as maybeSpawnWeapon,
   stepProjectiles,
@@ -457,6 +459,8 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   let heartbeatTimer = 0;
   // HP 감소 감지 → 데미지 플래시. 매 프레임 비교.
   let prevLocalHp = local.hp;
+  // 공격 버튼 edge 감지 — 라이트닝 차지/방출용
+  let prevAttackHeld = false;
 
   function loop(t: number): void {
     const realDt = Math.min(0.05, (t - lastT) / 1000);
@@ -518,6 +522,9 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     if (input.attackHeld) {
       fireOwnedWeapons(weaponsState, now, local, zombieWave, () => { /* no-op for now */ });
     }
+    // 라이트닝 — press: 차지 시작, release: 차지량 비례 storm 발사
+    handleLightningInput(weaponsState, now, input.attackHeld, prevAttackHeld, local, zombieWave, camera);
+    prevAttackHeld = input.attackHeld;
     stepProjectiles(weaponsState, dt, now, zombieWave);
 
     // 총알 vs 좀비 — 한 발 = 즉사. 적중한 총알도 함께 제거.
@@ -674,7 +681,8 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     const ownedTypes: WeaponType[] = [];
     for (const [t, exp] of weaponsState.owned) if (now < exp) ownedTypes.push(t);
     if (!local.dead) {
-      drawOwnedIcons(ctx2d, camera, local.x, local.y, CHAR_H, ownedTypes, now < local.gunUntil);
+      const charge = lightningChargeLevel(weaponsState, now);
+      drawOwnedIcons(ctx2d, camera, local.x, local.y, CHAR_H, ownedTypes, now < local.gunUntil, charge);
     }
 
     // 좀비 — 캐릭터 위에 그림 (Y-소트는 v1 단순화로 캐릭터 위쪽 고정)
