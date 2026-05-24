@@ -3,7 +3,7 @@
 import { startGame } from './game';
 import { setupViewport } from './viewport';
 import { CHARACTER_COUNT, drawCharacterPreview, randomCharIdx } from './sprites';
-import { loadVariants, unlock as unlockSfx } from './sfx';
+import { load as loadSfx, loadVariants, unlock as unlockSfx } from './sfx';
 import { startBgm } from './bgm';
 import type { GameMode } from './types';
 
@@ -14,6 +14,9 @@ loadVariants('lightning_bolt', [
   '/audio/lightning/bolt3.mp3',
   '/audio/lightning/bolt4.mp3',
 ], 0.55);
+// 저주 — 차지 시작 시 늑대 울음, 데미지 입힐 때 타격음.
+loadSfx('curse_charge', '/audio/curse/charge.mp3', 0.55);
+loadSfx('curse_hit', '/audio/curse/hit.mp3', 0.7);
 
 // 랜덤 방코드 — 친구한테 공유하기 좋은 짧은 영문/숫자.
 function randomGameId(len = 5): string {

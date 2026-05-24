@@ -835,6 +835,9 @@ interface AnimCastConfig {
   maxChargeSec: number;
   blinkPerSec: number;
   blinkCount: number;
+  // 옵션 SFX — 정의되면 sfx.ts 의 키로 재생.
+  sfxChargeKey?: string;    // press 시 1회
+  sfxHitKey?: string;       // executeCast 시 1회
   maxMarkers: number;
   minRadius: number;
   maxRadius: number;
@@ -887,6 +890,8 @@ const CURSE_CONFIG: AnimCastConfig = {
   maxChargeSec: 2.5,
   blinkPerSec: 0.16,
   blinkCount: 2,
+  sfxChargeKey: 'curse_charge',
+  sfxHitKey: 'curse_hit',
   maxMarkers: 5,
   minRadius: 60,
   maxRadius: 130,
@@ -987,6 +992,7 @@ function handleAnimCastInput(
     state.chargeStartedAt = now;
     state.fullChargedAt = null;
     generateAnimMarkers(state, cfg);
+    if (cfg.sfxChargeKey) playSfx(cfg.sfxChargeKey);
   }
   // hold → 풀차지 도달 감지
   if (attackHeldNow && state.chargeStartedAt !== null && state.fullChargedAt === null) {
@@ -999,10 +1005,12 @@ function handleAnimCastInput(
   if (state.fullChargedAt !== null && (now - state.fullChargedAt) >= blinkTotal) {
     const n = stageChargedCount(cfg.maxMarkers);
     executeCast(state, cfg, n, now, localX, localY, wave);
+    if (cfg.sfxHitKey) playSfx(cfg.sfxHitKey);
     if (attackHeldNow) {
       state.chargeStartedAt = now;
       state.fullChargedAt = null;
       generateAnimMarkers(state, cfg);
+      if (cfg.sfxChargeKey) playSfx(cfg.sfxChargeKey);
     } else {
       state.chargeStartedAt = null;
       state.fullChargedAt = null;
