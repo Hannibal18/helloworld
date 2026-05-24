@@ -8,6 +8,7 @@ import { consumeAttack, dirFromInput, input } from './input';
 import { spawnHitBurst } from './particles';
 import { GUN_FIRE_COOLDOWN as GUN_FIRE_COOLDOWN_SEC, BULLET_SPEED } from './gun';
 import { getConfig } from './config';
+import { getStageAkCooldownMult } from './weapons';
 
 // 공격 사양 (spec §7) — LPC 표준 32px 타일 기준.
 // HP 14칸 × 10HP = 140. 공격 1대 = 20HP = 2칸. 7방 맞으면 사망.
@@ -196,7 +197,9 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
     if (hasGun) {
       // attackHeld 도 트리거 → 버튼 누르고 있으면 쿨다운마다 자동 사격
       const wantsShoot = wantsAttack || input.attackHeld;
-      if (wantsShoot && now - p.lastShotAt >= GUN_FIRE_COOLDOWN_SEC) {
+      // 스테이지 AK 발사 간격 배율 — fireRateMult 클수록 cooldown 짧아짐.
+      const effectiveCooldown = GUN_FIRE_COOLDOWN_SEC * getStageAkCooldownMult();
+      if (wantsShoot && now - p.lastShotAt >= effectiveCooldown) {
         p.lastShotAt = now;
         // 8방향 사격: 움직이는 중이면 input 방향, 정지 중이면 마지막 바라본 방향(4방향).
         let nx = 0, ny = 0;

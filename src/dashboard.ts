@@ -256,7 +256,9 @@ function renderWeaponsBlock(stage: StageConfig): HTMLElement {
   grid.append(
     numberField(stage.weapons.dropIntervalSec, { label: '드랍 간격 (초)', step: 1, min: 1 }, (v) => { stage.weapons.dropIntervalSec = v; }),
     numberField(stage.weapons.maxDropsOnGround, { label: '땅에 동시 존재 최대', step: 1, min: 1 }, (v) => { stage.weapons.maxDropsOnGround = v; }),
-    numberField(stage.weapons.damageMult, { label: '데미지 배율', step: 0.1, min: 0.1, hint: '총알/투사체 공격력' }, (v) => { stage.weapons.damageMult = v; }),
+    numberField(stage.weapons.damageMult, { label: '데미지 배율', step: 0.1, min: 0.1, hint: '모든 무기 데미지 배율' }, (v) => { stage.weapons.damageMult = v; }),
+    numberField(stage.weapons.akFireRateMult ?? 1, { label: '🔫 AK 발사 속도', step: 0.1, min: 0.1, hint: '1.0=기본, 2.0=두 배 빠름' }, (v) => { stage.weapons.akFireRateMult = v; }),
+    numberField(stage.weapons.chargedReleaseCount ?? 2, { label: '⚡❄💀 풀차지 발사 갯수', step: 1, min: 1, max: 12, hint: 'Stage 1 = 2 → 후반 = 7~12' }, (v) => { stage.weapons.chargedReleaseCount = Math.round(v); }),
   );
   block.append(grid);
 

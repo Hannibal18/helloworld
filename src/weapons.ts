@@ -23,8 +23,21 @@ let currentStageWeapons: StageConfig['weapons'] | null = null;
 export function setStageWeapons(w: StageConfig['weapons'] | null): void {
   currentStageWeapons = w;
 }
+export function getStageWeaponsCurrent(): StageConfig['weapons'] | null {
+  return currentStageWeapons;
+}
 export function getStageDamageMult(): number {
   return currentStageWeapons?.damageMult ?? 1;
+}
+// AK 발사 간격에 곱할 배율 (1 / fireRateMult). 클수록 느려짐.
+export function getStageAkCooldownMult(): number {
+  const m = currentStageWeapons?.akFireRateMult ?? 1;
+  return m > 0 ? 1 / m : 1;
+}
+// 라이트닝/얼음/저주 풀차지 시 발사 갯수. 캡은 호출자가 cap 인자로.
+function stageChargedCount(cap: number): number {
+  const n = currentStageWeapons?.chargedReleaseCount ?? 2;
+  return Math.max(1, Math.min(cap, Math.round(n)));
 }
 
 // ===== 드랍 가중치 (rarity tier) =====
@@ -286,12 +299,11 @@ export function handleLightningInput(
     }
     return;
   }
-  // release before 풀차지 — 현재 차지량 비례 (구름 개수 = chargeToCloudCount)
+  // 풀차지 안된 상태에서 손 떼면 — 발사 없이 차지 취소.
+  // (정책: 라이트닝/얼음/저주는 풀차지 이후에만 발사.)
   if (!attackHeldNow && attackHeldPrev && state.lightningChargeStartedAt !== null) {
-    const chargeFrac = Math.min(1, (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC);
     state.lightningChargeStartedAt = null;
     state.lightningFullChargedAt = null;
-    spawnLightningStorm(state, now, chargeFrac, wave, camera, local.x, local.y);
   }
 }
 
@@ -322,13 +334,14 @@ export function lightningEyesVisual(state: WeaponsState, now: number): { frame: 
   return { frame, alpha: 0.5 * fadeIn };
 }
 
-// 구름 N개 위치에서 각각 1발씩 번개 발사. N = chargeToCloudCount(chargeFrac).
+// 구름 N개 위치에서 각각 1발씩 번개 발사. N = 현재 스테이지의 chargedReleaseCount.
+// (이 함수는 풀차지 도달 시에만 호출됨 — chargeFrac 인자는 시그니처 유지용으로 무시.)
 function spawnLightningStorm(
-  state: WeaponsState, now: number, chargeFrac: number, wave: ZombieWave,
+  state: WeaponsState, now: number, _chargeFrac: number, wave: ZombieWave,
   camera: { x: number; y: number; viewW: number; viewH: number },
   localX: number, localY: number,
 ): void {
-  const cloudCount = chargeToCloudCount(chargeFrac);
+  const cloudCount = lightningCloudCount();
   // viewport 안 좀비 후보
   const minX = camera.x - LIGHTNING_RANGE_VIEW_PAD;
   const maxX = camera.x + camera.viewW + LIGHTNING_RANGE_VIEW_PAD;
@@ -613,25 +626,27 @@ eyesImg.src = '/sprites/effects/eyes.png';
 eyesImg.onload = () => { eyesReady = true; };
 eyesImg.onerror = (e) => { console.error('[weapons] eyes.png load failed', e); };
 
-// ===== 멀티 구름 — 차지 진행도에 따라 1~7개 구름이 플레이어 주변에 무작위 분산 등장 =====
-const LIGHTNING_MAX_CLOUDS = 7;
+// ===== 멀티 구름 — 차지 진행도에 따라 N개 구름이 플레이어 주변에 분산 =====
+// 캡 = MAX_CLOUDS (상수). 실제 사용 갯수는 스테이지 chargedReleaseCount 가 결정.
+const LIGHTNING_MAX_CLOUDS = 12;
 const CLOUD_MIN_RADIUS = 70;     // 플레이어 중심에서 최소 거리 (캐릭터 안 가리게)
 const CLOUD_MAX_RADIUS = 150;    // 최대 거리
 const CLOUD_VERTICAL_SQUASH = 0.6; // 세로로 약간 납작 (위쪽이 더 많이 분포)
 const CLOUD_Y_BIAS = -20;        // 평균 y 보정 (캐릭터 발 기준)
 const CLOUD_MIN_PAIR_DIST = 56;  // 구름끼리 최소 간격 (밀집 방지)
 
-// 차지 비율 → 보이는 구름 개수 (1..MAX)
-function chargeToCloudCount(chargeFrac: number): number {
-  return Math.max(1, Math.min(LIGHTNING_MAX_CLOUDS, Math.ceil(chargeFrac * LIGHTNING_MAX_CLOUDS)));
+// 현재 스테이지 기준 구름 갯수 (1..MAX_CLOUDS).
+function lightningCloudCount(): number {
+  return stageChargedCount(LIGHTNING_MAX_CLOUDS);
 }
 
-// 차지 시작 시 7개 구름의 상대 좌표(rx, ry) 를 한 번 뽑음. rejection sampling 으로
+// 차지 시작 시 N개 구름의 상대 좌표(rx, ry) 를 한 번 뽑음. rejection sampling 으로
 // 너무 밀집하지 않게. 플레이어를 따라 움직이도록 상대 좌표 유지.
 function generateCloudOffsets(state: WeaponsState): void {
+  const n = lightningCloudCount();
   const offsets: { rx: number; ry: number }[] = [];
   let safety = 0;
-  while (offsets.length < LIGHTNING_MAX_CLOUDS && safety++ < 200) {
+  while (offsets.length < n && safety++ < 200) {
     const angle = Math.random() * Math.PI * 2;
     const radius = CLOUD_MIN_RADIUS + Math.random() * (CLOUD_MAX_RADIUS - CLOUD_MIN_RADIUS);
     const rx = Math.cos(angle) * radius;
@@ -644,7 +659,7 @@ function generateCloudOffsets(state: WeaponsState): void {
     offsets.push({ rx, ry });
   }
   // 안 채워졌으면 빈 자리는 그냥 랜덤
-  while (offsets.length < LIGHTNING_MAX_CLOUDS) {
+  while (offsets.length < n) {
     const angle = Math.random() * Math.PI * 2;
     const radius = CLOUD_MIN_RADIUS + Math.random() * (CLOUD_MAX_RADIUS - CLOUD_MIN_RADIUS);
     offsets.push({
@@ -666,8 +681,9 @@ function cloudSlotVisual(
   state: WeaponsState, now: number, i: number,
 ): { frame: number; alpha: number } | null {
   if (state.lightningChargeStartedAt === null) return null;
-  // 슬롯 i 는 chargeFrac = i / MAX 에 도달했을 때 등장
-  const appearChargeFrac = i / LIGHTNING_MAX_CLOUDS;
+  // 슬롯 i 는 chargeFrac = i / N 에 도달했을 때 등장 (N = 현재 스테이지 구름 수)
+  const n = lightningCloudCount();
+  const appearChargeFrac = n > 0 ? (i + 1) / n : 1;
   const appearAt = state.lightningChargeStartedAt + appearChargeFrac * LIGHTNING_MAX_CHARGE_SEC;
   if (now < appearAt) return null;
   // 풀차지 → 동기 깜빡임 (모든 슬롯 동일 프레임)
@@ -694,7 +710,8 @@ export function drawLightningClouds(
   const dst = Math.round(EYES_FRAME * EYES_SCALE);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  for (let i = 0; i < LIGHTNING_MAX_CLOUDS; i++) {
+  const n = lightningCloudCount();
+  for (let i = 0; i < n; i++) {
     const vis = cloudSlotVisual(state, now, i);
     if (!vis) continue;
     const pos = cloudSlotPos(state, localX, localY, i);
@@ -925,10 +942,6 @@ function generateAnimMarkers(state: AnimCastState, cfg: AnimCastConfig): void {
   state.markerOffsets = out;
 }
 
-function chargeToMarkerCount(chargeFrac: number, max: number): number {
-  return Math.max(1, Math.min(max, Math.ceil(chargeFrac * max)));
-}
-
 // 캐스트 실행 — N개 위치 캡처 + 각 위치 nearest 좀비 1마리 즉사 (위치당 중복 제거).
 function executeCast(
   state: AnimCastState, cfg: AnimCastConfig, count: number,
@@ -980,10 +993,12 @@ function handleAnimCastInput(
     const frac = (now - state.chargeStartedAt) / cfg.maxChargeSec;
     if (frac >= 1) state.fullChargedAt = now;
   }
-  // 풀차지 후 깜빡임 시퀀스 끝 → 캐스트 + (홀드 중이면) 즉시 새 차지 시작
+  // 풀차지 후 깜빡임 시퀀스 끝 → 캐스트 (스테이지 chargedReleaseCount 만큼) +
+  // 홀드 중이면 즉시 새 차지 시작.
   const blinkTotal = cfg.blinkPerSec * cfg.blinkCount;
   if (state.fullChargedAt !== null && (now - state.fullChargedAt) >= blinkTotal) {
-    executeCast(state, cfg, cfg.maxMarkers, now, localX, localY, wave);
+    const n = stageChargedCount(cfg.maxMarkers);
+    executeCast(state, cfg, n, now, localX, localY, wave);
     if (attackHeldNow) {
       state.chargeStartedAt = now;
       state.fullChargedAt = null;
@@ -994,13 +1009,10 @@ function handleAnimCastInput(
     }
     return;
   }
-  // release before 풀차지 — 현재 차지량 비례 부분 캐스트
+  // 풀차지 안된 상태에서 손 떼면 — 발사 없이 차지 취소. (정책: 풀차지 후에만 발사)
   if (!attackHeldNow && attackHeldPrev && state.chargeStartedAt !== null) {
-    const chargeFrac = Math.min(1, (now - state.chargeStartedAt) / cfg.maxChargeSec);
     state.chargeStartedAt = null;
     state.fullChargedAt = null;
-    const n = chargeToMarkerCount(chargeFrac, cfg.maxMarkers);
-    executeCast(state, cfg, n, now, localX, localY, wave);
   }
 }
 
@@ -1016,10 +1028,10 @@ function animCastChargeLevel(state: AnimCastState, cfg: AnimCastConfig, now: num
 
 // 차지 마커 한 슬롯의 현재 상태 (frame, alpha). null = 아직 등장 안 함.
 function animCastMarkerVisual(
-  state: AnimCastState, cfg: AnimCastConfig, now: number, i: number,
+  state: AnimCastState, cfg: AnimCastConfig, now: number, i: number, totalN: number,
 ): { frame: number; alpha: number } | null {
   if (state.chargeStartedAt === null) return null;
-  const appearChargeFrac = i / cfg.maxMarkers;
+  const appearChargeFrac = totalN > 0 ? (i + 1) / totalN : 1;
   const appearAt = state.chargeStartedAt + appearChargeFrac * cfg.maxChargeSec;
   if (now < appearAt) return null;
   // 풀차지 동기 깜빡임 — frame 0 ↔ 1
@@ -1044,10 +1056,11 @@ function drawAnimCastMarkers(
 ): void {
   if (state.chargeStartedAt === null) return;
   const dst = Math.round(cfg.frameSize * cfg.markerScale);
+  const n = stageChargedCount(cfg.maxMarkers);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  for (let i = 0; i < cfg.maxMarkers; i++) {
-    const vis = animCastMarkerVisual(state, cfg, now, i);
+  for (let i = 0; i < n; i++) {
+    const vis = animCastMarkerVisual(state, cfg, now, i, n);
     if (!vis) continue;
     const off = state.markerOffsets[i] ?? { rx: 0, ry: -40 };
     const sx = Math.round(localX + off.rx - camera.x - dst / 2);
