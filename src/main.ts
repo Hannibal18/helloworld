@@ -191,8 +191,8 @@ ready(() => {
   });
 
   // ===== 매치메이킹 자동 진입 =====
-  // URL 에 ?battle=ROOM 이 있으면 인트로 카드 숨기고 검은 "입장중…" 오버레이
-  // 1.5초 보여준 뒤 enter() 자동 호출 — 캐릭터 선택 화면 건너뜀.
+  // URL 에 ?battle=ROOM 있으면 인트로 카드 숨기고 검은 "입장중…" 오버레이.
+  // 점이 . → .. → ... → . 로 동적. 1.5초 후 enter() + 추가 0.3초 후 오버레이 제거.
   if (battleRoom) {
     try { (document.querySelector('.intro-card') as HTMLElement | null)?.style.setProperty('display', 'none'); } catch { /* noop */ }
     const overlay = document.createElement('div');
@@ -205,15 +205,31 @@ ready(() => {
       'font:900 22px "Galmuri11","NeoDunggeunmo",monospace',
       'letter-spacing:4px',
       'text-shadow:2px 2px 0 #1a0e08',
+      'transition:opacity 0.4s',
     ].join(';');
-    const title = document.createElement('div');
     const diffLabel = battleDiff === 'easy' ? '🟢 EASY' : battleDiff === 'normal' ? '🟡 NORMAL' : battleDiff === 'hell' ? '🔴 HELL' : '';
-    title.textContent = diffLabel ? `${diffLabel} 전투장 입장중…` : '전투장 입장중…';
+    const baseTitle = diffLabel ? `${diffLabel} 전투장 입장중` : '전투장 입장중';
+    const title = document.createElement('div');
+    title.textContent = `${baseTitle}.`;
     const sub = document.createElement('div');
     sub.style.cssText = 'font-size:12px;letter-spacing:2px;color:#c9b58d;';
     sub.textContent = `Room ${battleRoom}`;
     overlay.append(title, sub);
     document.body.appendChild(overlay);
-    setTimeout(() => enter(), 1500);
+    // 점 애니메이션: . → .. → ... → 반복 (450ms 주기)
+    let dotN = 1;
+    const dotInterval = setInterval(() => {
+      dotN = (dotN % 3) + 1;
+      title.textContent = `${baseTitle}${'.'.repeat(dotN)}`;
+    }, 450);
+    setTimeout(() => {
+      enter();
+      // 게임 화면이 켜질 시간 확보 후 오버레이 페이드 아웃 + 제거
+      setTimeout(() => {
+        clearInterval(dotInterval);
+        overlay.style.opacity = '0';
+        setTimeout(() => overlay.remove(), 450);
+      }, 300);
+    }, 1500);
   }
 });
