@@ -40,9 +40,14 @@ export function loadVariants(key: string, urls: string[], volume = 1.0): void {
   variants.set(key, subs);
 }
 
-export function play(key: string): void {
+// 호출자가 필요하면 stop() 으로 즉시 멈출 수 있도록 핸들 반환.
+// 짧은 일회성 SFX 는 반환값을 무시해도 됨 — BufferSource 가 자체 종료.
+export interface SfxHandle { stop(): void; }
+const NOOP_HANDLE: SfxHandle = { stop: () => { /* noop */ } };
+
+export function play(key: string): SfxHandle {
   const c = getCtx();
-  if (!c) return;
+  if (!c) return NOOP_HANDLE;
   // suspended 면 자동 resume 시도 (gesture 안에서 호출됐을 때만 실제로 풀림)
   if (c.state === 'suspended') c.resume().catch(() => {});
 
@@ -51,13 +56,25 @@ export function play(key: string): void {
   if (vs && vs.length > 0) pickKey = vs[Math.floor(Math.random() * vs.length)];
 
   const buf = buffers.get(pickKey);
-  if (!buf) return;
+  if (!buf) return NOOP_HANDLE;
   const src = c.createBufferSource();
   src.buffer = buf;
   const gain = c.createGain();
   gain.gain.value = volumes.get(pickKey) ?? 1.0;
   src.connect(gain).connect(c.destination);
   try { src.start(0); } catch { /* ignore */ }
+  return {
+    stop: () => {
+      // 부드러운 페이드 8ms (딸깍 클릭 방지) 후 stop
+      try {
+        const t = c.currentTime;
+        gain.gain.cancelScheduledValues(t);
+        gain.gain.setValueAtTime(gain.gain.value, t);
+        gain.gain.linearRampToValueAtTime(0.0001, t + 0.008);
+        src.stop(t + 0.01);
+      } catch { /* 이미 종료됨 등 */ }
+    },
+  };
 }
 
 // 첫 사용자 제스처 핸들러 — AudioContext suspended 풀어줌.

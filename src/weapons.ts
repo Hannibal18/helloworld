@@ -10,7 +10,7 @@
 import { isBlocked, type TileMap } from './map';
 import type { Camera } from './world';
 import type { LocalPlayer } from './player';
-import { play as playSfx } from './sfx';
+import { play as playSfx, type SfxHandle } from './sfx';
 import { killZombieById, type ZombieWave } from './zombie';
 import {
   CFG_WEAPON_TYPES,
@@ -842,10 +842,19 @@ interface AnimCastState {
   fullChargedAt: number | null;
   markerOffsets: { rx: number; ry: number }[];
   casts: AnimCastEvent[];
+  // 현재 재생 중인 차지 SFX 핸들 (sfxChargeKey 사용 시) — 차지 종료 시 stop.
+  chargeSfxHandle: SfxHandle | null;
 }
 
 function makeAnimCastState(): AnimCastState {
-  return { chargeStartedAt: null, fullChargedAt: null, markerOffsets: [], casts: [] };
+  return { chargeStartedAt: null, fullChargedAt: null, markerOffsets: [], casts: [], chargeSfxHandle: null };
+}
+
+function stopChargeSfx(state: AnimCastState): void {
+  if (state.chargeSfxHandle) {
+    try { state.chargeSfxHandle.stop(); } catch { /* noop */ }
+    state.chargeSfxHandle = null;
+  }
 }
 
 const ICE_CONFIG: AnimCastConfig = {
@@ -969,19 +978,24 @@ function handleAnimCastInput(
   if (!owned) {
     state.chargeStartedAt = null;
     state.fullChargedAt = null;
+    stopChargeSfx(state);
     return;
   }
-  // press → 차지 시작
+  // press → 차지 시작 + 차지 SFX 재생 시작
   if (attackHeldNow && !attackHeldPrev) {
     state.chargeStartedAt = now;
     state.fullChargedAt = null;
     generateAnimMarkers(state, cfg);
-    if (cfg.sfxChargeKey) playSfx(cfg.sfxChargeKey);
+    stopChargeSfx(state);   // 이전 핸들 정리 (안전)
+    if (cfg.sfxChargeKey) state.chargeSfxHandle = playSfx(cfg.sfxChargeKey);
   }
-  // hold → 풀차지 도달 감지
+  // hold → 풀차지 도달 감지 (도달 시 즉시 차지 SFX 정지)
   if (attackHeldNow && state.chargeStartedAt !== null && state.fullChargedAt === null) {
     const frac = (now - state.chargeStartedAt) / cfg.maxChargeSec;
-    if (frac >= 1) state.fullChargedAt = now;
+    if (frac >= 1) {
+      state.fullChargedAt = now;
+      stopChargeSfx(state);
+    }
   }
   // 풀차지 후 깜빡임 시퀀스 끝 → 캐스트 (스테이지 chargedReleaseCount 만큼) +
   // 홀드 중이면 즉시 새 차지 시작.
@@ -994,17 +1008,19 @@ function handleAnimCastInput(
       state.chargeStartedAt = now;
       state.fullChargedAt = null;
       generateAnimMarkers(state, cfg);
-      if (cfg.sfxChargeKey) playSfx(cfg.sfxChargeKey);
+      stopChargeSfx(state);
+      if (cfg.sfxChargeKey) state.chargeSfxHandle = playSfx(cfg.sfxChargeKey);
     } else {
       state.chargeStartedAt = null;
       state.fullChargedAt = null;
     }
     return;
   }
-  // 풀차지 안된 상태에서 손 떼면 — 발사 없이 차지 취소. (정책: 풀차지 후에만 발사)
+  // 풀차지 안된 상태에서 손 떼면 — 발사 없이 차지 취소 + SFX 정지.
   if (!attackHeldNow && attackHeldPrev && state.chargeStartedAt !== null) {
     state.chargeStartedAt = null;
     state.fullChargedAt = null;
+    stopChargeSfx(state);
   }
 }
 
