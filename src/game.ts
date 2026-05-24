@@ -48,6 +48,7 @@ import {
   killZombieById,
   makeZombieWave,
   maybeTriggerWave,
+  setRoomPlayerCount,
   startWave,
   tryHitFromAttack as tryHitZombiesFromAttack,
   updateWave,
@@ -1096,6 +1097,8 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
 
     // ===== 좀비 웨이브 ===== (zombie 모드에서만)
     if (isZombieMode) {
+      // 파티원 수 갱신 → 좀비 스폰/cap/보스주기 √N 비례 (zombie.ts 내부 사용)
+      setRoomPlayerCount(remotes.size + 1);
       maybeTriggerWave(zombieWave, now, isLocalHost(), () => {
         // 호스트가 트리거 → 자기도 즉시 시작 + broadcast
         applyZombieWaveStart({ startedAt: now });

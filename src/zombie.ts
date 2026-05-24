@@ -23,11 +23,20 @@ import { CFG_ZOMBIE_TYPES, getConfig, getStageProgress } from './config';
 import type { AttackPayload, Dir, RemotePlayer } from './types';
 
 // 연속 스폰 모드 — 입장 후 끝없이 좀비 등장. 난이도는 config 의 스테이지가 결정.
-// (보스는 별도 타이머. 아래 수치는 보스 제외 일반 좀비에만 적용.)
-const INITIAL_SPAWN = 7;                         // 6 → 7 (+20%)
-const SPAWN_INTERVAL_BASE = 3.33;                // 4.0 → 3.33 (스폰 ~20% 빠르게)
-const SPAWN_INTERVAL_MIN = 0.25;                 // 0.3 → 0.25 (가속 한계도 살짝 낮춤)
-const MAX_ZOMBIES = 72;                          // 60 → 72 (동시 존재 +20%)
+// 파티원 수 비례: spawn / max / boss 빈도 모두 √(playerCount) 곱 (cap 3.0).
+const INITIAL_SPAWN = 7;
+const SPAWN_INTERVAL_BASE = 3.33;
+const SPAWN_INTERVAL_MIN = 0.25;
+const MAX_ZOMBIES = 72;
+
+// 파티원 수 — game.ts 가 매 프레임 setRoomPlayerCount() 갱신. 1 이상.
+let _playerCount = 1;
+export function setRoomPlayerCount(n: number): void {
+  _playerCount = Math.max(1, n);
+}
+function partyScale(): number {
+  return Math.min(3.0, Math.sqrt(_playerCount));
+}
 const ZOMBIE_SPEED_PX = PLAYER_SPEED * 0.3;      // 플레이어 속도의 30% (= 36 px/s)
 const ZOMBIE_BODY_HW = BODY_HW;                  // 캐릭터와 동일 크기
 const ZOMBIE_BODY_HH = BODY_HH;
@@ -110,10 +119,11 @@ function currentStageZombie(wave: ZombieWave, now: number) {
   return getStageProgress(getConfig(), elapsed).stage.zombie;
 }
 
-// 현재 spawn 주기 — 스테이지 spawnIntervalMult 가 배율.
+// 현재 spawn 주기 — 스테이지 spawnIntervalMult × (1/partyScale) — 파티 많을수록 자주.
 function currentSpawnInterval(wave: ZombieWave, now: number): number {
   const z = currentStageZombie(wave, now);
-  return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_BASE * z.spawnIntervalMult);
+  const base = SPAWN_INTERVAL_BASE * z.spawnIntervalMult / partyScale();
+  return Math.max(SPAWN_INTERVAL_MIN, base);
 }
 
 // ===== 스프라이트 로딩 =====
@@ -172,7 +182,7 @@ function pickZombieType(wave: ZombieWave, now: number): ZombieType {
 }
 
 function spawnOne(wave: ZombieWave, now: number, map: TileMap, forceType?: ZombieType): void {
-  if (wave.zombies.length >= MAX_ZOMBIES) return;
+  if (wave.zombies.length >= Math.round(MAX_ZOMBIES * partyScale())) return;
   const TILE = map.tileW;
   const margin = TILE * 2;
   // 통과 가능한 위치를 찾을 때까지 재시도 — 나무/물 위 스폰 방지.
@@ -308,7 +318,7 @@ export function updateWave(
   if (now >= wave.nextBossAt) {
     if (currentStageZombie(wave, now).bossEnabled) {
       spawnOne(wave, now, map, 'boss');
-      wave.nextBossAt = now + BOSS_INTERVAL;
+      wave.nextBossAt = now + BOSS_INTERVAL / partyScale();
     } else {
       // 활성화 안 됨 — 짧게 기다렸다가 재확인
       wave.nextBossAt = now + 5;
