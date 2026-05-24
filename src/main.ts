@@ -38,7 +38,7 @@ try {
     '/audio/lightning/bolt2.mp3',
     '/audio/lightning/bolt3.mp3',
     '/audio/lightning/bolt4.mp3',
-  ], 0.55);
+  ], 1.0);
   // 저주 — 차지 시작 시 늑대 울음, 데미지 입힐 때 타격음.
   // GainNode 는 1.0 위로도 증폭 가능 (>1 은 디지털 게인). 원본 파일이 작아
   // 사용자 체감이 작으면 여기서 더 올림. 클리핑 발생 시 이 값을 다시 낮출 것.
