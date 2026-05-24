@@ -1013,8 +1013,9 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         showBanner(ui, 'info', `🎯 ${progress.stage.name}`);
         pushChatLog(ui, '🎯 스테이지', progress.stage.name, '#ffae40');
         if (!isFirst) playStageTransition();   // 첫 스테이지는 시작 배너만, 사운드 없음
-        // 사망 화면 표시용 — 도달한 최고 스테이지 갱신
-        if (scoreState && progress.totalIdx > scoreState.maxStageReached) {
+        // 사망 화면 표시용 — 도달한 최고 스테이지 + 이름 갱신.
+        // 첫 진입(스테이지 1) 도 maxStageReached=0 와 같아서 갱신되도록 >= 사용.
+        if (scoreState && progress.totalIdx >= scoreState.maxStageReached) {
           scoreState.maxStageReached = progress.totalIdx;
           scoreState.maxStageName = progress.rawStage.name;
         }
