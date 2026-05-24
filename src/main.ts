@@ -47,6 +47,8 @@ try {
   loadSfx('curse_hit', '/audio/curse/hit.wav', 1.5);
   // AK 발사 — 매 발마다 재생됨, 너무 크면 시끄러우니 보수적으로.
   loadSfx('ak_shot', '/audio/ak/shot.wav', 0.45);
+  // 맨주먹 공격 (무기 없을 때).
+  loadSfx('punch', '/audio/melee/punch.wav', 0.7);
 } catch (e) {
   console.warn('[sfx preload]', e);
 }

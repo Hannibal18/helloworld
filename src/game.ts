@@ -353,6 +353,8 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       boss?.tryHitFromLocal(p.x, p.y, p.dir, nowSec());
       // 좀비도 같은 공격으로 죽임 (한 대 = 즉사)
       tryHitZombiesFromAttack(zombieWave, p);
+      // 맨 주먹 공격 SFX (AK 발사 sendAttack 안 거침)
+      playSfx('punch');
     },
     sendPos: (p) => net.sendPos(p),
     sendHp: (hp) => net.sendHp({ id: local.id, hp }),
