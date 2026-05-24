@@ -16,6 +16,7 @@
 import type { TileMap } from './map';
 import type { Camera } from './world';
 import type { LocalPlayer } from './player';
+import { spawnBloodBurst } from './particles';
 import { ATTACK_COOLDOWN as PLAYER_ATTACK_COOLDOWN, ATTACK_DAMAGE as PLAYER_ATTACK_DAMAGE, BODY_HH, BODY_HW, BODY_OFF_Y, SPEED as PLAYER_SPEED, attackerHitbox } from './player';
 import { currentCharScale } from './sprites';
 import type { AttackPayload, Dir, RemotePlayer } from './types';
@@ -149,9 +150,12 @@ export function bulletHitsZombie(wave: ZombieWave, bx: number, by: number): stri
   return null;
 }
 export function killZombieById(wave: ZombieWave, id: string): boolean {
-  const before = wave.zombies.length;
-  wave.zombies = wave.zombies.filter((z) => z.id !== id);
-  return wave.zombies.length < before;
+  const z = wave.zombies.find((x) => x.id === id);
+  if (!z) return false;
+  // 사망 시 피 분출 — 몸통 중심(발 기준 위로 살짝)
+  spawnBloodBurst(z.x, z.y - ZOMBIE_BODY_HH, performance.now() / 1000);
+  wave.zombies = wave.zombies.filter((x) => x.id !== id);
+  return true;
 }
 
 // ===== 플레이어 공격 vs 좀비 — 한 대 맞으면 죽음 =====
@@ -161,15 +165,18 @@ export function killZombieById(wave: ZombieWave, id: string): boolean {
 export function tryHitFromAttack(wave: ZombieWave, atk: AttackPayload): number {
   if (!wave.active || wave.zombies.length === 0) return 0;
   const hb = attackerHitbox(atk);
+  const now = performance.now() / 1000;
   let killed = 0;
   wave.zombies = wave.zombies.filter((z) => {
-    // 좀비 몸통 AABB (몸통 중심 = z.y + 발 기준 살짝 위, 대충 z.y - HH)
     const zx0 = z.x - ZOMBIE_HIT_RADIUS;
     const zx1 = z.x + ZOMBIE_HIT_RADIUS;
     const zy0 = z.y - ZOMBIE_BODY_HH * 2;
     const zy1 = z.y;
     const hit = zx0 < hb.x1 && zx1 > hb.x0 && zy0 < hb.y1 && zy1 > hb.y0;
-    if (hit) killed++;
+    if (hit) {
+      killed++;
+      spawnBloodBurst(z.x, z.y - ZOMBIE_BODY_HH, now);
+    }
     return !hit;
   });
   return killed;

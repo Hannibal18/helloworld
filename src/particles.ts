@@ -2,7 +2,7 @@
 // 캔버스에 직접 그리지만 글리프(♪♫♬✦) 라서 크기는 캔버스 논리 픽셀 단위로 자연스럽게 보임.
 
 interface Particle {
-  kind: 'note' | 'sparkle';
+  kind: 'note' | 'sparkle' | 'blood';
   x: number;     // 월드 좌표
   y: number;
   vx: number;
@@ -11,7 +11,9 @@ interface Particle {
   duration: number;
   glyph: string;
   color: string;
-  size: number;  // 폰트 px
+  size: number;  // 폰트 px (glyph 류) 또는 픽셀 사각형 크기 (blood)
+  // blood 전용 — 중력 효과
+  gravity?: number;
 }
 
 const particles: Particle[] = [];
@@ -20,6 +22,29 @@ const NOTE_GLYPHS = ['♪', '♫', '♬', '♩'];
 const NOTE_COLORS = ['#ff9aa8', '#ffd96a', '#9cf0ff', '#c5a4ff', '#a8f0a4', '#ffaee0'];
 const SPARKLE_GLYPHS = ['✦', '✧', '✺', '•'];
 const SPARKLE_COLORS = ['#fff8a8', '#fff', '#ffd0e0', '#a8e8ff'];
+
+// 좀비 사망 — 빨간 피 분출. 방향성 있는 작은 픽셀 사각형이 사방으로 튀고 살짝 떨어짐.
+const BLOOD_COLORS = ['#a01818', '#c83232', '#7d0a0a', '#e04646', '#5a0000'];
+export function spawnBloodBurst(worldX: number, worldY: number, now: number): void {
+  const count = 14;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 70 + Math.random() * 110;
+    particles.push({
+      kind: 'blood',
+      x: worldX,
+      y: worldY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 30,           // 살짝 위로 튀게
+      birth: now,
+      duration: 0.45 + Math.random() * 0.35,
+      glyph: '',
+      color: BLOOD_COLORS[Math.floor(Math.random() * BLOOD_COLORS.length)],
+      size: 2 + Math.floor(Math.random() * 3),    // 2~4px 사각형
+      gravity: 280 + Math.random() * 80,          // 중력
+    });
+  }
+}
 
 // 피격 임팩트 — 짧고 빠르게 사방으로 흩날리는 흰/노란 스파크.
 // worldX/Y 는 충돌 지점 (대략 몸통 중심).
@@ -93,19 +118,24 @@ export function updateAndRenderParticles(
       particles.splice(i, 1);
       continue;
     }
-    // 음표는 약간 좌우로 흔들리며 떠오름
+    // 종류별 이동
     if (p.kind === 'note') {
       p.x += (p.vx + Math.sin(age * 6) * 8) * dt;
       p.y += p.vy * dt;
-      p.vy *= 0.985; // 천천히 느려짐
+      p.vy *= 0.985;
+    } else if (p.kind === 'blood') {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += (p.gravity ?? 280) * dt;            // 중력
+      p.vx *= 0.96;                                // 공기저항
     } else {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.vy += dt * 8; // 살짝 처짐
+      p.vy += dt * 8;
     }
   }
 
-  // 그리기 (한 번에 — 작은 부하)
+  // 그리기 — blood 는 픽셀 사각형, 나머지는 글리프
   for (const p of particles) {
     const age = now - p.birth;
     const t = age / p.duration;
@@ -114,6 +144,12 @@ export function updateAndRenderParticles(
     const sy = Math.round(p.y - cameraY);
     ctx.save();
     ctx.globalAlpha = Math.max(0, alpha);
+    if (p.kind === 'blood') {
+      ctx.fillStyle = p.color;
+      ctx.fillRect(sx - (p.size >> 1), sy - (p.size >> 1), p.size, p.size);
+      ctx.restore();
+      continue;
+    }
     ctx.font = `bold ${p.size}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
