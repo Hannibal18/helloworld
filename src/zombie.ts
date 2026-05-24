@@ -17,6 +17,7 @@ import type { TileMap } from './map';
 import type { Camera } from './world';
 import type { LocalPlayer } from './player';
 import { ATTACK_COOLDOWN as PLAYER_ATTACK_COOLDOWN, ATTACK_DAMAGE as PLAYER_ATTACK_DAMAGE, BODY_HH, BODY_HW, BODY_OFF_Y, SPEED as PLAYER_SPEED, attackerHitbox } from './player';
+import { currentCharScale } from './sprites';
 import type { AttackPayload, Dir, RemotePlayer } from './types';
 
 export const ZOMBIE_WAVE_DURATION_SEC = 120;     // 한 웨이브 길이 (2분)
@@ -247,13 +248,14 @@ function dirFromVec(dx: number, dy: number): Dir {
 }
 
 // ===== 렌더 =====
-// camera 좌표계 사용. 캐릭터와 동일한 prescale (0.5) 로 그림.
+// camera 좌표계 사용. 캐릭터 현재 prescale 과 동일한 크기로 그림 (currentCharScale()).
+// 디버그 슬라이더로 캐릭터 스케일 바뀌어도 자동 동기화.
 export function drawZombies(
   ctx: CanvasRenderingContext2D,
   camera: Camera,
   wave: ZombieWave,
   now: number,
-  charScale: number = 0.5,
+  charScale: number = currentCharScale(),
 ): void {
   if (!wave.active || !sheetReady) return;
   ctx.save();

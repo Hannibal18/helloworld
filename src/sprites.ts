@@ -52,6 +52,8 @@ for (let i = 0; i < CHARACTER_COUNT; i++) {
 
 const prescaledSheets: (HTMLCanvasElement | null)[] = new Array(CHARACTER_COUNT).fill(null);
 let prescaledFrame = SOURCE_FRAME;
+// 외부 모듈(예: zombie 렌더) 에서 현재 캐릭터 prescale 비율을 조회 — 동기화용.
+export function currentCharScale(): number { return prescaledFrame / SOURCE_FRAME; }
 let prescaledFootY = SOURCE_FOOT_Y;
 let pendingScale: number | null = null;
 

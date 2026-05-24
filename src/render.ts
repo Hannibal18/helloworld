@@ -371,9 +371,9 @@ export function drawGunOverlay(
   }
 
   // ----- 보유 총: 캐릭터 옆 (방향에 따라 좌/우 어깨 높이) -----
-  // 4× 키운 크기 (기존 20×8 → 80×32) — 잘 보이게.
-  const GUN_W_HELD = 80;
-  const GUN_H_HELD = 32;
+  // 가로는 절반(80→40), 세로는 두 배(32→64) — 세로로 길쭉한 모양.
+  const GUN_W_HELD = 40;
+  const GUN_H_HELD = 64;
   if (gunReady) {
     for (const o of heldOwners) {
       const sx = Math.round(o.x - camera.x);
