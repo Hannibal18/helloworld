@@ -101,8 +101,11 @@ export function setupLobbyTitle(): LobbyTitleHandle {
 }
 
 export function setupLobbyChat(onSend: (text: string) => void): LobbyChatHandle {
-  const root = document.createElement('div');
+  // <form> 으로 감싸면 iOS 의 "연락처" 자동 채움이 가장 잘 막힘.
+  const root = document.createElement('form');
   root.id = 'lobby-chat';
+  root.setAttribute('autocomplete', 'off');
+  root.addEventListener('submit', (e) => e.preventDefault());
   root.style.cssText = [
     'position:fixed',
     'left:50%',
@@ -115,16 +118,23 @@ export function setupLobbyChat(onSend: (text: string) => void): LobbyChatHandle 
     'pointer-events:auto',
   ].join(';');
 
+  // type="search" + name 비-신원성 + 다양한 autofill off 속성 조합.
+  // iOS Safari 의 "연락처 자동 채우기" 가 가장 잘 차단되는 조합.
   const input = document.createElement('input');
-  input.type = 'text';
+  input.type = 'search';   // text 보다 자동 채우기 덜 적용됨
+  input.name = 'lobby-message';
   input.placeholder = '메시지... (Enter 전송)';
   input.maxLength = 80;
-  // 모바일 키보드 자동완성/자동수정/자동대문자/맞춤법 모두 차단.
   input.autocomplete = 'off';
   input.setAttribute('autocorrect', 'off');
   input.setAttribute('autocapitalize', 'off');
   input.setAttribute('spellcheck', 'false');
   input.setAttribute('inputmode', 'text');
+  input.setAttribute('enterkeyhint', 'send');
+  // iOS: 연락처 자동 추천 제거 핵 — data-form-type=other 가 가장 효과적.
+  input.setAttribute('data-form-type', 'other');
+  input.setAttribute('data-lpignore', 'true');   // 1Password / LastPass 등 무시
+  input.setAttribute('data-1p-ignore', 'true');
   input.style.cssText = [
     'flex:1',
     'min-width:0',
@@ -135,6 +145,9 @@ export function setupLobbyChat(onSend: (text: string) => void): LobbyChatHandle 
     'font:14px "Galmuri11", "Apple SD Gothic Neo", system-ui, sans-serif',
     'outline:none',
     'border-radius:8px',
+    // type="search" 의 iOS 기본 룩 (돋보기/X) 무력화 — 일반 텍스트 박스처럼 보이게.
+    '-webkit-appearance:none',
+    'appearance:none',
   ].join(';');
 
   const sendBtn = document.createElement('button');
