@@ -324,7 +324,12 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     const now = nowSec();
     startWave(zombieWave, now, map);
     showBanner(ui, 'info', '🧟 좀비의 습격이 시작됐습니다');
-    pushChatLog(ui, '🧟 시스템', '좀비 타임 — 2분간 살아남아라', '#ff5d5d');
+    pushChatLog(ui, '🧟 시스템', '살아남아라', '#ff5d5d');
+    // 점수/콤보/마일스톤 시작 — 호스트/원격 어느 쪽에서 받든 동일 초기화
+    scoreState = makeScore(now);
+    prevZombieKills = zombieWave.killCount;
+    nextWeaponBoonAt = now + 30;
+    lastHealKillThreshold = zombieWave.killCount;
   };
 
   const updateCtx = (): UpdateCtx => ({
@@ -396,15 +401,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     onGunDrop: (p: GunDropPayload) => applyGunDrop(p, nowSec()),
     onGunPickup: (p: GunPickupPayload) => applyGunPickup(p),
     onBullet: (p: BulletPayload) => applyBullet(p),
-    onZombieWaveStart: (p: ZombieWaveStartPayload) => {
-      applyZombieWaveStart(p);
-      // 점수 시작
-      const now = nowSec();
-      scoreState = makeScore(now);
-      prevZombieKills = zombieWave.killCount;
-      nextWeaponBoonAt = now + 30;
-      lastHealKillThreshold = 0;
-    },
+    onZombieWaveStart: (p: ZombieWaveStartPayload) => applyZombieWaveStart(p),
     onWeaponDrop: (p: WeaponDropPayload) => applyWeaponDrop(p, nowSec()),
     onWeaponPickup: (p: WeaponPickupPayload) => applyWeaponPickup(p),
     onDeath: (d: DeathPayload) => {
