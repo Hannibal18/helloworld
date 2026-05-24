@@ -280,8 +280,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   const zombieWave: ZombieWave = makeZombieWave(nowSec());
   // ===== 좀비 모드 점수/콤보 (로컬 전용) =====
   let scoreState: ScoreState | null = null;
-  // 마일스톤: 30초마다 자동 무기 드랍 (= 보유 갱신), 50킬마다 풀힐
-  let nextWeaponBoonAt = 0;
+  // 마일스톤: 50킬마다 풀힐 (보너스 무기는 제거됨)
   let lastHealKillThreshold = 0;
   // 사망 화면 — 좀비 모드 한정. 사망 직후 1회 표시.
   let deathScreenShown = false;
@@ -343,7 +342,6 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     pushChatLog(ui, '🧟 시스템', '살아남아라', '#ff5d5d');
     // 점수/콤보/마일스톤 시작 — 호스트/원격 어느 쪽에서 받든 동일 초기화
     scoreState = makeScore(now);
-    nextWeaponBoonAt = now + 30;
     lastHealKillThreshold = zombieWave.killCount;
   };
 
@@ -720,7 +718,8 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         if (local.hp <= 0) {
           local.dead = true;
           local.gunUntil = 0;
-          local.deadUntil = now + 4;
+          // 좀비 모드 = 영구 사망. deadUntil 무한대 → player.ts 리스폰 로직 무시.
+          local.deadUntil = Infinity;
           local.deaths += 1;
           net.sendDeath({ id: local.id, killerId: null });
           showBanner(ui, 'death', '쓰러졌다… 좀비에게 당함');
@@ -740,15 +739,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       updateScore(scoreState, dt, now);
 
       if (!local.dead) {
-        // 30초마다 보너스 무기 부여 (랜덤). 보유 무기 있으면 갱신.
-        if (now >= nextWeaponBoonAt) {
-          nextWeaponBoonAt = now + 30;
-          const pool: WeaponType[] = ['lightning', 'ice', 'curse'];
-          const t = pool[Math.floor(Math.random() * pool.length)];
-          grantOwnership(weaponsState, t, now);
-          local.gunUntil = 0;
-          showBanner(ui, 'info', `🎁 보너스 무기: ${t.toUpperCase()}`);
-        }
+        // (보너스 무기 자동 지급 기능 제거됨 — 무기는 드랍/픽업으로만 획득)
         // 50킬마다 풀힐
         if (zombieWave.killCount - lastHealKillThreshold >= 50) {
           lastHealKillThreshold = zombieWave.killCount;

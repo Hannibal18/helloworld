@@ -44,7 +44,7 @@ try {
   // 사용자 체감이 작으면 여기서 더 올림. 클리핑 발생 시 이 값을 다시 낮출 것.
   loadSfx('curse_charge', '/audio/curse/charge.mp3', 2.5);
   // hit 은 위치별 순차로 여러 번 재생됨 — 한 발씩 임팩트 있게 크게.
-  loadSfx('curse_hit', '/audio/curse/hit.mp3', 6.0);
+  loadSfx('curse_hit', '/audio/curse/hit.wav', 1.5);
 } catch (e) {
   console.warn('[sfx preload]', e);
 }

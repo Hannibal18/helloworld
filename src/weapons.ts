@@ -898,7 +898,7 @@ const CURSE_CONFIG: AnimCastConfig = {
   castScale: 2.34,           // 1.8 × 1.3 — 폭발 비주얼 1.3배
   markerScale: 1.43,         // 1.1 × 1.3 — 차지 구름 1.3배
   killRadius: 62,            // 48 × 1.3 — 폭발 범위 1.3배
-  staggerSec: 0.15,          // 생긴 순서대로 150ms 간격 폭발
+  staggerSec: 0.06,          // 빠바바박 — 60ms 간격 (초당 ~16발)
 };
 
 // 단일 위치 애니메이션 길이 (모든 프레임 재생).
