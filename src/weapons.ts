@@ -137,8 +137,17 @@ export function findPickup(state: WeaponsState, fx: number, fy: number): WeaponD
   }
   return null;
 }
+// 한 번에 한 무기만 — 새 무기 부여 시 기존 보유 무기는 모두 제거.
+// (AK 와의 상호 배제는 호출자가 local.gunUntil = 0 로 따로 처리)
 export function grantOwnership(state: WeaponsState, type: WeaponType, now: number): void {
+  state.owned.clear();
+  state.lastFire.clear();
   state.owned.set(type, now + WEAPON_HOLD_DURATION);
+}
+// AK 픽업 시 호출 — 보조 무기 전부 해제.
+export function clearAllOwned(state: WeaponsState): void {
+  state.owned.clear();
+  state.lastFire.clear();
 }
 
 // ===== 자동 발사 — 보유한 무기 각자 쿨다운대로 =====

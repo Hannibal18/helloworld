@@ -49,6 +49,7 @@ import {
   type ZombieWave,
 } from './zombie';
 import {
+  clearAllOwned as clearAllOwnedWeapons,
   drawOwnedIcons,
   drawProjectiles,
   drawWeaponDrops,
@@ -227,6 +228,8 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     const now = nowSec();
     if (p.by === local.id) {
       local.gunUntil = now + GUN_HOLD_DURATION;
+      // 한 번에 한 무기 — 보조 무기 보유 중이면 해제
+      clearAllOwnedWeapons(weaponsState);
     } else {
       const r = remotes.get(p.by);
       if (r) r.gunUntil = now + GUN_HOLD_DURATION;
@@ -243,7 +246,11 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   };
   const applyWeaponPickup = (p: WeaponPickupPayload) => {
     weaponsState.drops.delete(p.id);
-    if (p.by === local.id) grantOwnership(weaponsState, p.type, nowSec());
+    if (p.by === local.id) {
+      grantOwnership(weaponsState, p.type, nowSec());
+      // 한 번에 한 무기 — AK 보유 중이면 해제
+      local.gunUntil = 0;
+    }
     // 원격 플레이어 보유 표시는 v1 에서 생략 (자기 캐릭터 위에만 표시)
   };
 
