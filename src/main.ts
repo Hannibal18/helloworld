@@ -1,5 +1,28 @@
 // 부트스트랩: 입장 화면 → 게임 시작.
 
+// ===== 최상단 글로벌 에러 핸들러 =====
+// 모듈 로드 단계 실패도 잡으려면 import 보다 먼저 attach 되어야 함.
+// 모바일은 콘솔 접근 불가 → 화면에 직접 띄워야 디버깅 가능.
+function __showFatal(msg: string): void {
+  try {
+    let banner = document.getElementById('fatal-error');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'fatal-error';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#3a1010;color:#ff9a9a;padding:10px 14px;font:12px monospace;border-bottom:2px solid #a02a2a;white-space:pre-wrap;word-break:break-word;max-height:50vh;overflow:auto;';
+      (document.body || document.documentElement).appendChild(banner);
+    }
+    banner.textContent = `[FATAL] ${msg}`;
+  } catch { /* DOM 자체가 없을 때는 포기 */ }
+}
+window.addEventListener('error', (e) => {
+  __showFatal(`${e.message}\n${e.filename}:${e.lineno}:${e.colno}`);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason;
+  __showFatal(`unhandled rejection: ${r?.message ?? r}`);
+});
+
 import { startGame } from './game';
 import { setupViewport } from './viewport';
 import { CHARACTER_COUNT, drawCharacterPreview, randomCharIdx } from './sprites';
@@ -8,15 +31,20 @@ import { startBgm } from './bgm';
 import type { GameMode } from './types';
 
 // SFX 초기 등록 — 라이트닝 발사 음 4종 변형.
-loadVariants('lightning_bolt', [
-  '/audio/lightning/bolt1.mp3',
-  '/audio/lightning/bolt2.mp3',
-  '/audio/lightning/bolt3.mp3',
-  '/audio/lightning/bolt4.mp3',
-], 0.55);
-// 저주 — 차지 시작 시 늑대 울음, 데미지 입힐 때 타격음.
-loadSfx('curse_charge', '/audio/curse/charge.mp3', 0.55);
-loadSfx('curse_hit', '/audio/curse/hit.mp3', 0.7);
+// 동기 throw 가능성 (예: AudioContext 생성 실패) 차단.
+try {
+  loadVariants('lightning_bolt', [
+    '/audio/lightning/bolt1.mp3',
+    '/audio/lightning/bolt2.mp3',
+    '/audio/lightning/bolt3.mp3',
+    '/audio/lightning/bolt4.mp3',
+  ], 0.55);
+  // 저주 — 차지 시작 시 늑대 울음, 데미지 입힐 때 타격음.
+  loadSfx('curse_charge', '/audio/curse/charge.mp3', 0.55);
+  loadSfx('curse_hit', '/audio/curse/hit.mp3', 0.7);
+} catch (e) {
+  console.warn('[sfx preload]', e);
+}
 
 // 랜덤 방코드 — 친구한테 공유하기 좋은 짧은 영문/숫자.
 function randomGameId(len = 5): string {

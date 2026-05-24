@@ -83,6 +83,30 @@
       </div>
     </div>
 
+    <!-- 모바일 디버깅: 모듈 로딩 실패도 잡히게 inline 으로 가장 먼저 attach. -->
+    <script>
+      (function () {
+        function showFatal(msg) {
+          try {
+            var b = document.getElementById('fatal-error');
+            if (!b) {
+              b = document.createElement('div');
+              b.id = 'fatal-error';
+              b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#3a1010;color:#ff9a9a;padding:10px 14px;font:12px monospace;border-bottom:2px solid #a02a2a;white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow:auto;';
+              (document.body || document.documentElement).appendChild(b);
+            }
+            b.textContent = '[FATAL] ' + msg;
+          } catch (_) {}
+        }
+        window.addEventListener('error', function (e) {
+          showFatal((e && e.message ? e.message : 'error') + '\n' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason ? e.reason : null;
+          showFatal('unhandled rejection: ' + (r && r.message ? r.message : (r || 'unknown')));
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
