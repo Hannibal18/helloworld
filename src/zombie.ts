@@ -23,10 +23,11 @@ import { CFG_ZOMBIE_TYPES, getConfig, getStageProgress } from './config';
 import type { AttackPayload, Dir, RemotePlayer } from './types';
 
 // 연속 스폰 모드 — 입장 후 끝없이 좀비 등장. 난이도는 config 의 스테이지가 결정.
-const INITIAL_SPAWN = 6;
-const SPAWN_INTERVAL_BASE = 4.0;                 // 기본 스폰 주기 (스테이지 spawnIntervalMult 로 가감)
-const SPAWN_INTERVAL_MIN = 0.3;                  // 안전 하한
-const MAX_ZOMBIES = 60;                          // 동시 존재 상한 (성능 보호)
+// (보스는 별도 타이머. 아래 수치는 보스 제외 일반 좀비에만 적용.)
+const INITIAL_SPAWN = 7;                         // 6 → 7 (+20%)
+const SPAWN_INTERVAL_BASE = 3.33;                // 4.0 → 3.33 (스폰 ~20% 빠르게)
+const SPAWN_INTERVAL_MIN = 0.25;                 // 0.3 → 0.25 (가속 한계도 살짝 낮춤)
+const MAX_ZOMBIES = 72;                          // 60 → 72 (동시 존재 +20%)
 const ZOMBIE_SPEED_PX = PLAYER_SPEED * 0.3;      // 플레이어 속도의 30% (= 36 px/s)
 const ZOMBIE_BODY_HW = BODY_HW;                  // 캐릭터와 동일 크기
 const ZOMBIE_BODY_HH = BODY_HH;
