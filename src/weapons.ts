@@ -145,6 +145,8 @@ export interface WeaponsState {
   lightningChargeStartedAt: number | null;
   // 풀차지 도달 시각 (null = 아직 풀차지 아님). 풀차지 이후 깜빡임 시퀀스 진행.
   lightningFullChargedAt: number | null;
+  // 차지 시작 시 1회 생성하는 7개 구름의 플레이어 상대 좌표 (rx, ry).
+  lightningCloudOffsets: { rx: number; ry: number }[];
 }
 
 export function makeWeaponsState(now: number): WeaponsState {
@@ -159,6 +161,7 @@ export function makeWeaponsState(now: number): WeaponsState {
     nextSpawnAt: DEBUG_LIGHTNING_ONLY ? now : now + 25, // DEBUG: 즉시 / 평소: 25초 후
     lightningChargeStartedAt: null,
     lightningFullChargedAt: null,
+    lightningCloudOffsets: [],
   };
 }
 
@@ -257,21 +260,29 @@ export function handleLightningInput(
     state.lightningFullChargedAt = null;
     return;
   }
-  // press → 차지 시작
+  // press → 차지 시작 (구름 위치 새로 뽑음)
   if (attackHeldNow && !attackHeldPrev) {
     state.lightningChargeStartedAt = now;
     state.lightningFullChargedAt = null;
+    generateCloudOffsets(state);
   }
   // hold → 풀차지 도달 감지
   if (attackHeldNow && state.lightningChargeStartedAt !== null && state.lightningFullChargedAt === null) {
     const frac = (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC;
     if (frac >= 1) state.lightningFullChargedAt = now;
   }
-  // 풀차지 후 깜빡임 시퀀스 끝 → 자동 발사 (모든 7 구름)
+  // 풀차지 후 깜빡임 시퀀스 끝 → 자동 발사 (모든 7 구름).
+  // 손가락 떼지 않았으면 즉시 새 차지 시작 → 자동 반복 (차지~번개~차지~번개).
   if (state.lightningFullChargedAt !== null && (now - state.lightningFullChargedAt) >= LIGHTNING_BLINK_TOTAL) {
-    state.lightningChargeStartedAt = null;
-    state.lightningFullChargedAt = null;
     spawnLightningStorm(state, now, 1.0, wave, camera, local.x, local.y);
+    if (attackHeldNow) {
+      state.lightningChargeStartedAt = now;
+      state.lightningFullChargedAt = null;
+      generateCloudOffsets(state);
+    } else {
+      state.lightningChargeStartedAt = null;
+      state.lightningFullChargedAt = null;
+    }
     return;
   }
   // release before 풀차지 — 현재 차지량 비례 (구름 개수 = chargeToCloudCount)
@@ -331,7 +342,7 @@ function spawnLightningStorm(
   }
   const storm: LightningStorm = { bornAt: now, bolts: [] };
   for (let i = 0; i < cloudCount; i++) {
-    const origin = cloudSlotPos(localX, localY, i);
+    const origin = cloudSlotPos(state, localX, localY, i);
     const target = candidates[i] ?? {
       x: camera.x + Math.random() * camera.viewW,
       y: camera.y + Math.random() * camera.viewH,
@@ -693,25 +704,52 @@ eyesImg.src = '/sprites/effects/eyes.png';
 eyesImg.onload = () => { eyesReady = true; };
 eyesImg.onerror = (e) => { console.error('[weapons] eyes.png load failed', e); };
 
-// ===== 멀티 구름 — 차지 진행도에 따라 1~7개 구름이 플레이어 링 주변에 차례로 등장 =====
+// ===== 멀티 구름 — 차지 진행도에 따라 1~7개 구름이 플레이어 주변에 무작위 분산 등장 =====
 const LIGHTNING_MAX_CLOUDS = 7;
-const CLOUD_RING_RX = 56;        // 가로 반경
-const CLOUD_RING_RY = 24;        // 세로 반경 (납작한 타원)
-const CLOUD_RING_OFFSET_Y = -22; // 플레이어 발 기준 위쪽
+const CLOUD_MIN_RADIUS = 70;     // 플레이어 중심에서 최소 거리 (캐릭터 안 가리게)
+const CLOUD_MAX_RADIUS = 150;    // 최대 거리
+const CLOUD_VERTICAL_SQUASH = 0.6; // 세로로 약간 납작 (위쪽이 더 많이 분포)
+const CLOUD_Y_BIAS = -20;        // 평균 y 보정 (캐릭터 발 기준)
+const CLOUD_MIN_PAIR_DIST = 56;  // 구름끼리 최소 간격 (밀집 방지)
 
 // 차지 비율 → 보이는 구름 개수 (1..MAX)
 function chargeToCloudCount(chargeFrac: number): number {
   return Math.max(1, Math.min(LIGHTNING_MAX_CLOUDS, Math.ceil(chargeFrac * LIGHTNING_MAX_CLOUDS)));
 }
 
-// 슬롯 i 의 월드 좌표 (플레이어 기준). 슬롯은 항상 같은 각도.
-function cloudSlotPos(localX: number, localY: number, i: number): { x: number; y: number } {
-  // 위에서 시작해 시계 방향으로 분포
-  const angle = -Math.PI / 2 + (i / LIGHTNING_MAX_CLOUDS) * Math.PI * 2;
-  return {
-    x: localX + Math.cos(angle) * CLOUD_RING_RX,
-    y: localY + CLOUD_RING_OFFSET_Y + Math.sin(angle) * CLOUD_RING_RY,
-  };
+// 차지 시작 시 7개 구름의 상대 좌표(rx, ry) 를 한 번 뽑음. rejection sampling 으로
+// 너무 밀집하지 않게. 플레이어를 따라 움직이도록 상대 좌표 유지.
+function generateCloudOffsets(state: WeaponsState): void {
+  const offsets: { rx: number; ry: number }[] = [];
+  let safety = 0;
+  while (offsets.length < LIGHTNING_MAX_CLOUDS && safety++ < 200) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = CLOUD_MIN_RADIUS + Math.random() * (CLOUD_MAX_RADIUS - CLOUD_MIN_RADIUS);
+    const rx = Math.cos(angle) * radius;
+    const ry = Math.sin(angle) * radius * CLOUD_VERTICAL_SQUASH + CLOUD_Y_BIAS;
+    // 다른 구름과 너무 가까우면 reject
+    const tooClose = offsets.some(
+      (o) => (o.rx - rx) ** 2 + (o.ry - ry) ** 2 < CLOUD_MIN_PAIR_DIST * CLOUD_MIN_PAIR_DIST,
+    );
+    if (tooClose) continue;
+    offsets.push({ rx, ry });
+  }
+  // 안 채워졌으면 빈 자리는 그냥 랜덤
+  while (offsets.length < LIGHTNING_MAX_CLOUDS) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = CLOUD_MIN_RADIUS + Math.random() * (CLOUD_MAX_RADIUS - CLOUD_MIN_RADIUS);
+    offsets.push({
+      rx: Math.cos(angle) * radius,
+      ry: Math.sin(angle) * radius * CLOUD_VERTICAL_SQUASH + CLOUD_Y_BIAS,
+    });
+  }
+  state.lightningCloudOffsets = offsets;
+}
+
+// 슬롯 i 의 월드 좌표 = 플레이어 위치 + 상대 오프셋. 오프셋은 charge start 시점에 픽스.
+function cloudSlotPos(state: WeaponsState, localX: number, localY: number, i: number): { x: number; y: number } {
+  const off = state.lightningCloudOffsets[i] ?? { rx: 0, ry: -40 };
+  return { x: localX + off.rx, y: localY + off.ry };
 }
 
 // 슬롯 i 의 현재 시각 상태 (보일지/투명도/프레임). null = 아직 등장 안 함.
@@ -750,7 +788,7 @@ export function drawLightningClouds(
   for (let i = 0; i < LIGHTNING_MAX_CLOUDS; i++) {
     const vis = cloudSlotVisual(state, now, i);
     if (!vis) continue;
-    const pos = cloudSlotPos(localX, localY, i);
+    const pos = cloudSlotPos(state, localX, localY, i);
     const sx = Math.round(pos.x - camera.x - dst / 2);
     const sy = Math.round(pos.y - camera.y - dst / 2);
     ctx.globalAlpha = Math.max(0, Math.min(1, vis.alpha));
