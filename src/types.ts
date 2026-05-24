@@ -79,6 +79,19 @@ export interface ZombieWaveStartPayload {
   startedAt: number; // 호스트 기준 sec (참고용 — 실제 클라이언트는 자기 now 사용)
 }
 
+// 보조 무기 드랍 (Garlic/Knives/Missile/Lightning).
+export interface WeaponDropPayload {
+  id: string;
+  type: 'garlic' | 'knives' | 'missile' | 'lightning';
+  x: number;
+  y: number;
+}
+export interface WeaponPickupPayload {
+  id: string;       // drop id
+  by: string;       // player id
+  type: 'garlic' | 'knives' | 'missile' | 'lightning';
+}
+
 // 원격 플레이어의 시각용 상태 (수신 측에서 유지)
 export interface RemotePlayer {
   id: string;

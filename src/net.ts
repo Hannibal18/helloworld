@@ -10,6 +10,8 @@ import type {
   HpPayload,
   PosPayload,
   PresenceMeta,
+  WeaponDropPayload,
+  WeaponPickupPayload,
   ZombieWaveStartPayload,
 } from './types';
 
@@ -43,6 +45,8 @@ export interface NetHandlers {
   onGunPickup: (p: GunPickupPayload) => void;
   onBullet: (p: BulletPayload) => void;
   onZombieWaveStart: (p: ZombieWaveStartPayload) => void;
+  onWeaponDrop: (p: WeaponDropPayload) => void;
+  onWeaponPickup: (p: WeaponPickupPayload) => void;
   onPresenceSync: (members: PresenceMeta[]) => void;
   onPresenceJoin: (members: PresenceMeta[]) => void;
   onPresenceLeave: (members: PresenceMeta[]) => void;
@@ -60,6 +64,8 @@ export interface Net {
   sendGunPickup: (p: GunPickupPayload) => void;
   sendBullet: (p: BulletPayload) => void;
   sendZombieWaveStart: (p: ZombieWaveStartPayload) => void;
+  sendWeaponDrop: (p: WeaponDropPayload) => void;
+  sendWeaponPickup: (p: WeaponPickupPayload) => void;
   unsubscribe: () => Promise<void>;
 }
 
@@ -90,6 +96,8 @@ export function connect(meta: PresenceMeta, handlers: NetHandlers): Net {
     .on('broadcast', { event: 'gun_pickup' }, ({ payload }) => handlers.onGunPickup(payload as GunPickupPayload))
     .on('broadcast', { event: 'bullet' },     ({ payload }) => handlers.onBullet(payload as BulletPayload))
     .on('broadcast', { event: 'zombie_wave_start' }, ({ payload }) => handlers.onZombieWaveStart(payload as ZombieWaveStartPayload))
+    .on('broadcast', { event: 'weapon_drop' },   ({ payload }) => handlers.onWeaponDrop(payload as WeaponDropPayload))
+    .on('broadcast', { event: 'weapon_pickup' }, ({ payload }) => handlers.onWeaponPickup(payload as WeaponPickupPayload))
     .on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState() as Record<string, readonly unknown[]>;
       const all: PresenceMeta[] = [];
@@ -124,6 +132,8 @@ export function connect(meta: PresenceMeta, handlers: NetHandlers): Net {
     sendGunPickup:      (p) => send('gun_pickup', p),
     sendBullet:         (p) => send('bullet', p),
     sendZombieWaveStart:(p) => send('zombie_wave_start', p),
+    sendWeaponDrop:     (p) => send('weapon_drop', p),
+    sendWeaponPickup:   (p) => send('weapon_pickup', p),
     unsubscribe: async () => {
       try { await channel.untrack(); } catch { /* ignore */ }
       await channel.unsubscribe();

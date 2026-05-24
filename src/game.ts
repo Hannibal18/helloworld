@@ -48,9 +48,23 @@ import {
   updateWave,
   type ZombieWave,
 } from './zombie';
+import {
+  drawOwnedIcons,
+  drawProjectiles,
+  drawWeaponDrops,
+  findPickup as findWeaponPickup,
+  fireOwnedWeapons,
+  grantOwnership,
+  makeWeaponsState,
+  maybeSpawn as maybeSpawnWeapon,
+  stepProjectiles,
+  type WeaponsState,
+  type WeaponType,
+} from './weapons';
+import { input } from './input';
 import type {
   AttackPayload, BulletPayload, ChatPayload, DeathPayload, GunDropPayload, GunPickupPayload,
-  HpPayload, PosPayload, PresenceMeta, RemotePlayer, ZombieWaveStartPayload,
+  HpPayload, PosPayload, PresenceMeta, RemotePlayer, WeaponDropPayload, WeaponPickupPayload, ZombieWaveStartPayload,
 } from './types';
 
 const POS_SEND_INTERVAL = 1 / 10;
@@ -222,6 +236,17 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     addBullet(gunState, p.bid, p.ownerId, p.ownerName, p.x, p.y, p.vx, p.vy, nowSec());
   };
 
+  // ===== 보조 자동 무기 (Garlic / Knives / Missile / Lightning) =====
+  const weaponsState: WeaponsState = makeWeaponsState(nowSec());
+  const applyWeaponDrop = (p: WeaponDropPayload, spawnedAt: number) => {
+    weaponsState.drops.set(p.id, { id: p.id, type: p.type, x: p.x, y: p.y, spawnedAt });
+  };
+  const applyWeaponPickup = (p: WeaponPickupPayload) => {
+    weaponsState.drops.delete(p.id);
+    if (p.by === local.id) grantOwnership(weaponsState, p.type, nowSec());
+    // 원격 플레이어 보유 표시는 v1 에서 생략 (자기 캐릭터 위에만 표시)
+  };
+
   // ===== 좀비 웨이브 =====
   const zombieWave: ZombieWave = makeZombieWave(nowSec());
   const applyZombieWaveStart = (_p: ZombieWaveStartPayload) => {
@@ -301,6 +326,8 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     onGunPickup: (p: GunPickupPayload) => applyGunPickup(p),
     onBullet: (p: BulletPayload) => applyBullet(p),
     onZombieWaveStart: (p: ZombieWaveStartPayload) => applyZombieWaveStart(p),
+    onWeaponDrop: (p: WeaponDropPayload) => applyWeaponDrop(p, nowSec()),
+    onWeaponPickup: (p: WeaponPickupPayload) => applyWeaponPickup(p),
     onDeath: (d: DeathPayload) => {
       const now = nowSec();
       const r = remotes.get(d.id);
@@ -469,6 +496,24 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     }
     // 총알 위치 갱신 + 만료/벽 충돌 시 제거
     stepBullets(gunState, dt, now, map);
+    // ===== 보조 무기: 드랍 스폰 / 픽업 / 자동 발사 / 발사체 진행 =====
+    maybeSpawnWeapon(weaponsState, now, map, isLocalHost(), (drop) => {
+      applyWeaponDrop({ id: drop.id, type: drop.type, x: drop.x, y: drop.y }, drop.spawnedAt);
+      net.sendWeaponDrop({ id: drop.id, type: drop.type, x: drop.x, y: drop.y });
+    });
+    if (!local.dead) {
+      const got = findWeaponPickup(weaponsState, local.x, local.y);
+      if (got) {
+        weaponsState.drops.delete(got.id);
+        grantOwnership(weaponsState, got.type, now);
+        net.sendWeaponPickup({ id: got.id, by: local.id, type: got.type });
+      }
+    }
+    if (input.attackHeld) {
+      fireOwnedWeapons(weaponsState, now, local, zombieWave, () => { /* no-op for now */ });
+    }
+    stepProjectiles(weaponsState, dt, now, zombieWave);
+
     // 총알 vs 좀비 — 한 발 = 즉사. 적중한 총알도 함께 제거.
     if (zombieWave.active && gunState.bullets.length > 0) {
       gunState.bullets = gunState.bullets.filter((b) => {
@@ -621,6 +666,15 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       if (now < r.gunUntil && !r.dead) heldOwners.push({ x: r.renderX, y: r.renderY, dir: r.dir });
     }
     drawGunOverlay(ctx2d, camera, gunState.drops.values(), gunState.bullets, heldOwners, now);
+
+    // 보조 무기 드랍 + 발사체 + 보유 아이콘
+    drawWeaponDrops(ctx2d, camera, weaponsState.drops.values(), now);
+    drawProjectiles(ctx2d, camera, weaponsState, now);
+    const ownedTypes: WeaponType[] = [];
+    for (const [t, exp] of weaponsState.owned) if (now < exp) ownedTypes.push(t);
+    if (!local.dead) {
+      drawOwnedIcons(ctx2d, camera, local.x, local.y, CHAR_H, ownedTypes, now < local.gunUntil);
+    }
 
     // 좀비 — 캐릭터 위에 그림 (Y-소트는 v1 단순화로 캐릭터 위쪽 고정)
     drawZombies(ctx2d, camera, zombieWave, now);
