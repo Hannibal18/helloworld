@@ -49,7 +49,7 @@ import {
 } from './zombie';
 import { addKill, commitBest, drawScoreHud, loadBest, makeScore, updateScore, type ScoreState, gradeFor } from './score';
 import { getConfig, getStageProgress, setStageWeapons } from './config';
-import { playStageTransition, playBossAlert } from './sfx';
+import { play as playSfx, playStageTransition, playBossAlert } from './sfx';
 import {
   clearAllOwned as clearAllOwnedWeapons,
   curseChargeLevel,
@@ -383,9 +383,10 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         }
       }
       const bid = crypto.randomUUID();
-      // 로컬에 즉시 추가하고 broadcast
+      // 로컬에 즉시 추가하고 broadcast + 발사 SFX
       addBullet(gunState, bid, local.id, local.name, x, y, fvx, fvy, now);
       net.sendBullet({ bid, ownerId: local.id, ownerName: local.name, x, y, vx: fvx, vy: fvy });
+      playSfx('ak_shot');
     },
   });
 

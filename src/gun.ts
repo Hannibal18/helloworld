@@ -107,13 +107,12 @@ export function findPickup(state: GunState, footX: number, footY: number): GunDr
   return null;
 }
 
-// 총알 위치 갱신 + 만료/벽 충돌 시 제거.
-export function stepBullets(state: GunState, dt: number, now: number, map: TileMap): void {
+// 총알 위치 갱신 + 수명 만료 시 제거. 벽/지형 충돌 무시 — 관통.
+export function stepBullets(state: GunState, dt: number, now: number, _map: TileMap): void {
   state.bullets = state.bullets.filter((b) => {
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     if (now - b.bornAt > BULLET_LIFE) return false;
-    if (isBlocked(map, b.x, b.y, 1, 1)) return false;
     return true;
   });
 }

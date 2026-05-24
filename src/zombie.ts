@@ -13,7 +13,7 @@
 //   0~3:  Spellcast (Up/Left/Down/Right) — 공격 모션
 //   8~11: Walk      (Up/Left/Down/Right) — 이동 모션 (col 0 idle, 1-8 cycle)
 
-import type { TileMap } from './map';
+import { isBlocked, type TileMap } from './map';
 import type { Camera } from './world';
 import type { LocalPlayer } from './player';
 import { spawnBloodBurst } from './particles';
@@ -334,8 +334,14 @@ export function updateWave(
       const ny = dyT / distT;
       const stageSpeedMult = currentStageZombie(wave, now).speedMult;
       const speed = ZOMBIE_SPEED_PX * ZOMBIE_SPEC[z.type].speedMult * stageSpeedMult;
-      z.x += nx * speed * dt;
-      z.y += ny * speed * dt;
+      // 축 분리 이동 + 타일 충돌 체크 — 나무/돌 통과 방지.
+      // (좀비는 발 영역만 충돌 — 플레이어와 동일 패턴.)
+      const ZF_HW = ZOMBIE_BODY_HW * 0.7;
+      const ZF_HH = 5;
+      const newX = z.x + nx * speed * dt;
+      if (!isBlocked(map, newX, z.y - ZF_HH, ZF_HW, ZF_HH)) z.x = newX;
+      const newY = z.y + ny * speed * dt;
+      if (!isBlocked(map, z.x, newY - ZF_HH, ZF_HW, ZF_HH)) z.y = newY;
       z.dir = dirFromVec(nx, ny);
     }
   }
