@@ -30,6 +30,7 @@ const DROP_WEIGHTS: Record<WeaponType, number> = {
   garlic:     7,
 };
 function pickWeaponByWeight(): WeaponType {
+  if (DEBUG_LIGHTNING_ONLY) return 'lightning';
   const total = WEAPON_TYPES.reduce((s, t) => s + DROP_WEIGHTS[t], 0);
   let r = Math.random() * total;
   for (const t of WEAPON_TYPES) {
@@ -39,8 +40,12 @@ function pickWeaponByWeight(): WeaponType {
   return WEAPON_TYPES[0];
 }
 
-export const WEAPON_DROP_INTERVAL = 45;   // sec (AK 60s 보다 살짝 짧게)
-export const WEAPON_MAX_DROPS = 3;
+// ===== !!! DEBUG: 라이트닝 테스트용 임시 모드 !!! =====
+// 라이트닝만 드랍, max 12개, 즉시 스폰 + 2초 주기. 테스트 끝나면 아래 3 상수와
+// pickWeaponByWeight / makeWeaponsState 의 nextSpawnAt 초기값을 원복.
+const DEBUG_LIGHTNING_ONLY = true;
+export const WEAPON_DROP_INTERVAL = DEBUG_LIGHTNING_ONLY ? 2 : 45;
+export const WEAPON_MAX_DROPS = DEBUG_LIGHTNING_ONLY ? 12 : 3;
 export const WEAPON_PICKUP_RADIUS = 18;
 export const WEAPON_HOLD_DURATION = 30;
 
@@ -153,7 +158,7 @@ export function makeWeaponsState(now: number): WeaponsState {
     storms: [],
     owned: new Map(),
     lastFire: new Map(),
-    nextSpawnAt: now + 25, // 첫 드랍 25초 후
+    nextSpawnAt: DEBUG_LIGHTNING_ONLY ? now : now + 25, // DEBUG: 즉시 / 평소: 25초 후
     lightningChargeStartedAt: null,
     lightningFullChargedAt: null,
   };
