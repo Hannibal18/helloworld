@@ -48,9 +48,12 @@ export interface HpPayload {
 }
 
 // 사망 broadcast — 본인이 죽었다고 알린다. killerId 포함.
+// zombie 모드: 비석 위치(tx, ty) 도 보냄. 동료들이 같은 위치에서 부활 인터랙션 가능.
 export interface DeathPayload {
   id: string;
   killerId: string | null;
+  tx?: number;
+  ty?: number;
 }
 
 // ===== 총(AK) =====

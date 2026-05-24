@@ -27,7 +27,7 @@ import {
   type PartyMemberInfo, type PartyPanelHandle, type TapMenuHandle,
 } from './lobby';
 import { spawnHitBurst, updateAndRenderParticles } from './particles';
-import { loadMap, type TileMap } from './map';
+import { isBlocked, loadMap, type TileMap } from './map';
 import { setupDebugPanel, updateDebugInfo, type DebugState } from './debug';
 import {
   addBullet,
@@ -543,11 +543,22 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   let lastHealKillThreshold = 0;
 
   // ===== 비석 부활 (zombie 모드) =====
-  // 내가 살아 있을 때, 죽은 동료(local/remote) 의 비석 근처 (REVIVE_RADIUS px)
-  // 안에 머무르면 progress 누적. REVIVE_TIME_SEC 도달 시 broadcast → 부활.
+  // 사망 시: 비석은 맵 어딘가 랜덤 (collision 제외) 에 생성. 동료가 그 옆에서
+  // REVIVE_TIME_SEC 머무르면 부활.
   const REVIVE_RADIUS = 36;
   const REVIVE_TIME_SEC = 3.0;
   const reviveProgress = new Map<string, number>();      // targetId → 누적 초
+
+  // 비석 위치 후보 — 통과 가능한 타일 중 랜덤. 못 찾으면 맵 중앙.
+  const pickRandomTombstoneSpot = (): { x: number; y: number } => {
+    const margin = map.tileW * 2;
+    for (let i = 0; i < 30; i++) {
+      const x = margin + Math.random() * (map.pixelW - margin * 2);
+      const y = margin + Math.random() * (map.pixelH - margin * 2);
+      if (!isBlocked(map, x, y - 6, 8, 6)) return { x, y };
+    }
+    return { x: map.pixelW / 2, y: map.pixelH / 2 };
+  };
 
   const applyRevive = (p: RevivePayload): void => {
     if (p.targetId === local.id) {
@@ -753,6 +764,11 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         r.deadUntil = now + 3;
         r.deaths += 1;
         r.gunUntil = 0;
+        // 비석 위치 (zombie 모드) — 받은 좌표로 이동시켜 같은 곳에 비석 표시.
+        if (typeof d.tx === 'number' && typeof d.ty === 'number') {
+          r.x = d.tx; r.y = d.ty;
+          r.renderX = d.tx; r.renderY = d.ty;
+        }
       }
       if (d.killerId) {
         if (d.killerId === local.id) {
@@ -784,7 +800,22 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       net.sendHp({ id: local.id, hp: local.hp });
     },
     onPresenceLeave: (members) => {
-      for (const m of members) remotes.delete(m.id);
+      for (const m of members) {
+        remotes.delete(m.id);
+        // 파티에 있던 멤버가 룸 떠나면 자동 정리. leader 였으면 파티 해산.
+        if (partyMembers.has(m.id) && m.id !== local.id) {
+          if (m.id === partyLeader) {
+            pushChatLog(ui, '👋 파티', `파티장 (${m.name}) 접속 끊김 → 해산`, '#c84a4a');
+            resetToSoloParty();
+          } else {
+            partyMembers.delete(m.id);
+            pushChatLog(ui, '👋 파티', `${m.name} 접속 끊김`, '#9a8060');
+          }
+          refreshPartyUI();
+        }
+        // 부활 진행 중이던 비석이 사라지면 progress 정리
+        if (reviveProgress.has(m.id)) reviveProgress.delete(m.id);
+      }
       setRosterCount(ui, remotes.size + 1);
       refreshRanking();
     },
@@ -1042,11 +1073,15 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         if (local.hp <= 0) {
           local.dead = true;
           local.gunUntil = 0;
-          // 좀비 모드 = 영구 사망. deadUntil 무한대 → player.ts 리스폰 로직 무시.
+          // 좀비 모드 = 영구 사망 (동료가 부활시키지 않는 한). deadUntil 무한대.
           local.deadUntil = Infinity;
           local.deaths += 1;
-          net.sendDeath({ id: local.id, killerId: null });
-          showBanner(ui, 'death', '쓰러졌다… 좀비에게 당함');
+          // 비석은 맵 어딘가 랜덤 (collision 제외) — 시신 옆에서 부활 X, 동료가 비석 찾아야.
+          const tomb = pickRandomTombstoneSpot();
+          local.x = tomb.x; local.y = tomb.y;
+          net.sendPos({ id: local.id, x: local.x, y: local.y, dir: local.dir, moving: false });
+          net.sendDeath({ id: local.id, killerId: null, tx: tomb.x, ty: tomb.y });
+          showBanner(ui, 'death', '쓰러졌다… 비석은 어딘가에');
           refreshRanking();
         }
       },
