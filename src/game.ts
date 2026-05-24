@@ -48,6 +48,7 @@ import {
   type ZombieWave,
 } from './zombie';
 import { addKill, commitBest, drawScoreHud, loadBest, makeScore, updateScore, type ScoreState, gradeFor } from './score';
+import { getConfig, getStageProgress } from './config';
 import {
   clearAllOwned as clearAllOwnedWeapons,
   curseChargeLevel,
@@ -67,6 +68,7 @@ import {
   lightningChargeLevel,
   makeWeaponsState,
   maybeSpawn as maybeSpawnWeapon,
+  setStageWeapons,
   stepProjectiles,
   type WeaponsState,
   type WeaponType,
@@ -126,6 +128,11 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     ? map.spawns[Math.floor(Math.random() * map.spawns.length)]
     : { x: map.pixelW / 2, y: map.pixelH / 2 };
   const local = makeLocalPlayer(id, name, color, charIdx, spawn);
+  // 대시보드 설정의 hpMax 를 스폰 시 적용 (런타임 변경은 다음 게임부터 반영)
+  {
+    const cfgHp = getConfig().player.hpMax;
+    if (cfgHp > 0) { local.maxHp = cfgHp; local.hp = cfgHp; }
+  }
 
   // ===== 캐릭터 LPC prescale =====
   prescaleCharacter(DEFAULT_CHAR_SCALE);
@@ -561,6 +568,22 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   // 공격 버튼 edge 감지 — 라이트닝 차지/방출용
   let prevAttackHeld = false;
 
+  // ===== 스테이지 진행 (config 의 stages 기반) =====
+  let currentStageTotalIdx = -1;       // 변경 감지용
+  let currentDamageMult = 1;           // 매 프레임 갱신, 총알/공격 데미지에 곱함
+  // 우상단 HUD 에 작은 스테이지 표시 — 동적으로 삽입.
+  let stagePillEl: HTMLDivElement | null = null;
+  if (isZombieMode) {
+    const hudTop = document.querySelector('.hud-top');
+    if (hudTop) {
+      stagePillEl = document.createElement('div');
+      stagePillEl.className = 'hud-pill';
+      stagePillEl.id = 'stage-pill';
+      stagePillEl.textContent = '🎯 대기';
+      hudTop.appendChild(stagePillEl);
+    }
+  }
+
   function loop(t: number): void {
     const realDt = Math.min(0.05, (t - lastT) / 1000);
     lastT = t;
@@ -585,6 +608,26 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
 
     // 멘탈 공격(욕 채팅) — X 키 또는 멘탈공격 버튼.
     if (consumeMentalAttack()) fireMentalAttack(now);
+
+    // ===== 스테이지 진행 — 시간 기반. config 의 stages 순서대로. =====
+    if (isZombieMode && zombieWave.active) {
+      const elapsed = now - zombieWave.startedAt;
+      const progress = getStageProgress(getConfig(), elapsed);
+      setStageWeapons(progress.stage.weapons);
+      currentDamageMult = progress.stage.weapons.damageMult;
+      if (progress.totalIdx !== currentStageTotalIdx) {
+        currentStageTotalIdx = progress.totalIdx;
+        showBanner(ui, 'info', `🎯 ${progress.stage.name}`);
+        pushChatLog(ui, '🎯 스테이지', progress.stage.name, '#ffae40');
+      }
+      if (stagePillEl) {
+        const remain = Math.max(0, Math.floor(progress.remainingSec));
+        stagePillEl.textContent = `🎯 ${progress.rawStage.name} · ${remain}s`;
+      }
+    } else if (isZombieMode) {
+      // 웨이브 시작 전: 첫 스테이지 미리보기
+      setStageWeapons(getConfig().stages[0]?.weapons ?? null);
+    }
 
     // ===== 총(AK) — 스폰/픽업/총알 진행/자기 피격 체크 =====
     // 호스트 클라이언트만 새 드랍 결정 + broadcast (중복 방지)
@@ -629,12 +672,13 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     prevAttackHeld = input.attackHeld;
     stepProjectiles(weaponsState, dt, now, zombieWave);
 
-    // 총알 vs 좀비 — 한 발 = 즉사. 적중한 총알도 함께 제거.
+    // 총알 vs 좀비 — 스테이지 damageMult 적용. 적중한 총알 제거.
     if (zombieWave.active && gunState.bullets.length > 0) {
+      const dmg = Math.max(1, Math.round(currentDamageMult));
       gunState.bullets = gunState.bullets.filter((b) => {
         const zid = bulletHitsZombie(zombieWave, b.x, b.y);
         if (zid) {
-          killZombieById(zombieWave, zid);
+          killZombieById(zombieWave, zid, dmg);
           return false; // 총알 제거
         }
         return true;

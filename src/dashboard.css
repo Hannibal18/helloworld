@@ -1,0 +1,82 @@
+/* 대시보드 전용 스타일 — 게임 CSS 와 분리. */
+:root {
+  color-scheme: dark;
+  --bg: #1a1410;
+  --panel: #2a201a;
+  --panel-2: #382a22;
+  --border: #4a382c;
+  --text: #f1e8d8;
+  --text-dim: #b8a89a;
+  --accent: #ffae40;
+  --accent-2: #ff7a4a;
+  --danger: #d34a4a;
+  --ok: #8fce6a;
+  --shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: 'Galmuri11','Apple SD Gothic Neo', system-ui, sans-serif; }
+.hidden { display: none !important; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 헤더 */
+.dash-header { background: var(--panel); border-bottom: 2px solid var(--border); padding: 14px 20px 10px; position: sticky; top: 0; z-index: 10; box-shadow: var(--shadow); }
+.dash-header-inner { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; max-width: 1100px; margin: 0 auto; }
+.dash-header h1 { font-size: 20px; margin: 0; }
+.dash-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.dash-hint { max-width: 1100px; margin: 8px auto 0; color: var(--text-dim); font-size: 13px; }
+
+/* 버튼 */
+.dash-btn { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font-family: inherit; font-size: 13px; cursor: pointer; transition: transform 0.05s, background 0.15s; }
+.dash-btn:hover { background: #44342a; }
+.dash-btn:active { transform: translateY(1px); }
+.dash-btn-primary { background: var(--accent); color: #1a1410; border-color: var(--accent); font-weight: 800; }
+.dash-btn-primary:hover { background: #ffc060; }
+.dash-btn-danger { color: var(--danger); border-color: #6a3030; }
+.dash-btn-danger:hover { background: #3a1a18; color: #ff7070; }
+.dash-btn-ghost { background: transparent; }
+.dash-link { padding: 7px 12px; border-radius: 8px; border: 1px solid transparent; }
+
+/* 메인 영역 */
+.dash-main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 20px; }
+.dash-section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: var(--shadow); }
+.dash-section h2 { margin: 0 0 4px; font-size: 16px; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+.dash-section h2 .badge { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; padding: 2px 6px; color: var(--text-dim); }
+.dash-section-desc { color: var(--text-dim); font-size: 12px; margin: 0 0 12px; }
+
+/* 폼 그리드 */
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 14px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field-label { font-size: 12px; color: var(--text-dim); }
+.field-input { background: #1a1410; border: 1px solid var(--border); color: var(--text); padding: 6px 8px; border-radius: 6px; font-family: inherit; font-size: 13px; }
+.field-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.field-hint { font-size: 11px; color: var(--text-dim); }
+.field-row { display: flex; align-items: center; gap: 6px; }
+.field-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* 스테이지 카드 */
+.stage-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+.stage-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.stage-card-head input { flex: 1; font-size: 15px; font-weight: 700; }
+.stage-card-head .stage-num { background: var(--accent); color: #1a1410; font-weight: 800; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+.stage-card-head .stage-btns { display: flex; gap: 4px; }
+.stage-card-head .icon-btn { width: 28px; height: 28px; padding: 0; font-size: 14px; }
+.stage-sub { background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px; margin-top: 10px; }
+.stage-sub h3 { font-size: 13px; margin: 0 0 8px; color: #e8c890; }
+.stage-add { width: 100%; padding: 12px; background: transparent; border: 2px dashed var(--border); color: var(--text-dim); border-radius: 10px; cursor: pointer; font-family: inherit; font-size: 14px; }
+.stage-add:hover { border-color: var(--accent); color: var(--accent); }
+
+/* 가중치 표 */
+.weight-grid { display: grid; grid-template-columns: 1fr 90px; gap: 4px 10px; align-items: center; }
+.weight-grid .weight-name { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; }
+.weight-grid .field-input { font-size: 12px; padding: 4px 6px; }
+
+/* 체크리스트 (allowed weapons) */
+.check-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 4px 10px; }
+.check-grid label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; padding: 4px; border-radius: 4px; }
+.check-grid label:hover { background: rgba(255,255,255,0.04); }
+
+/* 토스트 */
+.dash-toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: var(--ok); color: #102010; padding: 10px 18px; border-radius: 10px; font-weight: 800; box-shadow: var(--shadow); z-index: 100; animation: toastIn 0.2s ease; }
+.dash-toast.danger { background: var(--danger); color: #fff; }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }

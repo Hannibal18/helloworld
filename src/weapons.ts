@@ -13,27 +13,60 @@ import type { LocalPlayer } from './player';
 import { BODY_OFF_Y } from './player';
 import { play as playSfx } from './sfx';
 import { bulletHitsZombie, killZombieById, type ZombieWave } from './zombie';
+import { CFG_WEAPON_TYPES, type StageConfig } from './config';
 
-export type WeaponType = 'garlic' | 'pistol' | 'missile' | 'lightning';
-export const WEAPON_TYPES: readonly WeaponType[] = ['garlic', 'pistol', 'missile', 'lightning'];
+export type WeaponType = 'garlic' | 'pistol' | 'missile' | 'lightning' | 'ice' | 'curse';
+export const WEAPON_TYPES: readonly WeaponType[] = ['garlic', 'pistol', 'missile', 'lightning', 'ice', 'curse'];
+
+// 현재 스테이지의 weapons 설정 — game.ts 가 매 프레임 setStageWeapons() 로 갱신.
+// null 이면 모듈 내부 기본값(DROP_WEIGHTS/WEAPON_DROP_INTERVAL 등) 사용.
+let currentStageWeapons: StageConfig['weapons'] | null = null;
+export function setStageWeapons(w: StageConfig['weapons'] | null): void {
+  currentStageWeapons = w;
+}
+export function getStageDamageMult(): number {
+  return currentStageWeapons?.damageMult ?? 1;
+}
 
 // ===== 드랍 가중치 (rarity tier) =====
 // 액션 로그라이크 표준 패턴 — 약한 무기는 자주, 강한 무기는 드물게.
 // 단순 가중 랜덤 (weighted random). 합 = 100 으로 % 직관적.
-//   pistol    50%  common      — 약한 단발 권총 (튜토리얼 격)
-//   missile   28%  uncommon    — 호밍, 안정적
-//   lightning 15%  rare        — 체인, 멀티 타깃
-//   garlic     7%  epic        — 무지향성 AOE, 가장 강력
+//   pistol    45%  common      — 약한 단발 권총 (튜토리얼 격)
+//   missile   25%  uncommon    — 호밍, 안정적
+//   lightning 12%  rare        — 체인, 멀티 타깃
+//   ice        8%  rare        — 차지/방출 AOE 결빙(킬)
+//   curse      5%  epic        — 차지/방출 다중 즉사
+//   garlic     5%  epic        — 무지향성 AOE, 가장 강력
 const DROP_WEIGHTS: Record<WeaponType, number> = {
-  pistol:    50,
-  missile:   28,
-  lightning: 15,
-  garlic:     7,
+  pistol:    45,
+  missile:   25,
+  lightning: 12,
+  ice:        8,
+  curse:      5,
+  garlic:     5,
 };
 function pickWeaponByWeight(): WeaponType {
   if (DEBUG_LIGHTNING_ONLY) return 'lightning';
-  const total = WEAPON_TYPES.reduce((s, t) => s + DROP_WEIGHTS[t], 0);
-  let r = Math.random() * total;
+  // 스테이지 설정 우선 — allowed=false 인 무기는 제외, dropWeights 로 가중.
+  const sw = currentStageWeapons;
+  if (sw) {
+    let total = 0;
+    for (const w of CFG_WEAPON_TYPES) {
+      if (!sw.allowed[w]) continue;
+      total += Math.max(0, sw.dropWeights[w] ?? 0);
+    }
+    if (total > 0) {
+      let r = Math.random() * total;
+      for (const w of CFG_WEAPON_TYPES) {
+        if (!sw.allowed[w]) continue;
+        const wt = Math.max(0, sw.dropWeights[w] ?? 0);
+        if ((r -= wt) < 0) return w as WeaponType;
+      }
+    }
+  }
+  // 폴백: 모듈 기본 가중치
+  const total2 = WEAPON_TYPES.reduce((s, t) => s + DROP_WEIGHTS[t], 0);
+  let r = Math.random() * total2;
   for (const t of WEAPON_TYPES) {
     r -= DROP_WEIGHTS[t];
     if (r < 0) return t;
@@ -55,18 +88,24 @@ const COOLDOWN: Record<WeaponType, number> = {
   pistol:    0.4,   // AK(0.15) 보다 느린 단발 권총
   missile:   1.0,
   lightning: 2.5,
+  ice:       0,     // 차지/방출 — fireOwnedWeapons 미사용
+  curse:     0,     // 차지/방출 — fireOwnedWeapons 미사용
 };
 const COLOR: Record<WeaponType, string> = {
   garlic:    '#d8ff80',
   pistol:    '#5fd06a',  // 초록 권총
   missile:   '#c060ff',
   lightning: '#ffd84a',
+  ice:       '#88e0ff',
+  curse:     '#222',
 };
 const SYMBOL: Record<WeaponType, string> = {
   garlic:    '🧄',
   pistol:    '🔫',
   missile:   '✨',
   lightning: '⚡',
+  ice:       '❄',
+  curse:     '💀',
 };
 
 // ===== 튜닝 =====
@@ -148,6 +187,10 @@ export interface WeaponsState {
   lightningFullChargedAt: number | null;
   // 차지 시작 시 1회 생성하는 7개 구름의 플레이어 상대 좌표 (rx, ry).
   lightningCloudOffsets: { rx: number; ry: number }[];
+  // 차지형 애니메이션 캐스트 (ice, curse 각각). 라이트닝과 같은 흐름이지만
+  // 비주얼은 스프라이트 시트 애니메이션, 효과는 마커 위치별 nearest-zombie 즉사.
+  ice: AnimCastState;
+  curse: AnimCastState;
 }
 
 export function makeWeaponsState(now: number): WeaponsState {
@@ -163,6 +206,8 @@ export function makeWeaponsState(now: number): WeaponsState {
     lightningChargeStartedAt: null,
     lightningFullChargedAt: null,
     lightningCloudOffsets: [],
+    ice: makeAnimCastState(),
+    curse: makeAnimCastState(),
   };
 }
 
@@ -173,8 +218,10 @@ export function maybeSpawn(
 ): void {
   if (!isHost) return;
   if (now < state.nextSpawnAt) return;
-  state.nextSpawnAt = now + WEAPON_DROP_INTERVAL;
-  if (state.drops.size >= WEAPON_MAX_DROPS) return;
+  const interval = currentStageWeapons?.dropIntervalSec ?? WEAPON_DROP_INTERVAL;
+  state.nextSpawnAt = now + interval;
+  const maxDrops = currentStageWeapons?.maxDropsOnGround ?? WEAPON_MAX_DROPS;
+  if (state.drops.size >= maxDrops) return;
   const pos = pickSpawnTile(map);
   if (!pos) return;
   const type = pickWeaponByWeight();
@@ -227,6 +274,8 @@ export function fireOwnedWeapons(
   if (local.dead) return;
   for (const [type, expireAt] of Array.from(state.owned.entries())) {
     if (now >= expireAt) { state.owned.delete(type); state.lastFire.delete(type); continue; }
+    // 차지/방출 무기들은 fireOwnedWeapons 가 처리하지 않음 (각자 handle*Input 호출 측에서)
+    if (type === 'lightning' || type === 'ice' || type === 'curse') continue;
     const last = state.lastFire.get(type) ?? -Infinity;
     if (now - last < COOLDOWN[type]) continue;
     state.lastFire.set(type, now);
@@ -235,8 +284,6 @@ export function fireOwnedWeapons(
       case 'garlic':    fireGarlic(state, now, local, wave); break;
       case 'pistol':    firePistol(state, now, local); break;
       case 'missile':   fireMissile(state, now, local, wave); break;
-      // lightning 은 차지/방출 — fireOwnedWeapons 에서 처리 안 함 (handleLightningInput)
-      case 'lightning': break;
     }
   }
 }
@@ -535,6 +582,8 @@ export function stepProjectiles(state: WeaponsState, dt: number, now: number, wa
   state.impacts = state.impacts.filter((i) => now - i.bornAt <= IMPACT_LIFE);
   // 라이트닝 폭풍 — 구름 + 다발 번개
   stepStorms(state, now, wave);
+  // 차지형 애니메이션 캐스트(ice, curse) — 만료된 cast 이벤트 제거
+  stepAnimCastEffects(state, now);
   // 발사체
   state.projectiles = state.projectiles.filter((p) => {
     const life = p.type === 'pistol' ? PISTOL_LIFE : MISSILE_LIFE;
@@ -924,4 +973,334 @@ export function drawOwnedIcons(
     ctx.fillRect(bx, by, fillW, barH);
   }
   ctx.restore();
+}
+
+// ===== 차지형 애니메이션 캐스트 (ice, curse 공용 인프라) =====
+// 라이트닝과 같은 press→charge→full→cast 사이클. 차이점:
+//   - 비주얼은 32×32 스프라이트 시트(전체 N프레임)를 마커마다 재생
+//   - 차지 중: frame 0 마커가 플레이어 주변 위치에 차례로 등장 (라이트닝 구름과 동일 분포)
+//   - 풀차지 → 짧은 깜빡임 → 캐스트: 마커 위치에서 애니메이션 풀 재생 + 그 위치 nearest 좀비 즉사
+//   - 손가락 떼지 않으면 라이트닝처럼 즉시 새 차지 시작
+
+interface AnimCastConfig {
+  spriteSrc: string;
+  frameCount: number;
+  frameSize: number;        // 시트의 단일 프레임 크기 (정사각형 가정)
+  frameDurMs: number;       // 캐스트 시 각 프레임 표시 시간
+  maxChargeSec: number;
+  blinkPerSec: number;
+  blinkCount: number;
+  maxMarkers: number;
+  minRadius: number;
+  maxRadius: number;
+  yBias: number;
+  minPairDist: number;
+  castScale: number;        // 캐스트 재생 시 픽셀 배율
+  markerScale: number;      // 차지 마커 픽셀 배율
+  killRadius: number;       // 각 캐스트 위치 기준 nearest-zombie 탐색 반경
+}
+
+interface AnimCastEvent {
+  bornAt: number;
+  positions: { x: number; y: number }[];
+}
+
+interface AnimCastState {
+  chargeStartedAt: number | null;
+  fullChargedAt: number | null;
+  markerOffsets: { rx: number; ry: number }[];
+  casts: AnimCastEvent[];
+}
+
+function makeAnimCastState(): AnimCastState {
+  return { chargeStartedAt: null, fullChargedAt: null, markerOffsets: [], casts: [] };
+}
+
+const ICE_CONFIG: AnimCastConfig = {
+  spriteSrc: '/sprites/effects/ice_freeze.png',
+  frameCount: 5,
+  frameSize: 32,
+  frameDurMs: 120,
+  maxChargeSec: 2.0,
+  blinkPerSec: 0.14,
+  blinkCount: 2,
+  maxMarkers: 5,
+  minRadius: 60,
+  maxRadius: 130,
+  yBias: -16,
+  minPairDist: 52,
+  castScale: 1.6,
+  markerScale: 1.1,
+  killRadius: 44,
+};
+
+const CURSE_CONFIG: AnimCastConfig = {
+  spriteSrc: '/sprites/effects/skull_curse.png',
+  frameCount: 6,
+  frameSize: 32,
+  frameDurMs: 100,
+  maxChargeSec: 2.5,
+  blinkPerSec: 0.16,
+  blinkCount: 2,
+  maxMarkers: 5,
+  minRadius: 60,
+  maxRadius: 130,
+  yBias: -16,
+  minPairDist: 52,
+  castScale: 1.8,
+  markerScale: 1.1,
+  killRadius: 48,
+};
+
+// 캐스트 이벤트가 화면에 남아 있어야 할 총 시간 (모든 프레임 재생 + 약간 여유)
+function castLifeSec(cfg: AnimCastConfig): number {
+  return (cfg.frameCount * cfg.frameDurMs) / 1000;
+}
+
+// ===== 스프라이트 로딩 =====
+const iceImg = new Image();
+let iceReady = false;
+iceImg.src = ICE_CONFIG.spriteSrc;
+iceImg.onload = () => { iceReady = true; };
+iceImg.onerror = (e) => { console.error('[weapons] ice_freeze.png load failed', e); };
+
+const curseImg = new Image();
+let curseReady = false;
+curseImg.src = CURSE_CONFIG.spriteSrc;
+curseImg.onload = () => { curseReady = true; };
+curseImg.onerror = (e) => { console.error('[weapons] skull_curse.png load failed', e); };
+
+// 마커 N개 위치를 한 번에 뽑는다 — 라이트닝 구름과 동일 분포 (rejection sampling).
+function generateAnimMarkers(state: AnimCastState, cfg: AnimCastConfig): void {
+  const SQUASH = 0.6;
+  const out: { rx: number; ry: number }[] = [];
+  let safety = 0;
+  while (out.length < cfg.maxMarkers && safety++ < 200) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = cfg.minRadius + Math.random() * (cfg.maxRadius - cfg.minRadius);
+    const rx = Math.cos(angle) * radius;
+    const ry = Math.sin(angle) * radius * SQUASH + cfg.yBias;
+    const tooClose = out.some(
+      (o) => (o.rx - rx) ** 2 + (o.ry - ry) ** 2 < cfg.minPairDist * cfg.minPairDist,
+    );
+    if (tooClose) continue;
+    out.push({ rx, ry });
+  }
+  while (out.length < cfg.maxMarkers) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = cfg.minRadius + Math.random() * (cfg.maxRadius - cfg.minRadius);
+    out.push({
+      rx: Math.cos(angle) * radius,
+      ry: Math.sin(angle) * radius * SQUASH + cfg.yBias,
+    });
+  }
+  state.markerOffsets = out;
+}
+
+function chargeToMarkerCount(chargeFrac: number, max: number): number {
+  return Math.max(1, Math.min(max, Math.ceil(chargeFrac * max)));
+}
+
+// 캐스트 실행 — N개 위치 캡처 + 각 위치 nearest 좀비 1마리 즉사 (위치당 중복 제거).
+function executeCast(
+  state: AnimCastState, cfg: AnimCastConfig, count: number,
+  now: number, localX: number, localY: number, wave: ZombieWave,
+): void {
+  const positions: { x: number; y: number }[] = [];
+  for (let i = 0; i < count; i++) {
+    const off = state.markerOffsets[i] ?? { rx: 0, ry: -40 };
+    positions.push({ x: localX + off.rx, y: localY + off.ry });
+  }
+  state.casts.push({ bornAt: now, positions });
+  const claimed = new Set<string>();
+  const r2 = cfg.killRadius * cfg.killRadius;
+  for (const p of positions) {
+    let bestId: string | null = null;
+    let bestD2 = r2;
+    for (const z of wave.zombies) {
+      if (claimed.has(z.id)) continue;
+      const dx = z.x - p.x;
+      const dy = (z.y - 14) - p.y;  // 좀비 몸통 중심 근사
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) { bestD2 = d2; bestId = z.id; }
+    }
+    if (bestId !== null) {
+      claimed.add(bestId);
+      killZombieById(wave, bestId);
+    }
+  }
+}
+
+function handleAnimCastInput(
+  state: AnimCastState, cfg: AnimCastConfig, owned: boolean,
+  now: number, attackHeldNow: boolean, attackHeldPrev: boolean,
+  localX: number, localY: number, wave: ZombieWave,
+): void {
+  if (!owned) {
+    state.chargeStartedAt = null;
+    state.fullChargedAt = null;
+    return;
+  }
+  // press → 차지 시작
+  if (attackHeldNow && !attackHeldPrev) {
+    state.chargeStartedAt = now;
+    state.fullChargedAt = null;
+    generateAnimMarkers(state, cfg);
+  }
+  // hold → 풀차지 도달 감지
+  if (attackHeldNow && state.chargeStartedAt !== null && state.fullChargedAt === null) {
+    const frac = (now - state.chargeStartedAt) / cfg.maxChargeSec;
+    if (frac >= 1) state.fullChargedAt = now;
+  }
+  // 풀차지 후 깜빡임 시퀀스 끝 → 캐스트 + (홀드 중이면) 즉시 새 차지 시작
+  const blinkTotal = cfg.blinkPerSec * cfg.blinkCount;
+  if (state.fullChargedAt !== null && (now - state.fullChargedAt) >= blinkTotal) {
+    executeCast(state, cfg, cfg.maxMarkers, now, localX, localY, wave);
+    if (attackHeldNow) {
+      state.chargeStartedAt = now;
+      state.fullChargedAt = null;
+      generateAnimMarkers(state, cfg);
+    } else {
+      state.chargeStartedAt = null;
+      state.fullChargedAt = null;
+    }
+    return;
+  }
+  // release before 풀차지 — 현재 차지량 비례 부분 캐스트
+  if (!attackHeldNow && attackHeldPrev && state.chargeStartedAt !== null) {
+    const chargeFrac = Math.min(1, (now - state.chargeStartedAt) / cfg.maxChargeSec);
+    state.chargeStartedAt = null;
+    state.fullChargedAt = null;
+    const n = chargeToMarkerCount(chargeFrac, cfg.maxMarkers);
+    executeCast(state, cfg, n, now, localX, localY, wave);
+  }
+}
+
+function stepAnimCasts(state: AnimCastState, cfg: AnimCastConfig, now: number): void {
+  const life = castLifeSec(cfg);
+  state.casts = state.casts.filter((c) => now - c.bornAt < life);
+}
+
+function animCastChargeLevel(state: AnimCastState, cfg: AnimCastConfig, now: number): number {
+  if (state.chargeStartedAt === null) return 0;
+  return Math.min(1, (now - state.chargeStartedAt) / cfg.maxChargeSec);
+}
+
+// 차지 마커 한 슬롯의 현재 상태 (frame, alpha). null = 아직 등장 안 함.
+function animCastMarkerVisual(
+  state: AnimCastState, cfg: AnimCastConfig, now: number, i: number,
+): { frame: number; alpha: number } | null {
+  if (state.chargeStartedAt === null) return null;
+  const appearChargeFrac = i / cfg.maxMarkers;
+  const appearAt = state.chargeStartedAt + appearChargeFrac * cfg.maxChargeSec;
+  if (now < appearAt) return null;
+  // 풀차지 동기 깜빡임 — frame 0 ↔ 1
+  if (state.fullChargedAt !== null) {
+    const t = now - state.fullChargedAt;
+    const cyc = t / cfg.blinkPerSec;
+    const inCycle = cyc - Math.floor(cyc);
+    const frame = inCycle < 0.5 ? 0 : Math.min(cfg.frameCount - 1, 1);
+    return { frame, alpha: 1.0 };
+  }
+  // 차지 중 — fade in 0.3s, frame 0 고정
+  const localElapsed = now - appearAt;
+  const fadeIn = Math.min(1, localElapsed / 0.3);
+  return { frame: 0, alpha: 0.6 * fadeIn };
+}
+
+function drawAnimCastMarkers(
+  ctx: CanvasRenderingContext2D, camera: Camera,
+  state: AnimCastState, cfg: AnimCastConfig,
+  img: HTMLImageElement, ready: boolean, fallbackColor: string,
+  now: number, localX: number, localY: number,
+): void {
+  if (state.chargeStartedAt === null) return;
+  const dst = Math.round(cfg.frameSize * cfg.markerScale);
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  for (let i = 0; i < cfg.maxMarkers; i++) {
+    const vis = animCastMarkerVisual(state, cfg, now, i);
+    if (!vis) continue;
+    const off = state.markerOffsets[i] ?? { rx: 0, ry: -40 };
+    const sx = Math.round(localX + off.rx - camera.x - dst / 2);
+    const sy = Math.round(localY + off.ry - camera.y - dst / 2);
+    ctx.globalAlpha = Math.max(0, Math.min(1, vis.alpha));
+    if (ready) {
+      ctx.drawImage(img, vis.frame * cfg.frameSize, 0, cfg.frameSize, cfg.frameSize, sx, sy, dst, dst);
+    } else {
+      ctx.fillStyle = fallbackColor;
+      ctx.beginPath();
+      ctx.arc(sx + dst / 2, sy + dst / 2, dst / 2 - 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawAnimCastEffects(
+  ctx: CanvasRenderingContext2D, camera: Camera,
+  state: AnimCastState, cfg: AnimCastConfig,
+  img: HTMLImageElement, ready: boolean, now: number,
+): void {
+  if (state.casts.length === 0 || !ready) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  const dst = Math.round(cfg.frameSize * cfg.castScale);
+  for (const c of state.casts) {
+    const elapsedMs = (now - c.bornAt) * 1000;
+    const frame = Math.floor(elapsedMs / cfg.frameDurMs);
+    if (frame < 0 || frame >= cfg.frameCount) continue;
+    for (const p of c.positions) {
+      const sx = Math.round(p.x - camera.x - dst / 2);
+      const sy = Math.round(p.y - camera.y - dst / 2);
+      ctx.drawImage(img, frame * cfg.frameSize, 0, cfg.frameSize, cfg.frameSize, sx, sy, dst, dst);
+    }
+  }
+  ctx.restore();
+}
+
+// ===== ice / curse 퍼블릭 래퍼 =====
+
+export function handleIceInput(
+  state: WeaponsState, now: number, attackHeldNow: boolean, attackHeldPrev: boolean,
+  local: LocalPlayer, wave: ZombieWave,
+): void {
+  const owned = !local.dead && (state.owned.get('ice') ?? 0) > now;
+  handleAnimCastInput(state.ice, ICE_CONFIG, owned, now, attackHeldNow, attackHeldPrev, local.x, local.y, wave);
+}
+
+export function handleCurseInput(
+  state: WeaponsState, now: number, attackHeldNow: boolean, attackHeldPrev: boolean,
+  local: LocalPlayer, wave: ZombieWave,
+): void {
+  const owned = !local.dead && (state.owned.get('curse') ?? 0) > now;
+  handleAnimCastInput(state.curse, CURSE_CONFIG, owned, now, attackHeldNow, attackHeldPrev, local.x, local.y, wave);
+}
+
+export function stepAnimCastEffects(state: WeaponsState, now: number): void {
+  stepAnimCasts(state.ice, ICE_CONFIG, now);
+  stepAnimCasts(state.curse, CURSE_CONFIG, now);
+}
+
+export function iceChargeLevel(state: WeaponsState, now: number): number {
+  return animCastChargeLevel(state.ice, ICE_CONFIG, now);
+}
+export function curseChargeLevel(state: WeaponsState, now: number): number {
+  return animCastChargeLevel(state.curse, CURSE_CONFIG, now);
+}
+
+export function drawIceCast(
+  ctx: CanvasRenderingContext2D, camera: Camera, state: WeaponsState, now: number,
+  localX: number, localY: number,
+): void {
+  drawAnimCastMarkers(ctx, camera, state.ice, ICE_CONFIG, iceImg, iceReady, '#88e0ff', now, localX, localY);
+  drawAnimCastEffects(ctx, camera, state.ice, ICE_CONFIG, iceImg, iceReady, now);
+}
+
+export function drawCurseCast(
+  ctx: CanvasRenderingContext2D, camera: Camera, state: WeaponsState, now: number,
+  localX: number, localY: number,
+): void {
+  drawAnimCastMarkers(ctx, camera, state.curse, CURSE_CONFIG, curseImg, curseReady, '#444', now, localX, localY);
+  drawAnimCastEffects(ctx, camera, state.curse, CURSE_CONFIG, curseImg, curseReady, now);
 }

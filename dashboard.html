@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>밸런스 대시보드 · 엄마 전쟁</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/quiple/galmuri/dist/galmuri.css" />
+    <link rel="stylesheet" href="/src/dashboard.css" />
+  </head>
+  <body>
+    <header class="dash-header">
+      <div class="dash-header-inner">
+        <h1>⚙️ 밸런스 대시보드</h1>
+        <div class="dash-header-actions">
+          <a class="dash-link" href="/">← 게임으로</a>
+          <button id="btn-export" class="dash-btn dash-btn-ghost" type="button">📤 Export</button>
+          <button id="btn-import" class="dash-btn dash-btn-ghost" type="button">📥 Import</button>
+          <button id="btn-reset" class="dash-btn dash-btn-danger" type="button">↺ 기본값</button>
+          <button id="btn-save" class="dash-btn dash-btn-primary" type="button">💾 저장</button>
+        </div>
+      </div>
+      <p class="dash-hint">
+        값을 바꾸면 자동으로 임시 저장됩니다. <b>💾 저장</b> 누르면 영구 저장 + 게임 탭에 즉시 반영.
+        게임 탭이 열려 있으면 실시간으로 적용돼요.
+      </p>
+    </header>
+    <main id="dash-root" class="dash-main"></main>
+    <input id="import-file" type="file" accept="application/json" class="hidden" />
+    <div id="toast" class="dash-toast hidden"></div>
+    <script type="module" src="/src/dashboard.ts"></script>
+  </body>
+</html>

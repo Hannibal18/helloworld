@@ -19,14 +19,13 @@ import type { LocalPlayer } from './player';
 import { spawnBloodBurst } from './particles';
 import { ATTACK_COOLDOWN as PLAYER_ATTACK_COOLDOWN, ATTACK_DAMAGE as PLAYER_ATTACK_DAMAGE, BODY_HH, BODY_HW, BODY_OFF_Y, SPEED as PLAYER_SPEED, attackerHitbox } from './player';
 import { currentCharScale } from './sprites';
+import { CFG_ZOMBIE_TYPES, getConfig, getStageProgress } from './config';
 import type { AttackPayload, Dir, RemotePlayer } from './types';
 
-// 연속 스폰 모드 — 입장 후 끝없이 좀비 등장, 시간 따라 가속.
-// 더 이상 wave duration/interval 없음 (모드 시작 → 끝없이).
+// 연속 스폰 모드 — 입장 후 끝없이 좀비 등장. 난이도는 config 의 스테이지가 결정.
 const INITIAL_SPAWN = 6;
-const SPAWN_INTERVAL_BASE = 4.0;                 // 시작 시 spawn 주기 (초)
-const SPAWN_INTERVAL_MIN = 0.4;                  // 가속 한계
-const SPAWN_ACCEL_HALFLIFE_SEC = 60;             // 60초마다 spawn 주기 절반
+const SPAWN_INTERVAL_BASE = 4.0;                 // 기본 스폰 주기 (스테이지 spawnIntervalMult 로 가감)
+const SPAWN_INTERVAL_MIN = 0.3;                  // 안전 하한
 const MAX_ZOMBIES = 60;                          // 동시 존재 상한 (성능 보호)
 const ZOMBIE_SPEED_PX = PLAYER_SPEED * 0.3;      // 플레이어 속도의 30% (= 36 px/s)
 const ZOMBIE_BODY_HW = BODY_HW;                  // 캐릭터와 동일 크기
@@ -104,12 +103,16 @@ export function makeZombieWave(now: number): ZombieWave {
   };
 }
 
-// 현재 spawn 주기 — 시작 후 경과 시간에 따라 지수적으로 줄어듦 (난이도 가속).
-function currentSpawnInterval(wave: ZombieWave, now: number): number {
+// 현재 스테이지의 zombie 설정 — getStageProgress 로 elapsed → stage 매핑.
+function currentStageZombie(wave: ZombieWave, now: number) {
   const elapsed = Math.max(0, now - wave.startedAt);
-  // halflife 60s → 60초마다 주기 절반. e.g., 0s=4.0, 60s=2.0, 120s=1.0, 180s=0.5
-  const interval = SPAWN_INTERVAL_BASE * Math.pow(0.5, elapsed / SPAWN_ACCEL_HALFLIFE_SEC);
-  return Math.max(SPAWN_INTERVAL_MIN, interval);
+  return getStageProgress(getConfig(), elapsed).stage.zombie;
+}
+
+// 현재 spawn 주기 — 스테이지 spawnIntervalMult 가 배율.
+function currentSpawnInterval(wave: ZombieWave, now: number): number {
+  const z = currentStageZombie(wave, now);
+  return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_BASE * z.spawnIntervalMult);
 }
 
 // ===== 스프라이트 로딩 =====
@@ -146,23 +149,18 @@ export function startWave(wave: ZombieWave, now: number, map: TileMap): void {
   }
 }
 
-// 시간 따라 스폰 가중치 변화 — 강한 적은 후반에 등장.
-function pickZombieType(elapsed: number): ZombieType {
-  // 가중치 (정수)
-  let wNormal = 100;
-  let wFast = 0;
-  let wTank = 0;
-  let wGold = 0;
-  if (elapsed > 30) { wNormal = 75; wFast = 25; }
-  if (elapsed > 60) { wNormal = 55; wFast = 30; wTank = 12; wGold = 3; }
-  if (elapsed > 120) { wNormal = 40; wFast = 35; wTank = 20; wGold = 5; }
-  if (elapsed > 240) { wNormal = 30; wFast = 35; wTank = 30; wGold = 5; }
-  const total = wNormal + wFast + wTank + wGold;
+// 스테이지의 typeWeights 로 가중 랜덤. 모두 0 이면 normal 폴백.
+function pickZombieType(wave: ZombieWave, now: number): ZombieType {
+  const tw = currentStageZombie(wave, now).typeWeights;
+  let total = 0;
+  for (const t of CFG_ZOMBIE_TYPES) total += Math.max(0, tw[t] ?? 0);
+  if (total <= 0) return 'normal';
   let r = Math.random() * total;
-  if ((r -= wNormal) < 0) return 'normal';
-  if ((r -= wFast) < 0) return 'fast';
-  if ((r -= wTank) < 0) return 'tank';
-  return 'gold';
+  for (const t of CFG_ZOMBIE_TYPES) {
+    const w = Math.max(0, tw[t] ?? 0);
+    if ((r -= w) < 0) return t as ZombieType;
+  }
+  return 'normal';
 }
 
 function spawnOne(wave: ZombieWave, now: number, map: TileMap, forceType?: ZombieType): void {
@@ -175,16 +173,17 @@ function spawnOne(wave: ZombieWave, now: number, map: TileMap, forceType?: Zombi
   else if (side === 1) { x = margin + Math.random() * (map.pixelW - margin * 2); y = map.pixelH - margin; }
   else if (side === 2) { x = margin; y = margin + Math.random() * (map.pixelH - margin * 2); }
   else { x = map.pixelW - margin; y = margin + Math.random() * (map.pixelH - margin * 2); }
-  const elapsed = Math.max(0, now - wave.startedAt);
-  const type = forceType ?? pickZombieType(elapsed);
+  const type = forceType ?? pickZombieType(wave, now);
   const spec = ZOMBIE_SPEC[type];
+  const hpMult = currentStageZombie(wave, now).hpMult;
+  const hp = Math.max(1, Math.round(spec.hp * hpMult));
   wave.zombies.push({
     id: makeId(),
     type,
     x, y,
     dir: 'down',
-    hp: spec.hp,
-    maxHp: spec.hp,
+    hp,
+    maxHp: hp,
     attackingUntil: 0,
     lastAttackAt: 0,
   });
@@ -211,12 +210,12 @@ export function bulletHitsZombie(wave: ZombieWave, bx: number, by: number): stri
   }
   return null;
 }
-// 1 데미지 적용. hp 가 0 이하가 되면 제거 + 점수 큐 push + killCount 증가.
-// 반환: 실제로 죽었는지 (탱크 등 아직 살아 있으면 false).
-export function killZombieById(wave: ZombieWave, id: string): boolean {
+// damage 만큼 깎고, hp <= 0 이면 제거 + 점수 큐 push + killCount 증가.
+// 반환: 실제로 죽었는지 (탱크 등 아직 살아 있으면 false). damage 미지정 시 1.
+export function killZombieById(wave: ZombieWave, id: string, damage: number = 1): boolean {
   const z = wave.zombies.find((x) => x.id === id);
   if (!z) return false;
-  z.hp -= 1;
+  z.hp -= Math.max(1, Math.round(damage));
   const now = performance.now() / 1000;
   spawnBloodBurst(z.x, z.y - ZOMBIE_BODY_HH, now);
   if (z.hp > 0) return false;
@@ -277,10 +276,15 @@ export function updateWave(
     wave.nextSpawnAt = now + currentSpawnInterval(wave, now);
     spawnOne(wave, now, map);
   }
-  // 보스 — 90초마다 강제 스폰
+  // 보스 — 90초 주기. 현재 스테이지에서 bossEnabled=false 면 스킵하고 다음 틱.
   if (now >= wave.nextBossAt) {
-    wave.nextBossAt = now + BOSS_INTERVAL;
-    spawnOne(wave, now, map, 'boss');
+    if (currentStageZombie(wave, now).bossEnabled) {
+      spawnOne(wave, now, map, 'boss');
+      wave.nextBossAt = now + BOSS_INTERVAL;
+    } else {
+      // 활성화 안 됨 — 짧게 기다렸다가 재확인
+      wave.nextBossAt = now + 5;
+    }
   }
   // 살아있는 플레이어 목록 (타깃 후보)
   const targets: { x: number; y: number }[] = [];
@@ -317,7 +321,8 @@ export function updateWave(
     if (distT > ATTACK_RANGE_PX) {
       const nx = dxT / distT;
       const ny = dyT / distT;
-      const speed = ZOMBIE_SPEED_PX * ZOMBIE_SPEC[z.type].speedMult;
+      const stageSpeedMult = currentStageZombie(wave, now).speedMult;
+      const speed = ZOMBIE_SPEED_PX * ZOMBIE_SPEC[z.type].speedMult * stageSpeedMult;
       z.x += nx * speed * dt;
       z.y += ny * speed * dt;
       z.dir = dirFromVec(nx, ny);

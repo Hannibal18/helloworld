@@ -247,6 +247,18 @@ input[type="text"], textarea {
   line-height: 1.7;
   color: #8e7c5a;
 }
+.dash-link-intro {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 11px;
+  color: #c8a878;
+  text-decoration: none;
+  border: 1px solid #4a382c;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.2);
+}
+.dash-link-intro:hover { color: #ffae40; border-color: #ffae40; }
 
 /* ===== 게임 화면 ===== */
 .game {
