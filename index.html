@@ -20,13 +20,15 @@
           </div>
           <button id="reroll" class="reroll-btn" type="button">🎲 다시 뽑기</button>
           <input id="nick" class="nick-input" type="text" maxlength="12" placeholder="닉네임" autocomplete="off" />
-          <input id="game-id" class="nick-input game-id-input" type="text" maxlength="8" placeholder="방 코드 (비우면 새 방)" autocomplete="off" />
-          <div class="mode-toggle" role="radiogroup" aria-label="게임 모드">
-            <button id="mode-pk" type="button" class="mode-btn active" data-mode="pk">⚔️ PK 모드</button>
-            <button id="mode-zombie" type="button" class="mode-btn" data-mode="zombie">🧟 좀비 모드</button>
+          <!-- 방 코드 / PK 모드 토글 임시 비활성화 — 추후 부활할 때 hidden 만 제거.
+               main.ts 가 자동으로 mode='zombie', gameId='' 로 처리한다. -->
+          <input id="game-id" class="nick-input game-id-input hidden" type="text" maxlength="8" placeholder="방 코드 (비우면 새 방)" autocomplete="off" />
+          <div class="mode-toggle hidden" role="radiogroup" aria-label="게임 모드">
+            <button id="mode-pk" type="button" class="mode-btn" data-mode="pk">⚔️ PK 모드</button>
+            <button id="mode-zombie" type="button" class="mode-btn active" data-mode="zombie">🧟 좀비 모드</button>
           </div>
           <button id="enter" class="enter-btn">입 장</button>
-          <p class="intro-hint">방 코드 같으면 같이 플레이 · 비우면 자동 생성<br/>PC: WASD/방향키 이동 · Space 공격 · 모바일: 조이스틱 + 공격</p>
+          <p class="intro-hint">PC: WASD/방향키 이동 · Space 공격<br/>모바일: 조이스틱 + 공격 버튼</p>
         </div>
       </div>
 

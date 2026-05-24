@@ -41,7 +41,9 @@ ready(() => {
   setupViewport();
 
   // ===== 모드 토글 =====
-  let mode: GameMode = 'pk';
+  // 현재 UI 에서 토글/방코드 모두 .hidden 처리됨 — 좀비 모드 단독 운영.
+  // 추후 부활하려면 index.html 의 .hidden 제거.
+  let mode: GameMode = 'zombie';
   const modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.mode-btn'));
   for (const b of modeButtons) {
     b.addEventListener('click', () => {
