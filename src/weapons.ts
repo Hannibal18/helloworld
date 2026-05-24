@@ -11,6 +11,7 @@ import { isBlocked, type TileMap } from './map';
 import type { Camera } from './world';
 import type { LocalPlayer } from './player';
 import { BODY_OFF_Y } from './player';
+import { play as playSfx } from './sfx';
 import { bulletHitsZombie, killZombieById, type ZombieWave } from './zombie';
 
 export type WeaponType = 'garlic' | 'pistol' | 'missile' | 'lightning';
