@@ -555,7 +555,9 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       dragLast = { x: cx, y: cy };
     };
     const moveDrag = (cx: number, cy: number) => {
-      if (!local.dead || !dragLast) return;
+      // 드래그 중 부활하면 즉시 정리 — 살아있는 상태에서 stale dragLast 누적 방지
+      if (!local.dead) { dragLast = null; return; }
+      if (!dragLast) return;
       const rect = canvasEl.getBoundingClientRect();
       const scale = canvasEl.width / rect.width;   // CSS px → 백버퍼 px
       const dx = (cx - dragLast.x) * scale;
@@ -1275,7 +1277,11 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       freeCamY = Math.max(0, Math.min(map.pixelH, freeCamY));
       updateCamera(camera, freeCamX, freeCamY, map.pixelW, map.pixelH, realDt, 0.5);
     } else {
-      if (freeCamActive) freeCamActive = false;   // 부활 → 다음 사망 시 비석 위치에서 다시 시작
+      if (freeCamActive) {
+        // 부활/살아있음 — 다음 사망 시 비석 위치에서 다시 시작 + 드래그 상태 리셋
+        freeCamActive = false;
+        dragLast = null;
+      }
       updateCamera(camera, local.x, local.y, map.pixelW, map.pixelH, realDt, 0.5);
     }
     updateDebugInfo(debug, local.x, local.y, TILE);
