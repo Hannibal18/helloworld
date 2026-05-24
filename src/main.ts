@@ -4,6 +4,7 @@ import { startGame } from './game';
 import { setupViewport } from './viewport';
 import { CHARACTER_COUNT, drawCharacterPreview, randomCharIdx } from './sprites';
 import { loadVariants, unlock as unlockSfx } from './sfx';
+import { startBgm } from './bgm';
 import type { GameMode } from './types';
 
 // SFX 초기 등록 — 라이트닝 발사 음 4종 변형.
@@ -83,8 +84,9 @@ ready(() => {
   nick.focus();
 
   const enter = () => {
-    // iOS Safari 자동 재생 차단 해제 — 첫 사용자 제스처에서 SFX unlock
+    // iOS Safari 자동 재생 차단 해제 — 첫 사용자 제스처에서 SFX/BGM 둘 다 풀어야 함
     unlockSfx();
+    startBgm();
     let name = nick.value.trim();
     if (!name) name = `손님${Math.floor(Math.random() * 9000 + 1000)}`;
     name = name.slice(0, 12);
