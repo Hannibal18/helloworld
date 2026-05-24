@@ -47,7 +47,7 @@ import {
   updateWave,
   type ZombieWave,
 } from './zombie';
-import { addKill, drawScoreHud, makeScore, updateScore, type ScoreState, gradeFor } from './score';
+import { addKill, commitBest, drawScoreHud, loadBest, makeScore, updateScore, type ScoreState, gradeFor } from './score';
 import {
   clearAllOwned as clearAllOwnedWeapons,
   drawLightningClouds,
@@ -267,7 +267,6 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   const zombieWave: ZombieWave = makeZombieWave(nowSec());
   // ===== 좀비 모드 점수/콤보 (로컬 전용) =====
   let scoreState: ScoreState | null = null;
-  let prevZombieKills = 0;
   // 마일스톤: 30초마다 자동 무기 드랍 (= 보유 갱신), 50킬마다 풀힐
   let nextWeaponBoonAt = 0;
   let lastHealKillThreshold = 0;
@@ -280,10 +279,13 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   const hideDeathScreen = () => { if (deathScreenEl) deathScreenEl.classList.add('hidden'); deathScreenShown = false; };
   const showDeathScreen = (s: ScoreState | null) => {
     if (!isZombieMode || !deathScreenEl || !s) return;
-    const elapsed = Math.max(0, nowSec() - s.startedAt);
+    const nowS = nowSec();
+    const elapsed = Math.max(0, nowS - s.startedAt);
     const mm = Math.floor(elapsed / 60);
     const ss = Math.floor(elapsed % 60).toString().padStart(2, '0');
     const g = gradeFor(s.totalScore);
+    const { updated, best } = commitBest(s, nowS);
+    const isNewBestScore = updated.includes('score');
     if (deathGradeEl) {
       deathGradeEl.innerHTML = '';
       const letter = document.createElement('span');
@@ -296,16 +298,22 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       deathGradeEl.appendChild(tag);
     }
     if (deathStatsEl) {
+      const badge = (k: string) => updated.includes(k as keyof typeof best) ? ' <span class="new-record">🏆 NEW</span>' : '';
+      const bestMm = Math.floor(best.survivalSec / 60);
+      const bestSs = Math.floor(best.survivalSec % 60).toString().padStart(2, '0');
       deathStatsEl.innerHTML = `
-        <div class="row"><span>점수</span><b>${s.totalScore.toLocaleString()}</b></div>
-        <div class="row"><span>킬</span><b>${s.kills}</b></div>
-        <div class="row"><span>생존</span><b>${mm}:${ss}</b></div>
-        <div class="row"><span>최고 콤보</span><b>×${s.maxCombo}</b></div>
+        ${isNewBestScore ? '<div class="new-record-banner">🏆 새 최고 기록!</div>' : ''}
+        <div class="row"><span>점수</span><b>${s.totalScore.toLocaleString()}${badge('score')}</b></div>
+        <div class="row"><span>킬</span><b>${s.kills}${badge('kills')}</b></div>
+        <div class="row"><span>생존</span><b>${mm}:${ss}${badge('survivalSec')}</b></div>
+        <div class="row"><span>최고 콤보</span><b>×${s.maxCombo}${badge('maxCombo')}</b></div>
+        <div class="row best-row"><span>전체 최고</span><b>${best.score.toLocaleString()} · ${best.kills}킬 · ${bestMm}:${bestSs}</b></div>
       `;
     }
     deathScreenEl.classList.remove('hidden');
     deathScreenShown = true;
   };
+  void loadBest;
   // 재도전 — 사망 화면 닫고 즉시 부활 + 점수 리셋
   if (deathRetryEl) {
     deathRetryEl.addEventListener('click', () => {
@@ -315,7 +323,6 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       // 점수 리셋
       const now = nowSec();
       scoreState = makeScore(now);
-      prevZombieKills = zombieWave.killCount;
       nextWeaponBoonAt = now + 30;
       lastHealKillThreshold = zombieWave.killCount;
     });
@@ -327,7 +334,6 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     pushChatLog(ui, '🧟 시스템', '살아남아라', '#ff5d5d');
     // 점수/콤보/마일스톤 시작 — 호스트/원격 어느 쪽에서 받든 동일 초기화
     scoreState = makeScore(now);
-    prevZombieKills = zombieWave.killCount;
     nextWeaponBoonAt = now + 30;
     lastHealKillThreshold = zombieWave.killCount;
   };
@@ -639,10 +645,11 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
 
     // ===== 점수 / 콤보 / 마일스톤 (좀비 모드만) =====
     if (isZombieMode && scoreState) {
-      // 좀비 처치 카운트 delta → 콤보 누적
-      const killDelta = zombieWave.killCount - prevZombieKills;
-      for (let i = 0; i < killDelta; i++) addKill(scoreState, now);
-      prevZombieKills = zombieWave.killCount;
+      // 좀비 처치 큐 drain — 각 좀비의 basePoints 만큼 점수 (콤보 배율 적용됨)
+      for (const pts of zombieWave.recentKillPoints) {
+        addKill(scoreState, now, pts);
+      }
+      zombieWave.recentKillPoints.length = 0;
       updateScore(scoreState, dt, now);
 
       if (!local.dead) {

@@ -413,13 +413,11 @@ function stepStorms(state: WeaponsState, now: number, wave: ZombieWave): void {
 }
 
 function fireGarlic(_state: WeaponsState, _now: number, local: LocalPlayer, wave: ZombieWave): void {
-  // 즉시 AOE — 캐릭터 몸 중심 반경 안 좀비 전부 즉살
+  // 즉시 AOE — 캐릭터 몸 중심 반경 안 좀비 1 데미지
   const cx = local.x, cy = local.y + BODY_OFF_Y;
   const R2 = GARLIC_RADIUS * GARLIC_RADIUS;
-  wave.zombies = wave.zombies.filter((z) => {
-    const dx = z.x - cx, dy = z.y - cy;
-    return dx * dx + dy * dy > R2;
-  });
+  const targets = wave.zombies.filter((z) => (z.x - cx) ** 2 + (z.y - cy) ** 2 <= R2);
+  for (const z of targets) killZombieById(wave, z.id);
 }
 
 function firePistol(state: WeaponsState, now: number, local: LocalPlayer): void {

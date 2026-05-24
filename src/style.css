@@ -211,6 +211,24 @@ input[type="text"], textarea {
   padding: 2px 0;
 }
 .death-stats .row b { color: #ffd84a; font-weight: 700; }
+.death-stats .new-record { color: #ffae40; font-size: 11px; font-weight: 700; margin-left: 4px; }
+.death-stats .new-record-banner {
+  text-align: center;
+  font-family: "Galmuri11", monospace;
+  font-size: 16px;
+  color: #ffae40;
+  letter-spacing: 2px;
+  margin: 6px 0 10px;
+  text-shadow: 1px 1px 0 #1a0e08;
+  animation: nrPulse 0.8s infinite alternate;
+}
+@keyframes nrPulse { from { opacity: 0.65; } to { opacity: 1; transform: scale(1.04); } }
+.death-stats .best-row {
+  border-top: 1px dashed rgba(168, 80, 40, 0.5);
+  margin-top: 6px; padding-top: 6px;
+  font-size: 12px; color: #c9b58d;
+}
+.death-stats .best-row b { color: #c9b58d; font-weight: 500; }
 .death-retry {
   display: block; width: 100%;
   padding: 12px;

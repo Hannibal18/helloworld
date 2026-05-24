@@ -44,25 +44,52 @@ const ROW_SPELL: Record<Dir, number> = { up: 0, left: 1, down: 2, right: 3 };
 const ROW_WALK:  Record<Dir, number> = { up: 8, left: 9, down: 10, right: 11 };
 const FRAME = 64;
 
+// ===== 좀비 타입 — 점수/체력/스피드/외형 차등 =====
+export type ZombieType = 'normal' | 'fast' | 'tank' | 'gold' | 'boss';
+
+interface ZombieTypeSpec {
+  speedMult: number;
+  hp: number;
+  basePoints: number;     // 처치 시 점수 (콤보 배율 추가)
+  scale: number;          // 렌더 스케일 배율 (1.0 = 일반)
+  tint: string | null;    // null = 틴팅 없음. else CSS color (alpha 포함)
+  showHpBar: boolean;
+}
+export const ZOMBIE_SPEC: Record<ZombieType, ZombieTypeSpec> = {
+  normal: { speedMult: 1.0, hp: 1,  basePoints: 10,  scale: 1.0, tint: null,                showHpBar: false },
+  fast:   { speedMult: 1.8, hp: 1,  basePoints: 18,  scale: 0.85, tint: 'rgba(140,255,160,0.45)', showHpBar: false },
+  tank:   { speedMult: 0.55, hp: 4, basePoints: 35,  scale: 1.35, tint: 'rgba(180,90,255,0.55)',  showHpBar: true },
+  gold:   { speedMult: 1.2, hp: 1,  basePoints: 80,  scale: 1.0, tint: 'rgba(255,200,40,0.65)',   showHpBar: false },
+  boss:   { speedMult: 0.5, hp: 18, basePoints: 250, scale: 2.0, tint: 'rgba(255,40,40,0.5)',     showHpBar: true },
+};
+
 interface Zombie {
   id: string;
+  type: ZombieType;
   x: number;
   y: number;
   dir: Dir;
-  attackingUntil: number;  // > now 이면 spellcast 모션 그리기
-  lastAttackAt: number;    // 쿨다운 체크
+  hp: number;
+  maxHp: number;
+  attackingUntil: number;
+  lastAttackAt: number;
 }
 
 export interface ZombieWave {
   active: boolean;
-  startedAt: number;          // 모드 시작 시각 — 가속/난이도 곡선 기준
+  startedAt: number;
   zombies: Zombie[];
   nextSpawnAt: number;
-  // 호스트만 — 첫 시작 트리거 시각 (입장 후 약간 텀)
   nextStartAt: number;
-  // 누적 처치 카운터 (출처 무관) — 외부에서 delta 추적해서 점수 계산
   killCount: number;
+  // 보스 — 시작 후 BOSS_FIRST_AT, 이후 BOSS_INTERVAL 마다.
+  nextBossAt: number;
+  // 처치된 좀비의 점수 큐 — game.ts 가 매 프레임 drain 해서 score 에 반영.
+  recentKillPoints: number[];
 }
+
+const BOSS_FIRST_AT = 90;    // 첫 보스 = 시작 후 90s
+const BOSS_INTERVAL = 90;    // 이후 90s 마다
 
 export function makeZombieWave(now: number): ZombieWave {
   return {
@@ -70,8 +97,10 @@ export function makeZombieWave(now: number): ZombieWave {
     startedAt: 0,
     zombies: [],
     nextSpawnAt: 0,
-    nextStartAt: now + 3,     // 입장 후 3초 뒤 첫 좀비 등장
+    nextStartAt: now + 3,
     killCount: 0,
+    nextBossAt: Infinity,
+    recentKillPoints: [],
   };
 }
 
@@ -110,29 +139,52 @@ export function startWave(wave: ZombieWave, now: number, map: TileMap): void {
   wave.startedAt = now;
   wave.zombies = [];
   wave.nextSpawnAt = now + currentSpawnInterval(wave, now);
+  wave.nextBossAt = now + BOSS_FIRST_AT;
+  wave.recentKillPoints = [];
   for (let i = 0; i < INITIAL_SPAWN; i++) {
     spawnOne(wave, now, map);
   }
 }
 
-function spawnOne(wave: ZombieWave, _now: number, map: TileMap): void {
+// 시간 따라 스폰 가중치 변화 — 강한 적은 후반에 등장.
+function pickZombieType(elapsed: number): ZombieType {
+  // 가중치 (정수)
+  let wNormal = 100;
+  let wFast = 0;
+  let wTank = 0;
+  let wGold = 0;
+  if (elapsed > 30) { wNormal = 75; wFast = 25; }
+  if (elapsed > 60) { wNormal = 55; wFast = 30; wTank = 12; wGold = 3; }
+  if (elapsed > 120) { wNormal = 40; wFast = 35; wTank = 20; wGold = 5; }
+  if (elapsed > 240) { wNormal = 30; wFast = 35; wTank = 30; wGold = 5; }
+  const total = wNormal + wFast + wTank + wGold;
+  let r = Math.random() * total;
+  if ((r -= wNormal) < 0) return 'normal';
+  if ((r -= wFast) < 0) return 'fast';
+  if ((r -= wTank) < 0) return 'tank';
+  return 'gold';
+}
+
+function spawnOne(wave: ZombieWave, now: number, map: TileMap, forceType?: ZombieType): void {
   if (wave.zombies.length >= MAX_ZOMBIES) return;
-  // 맵 가장자리 랜덤 위치 — 플레이어가 알아채기 좋게 외곽에서 등장
   const TILE = map.tileW;
   const margin = TILE * 2;
   let x = 0, y = 0;
-  for (let i = 0; i < 20; i++) {
-    const side = Math.floor(Math.random() * 4);
-    if (side === 0) { x = margin + Math.random() * (map.pixelW - margin * 2); y = margin; }
-    else if (side === 1) { x = margin + Math.random() * (map.pixelW - margin * 2); y = map.pixelH - margin; }
-    else if (side === 2) { x = margin; y = margin + Math.random() * (map.pixelH - margin * 2); }
-    else { x = map.pixelW - margin; y = margin + Math.random() * (map.pixelH - margin * 2); }
-    break;
-  }
+  const side = Math.floor(Math.random() * 4);
+  if (side === 0) { x = margin + Math.random() * (map.pixelW - margin * 2); y = margin; }
+  else if (side === 1) { x = margin + Math.random() * (map.pixelW - margin * 2); y = map.pixelH - margin; }
+  else if (side === 2) { x = margin; y = margin + Math.random() * (map.pixelH - margin * 2); }
+  else { x = map.pixelW - margin; y = margin + Math.random() * (map.pixelH - margin * 2); }
+  const elapsed = Math.max(0, now - wave.startedAt);
+  const type = forceType ?? pickZombieType(elapsed);
+  const spec = ZOMBIE_SPEC[type];
   wave.zombies.push({
     id: makeId(),
+    type,
     x, y,
     dir: 'down',
+    hp: spec.hp,
+    maxHp: spec.hp,
     attackingUntil: 0,
     lastAttackAt: 0,
   });
@@ -159,12 +211,20 @@ export function bulletHitsZombie(wave: ZombieWave, bx: number, by: number): stri
   }
   return null;
 }
+// 1 데미지 적용. hp 가 0 이하가 되면 제거 + 점수 큐 push + killCount 증가.
+// 반환: 실제로 죽었는지 (탱크 등 아직 살아 있으면 false).
 export function killZombieById(wave: ZombieWave, id: string): boolean {
   const z = wave.zombies.find((x) => x.id === id);
   if (!z) return false;
-  spawnBloodBurst(z.x, z.y - ZOMBIE_BODY_HH, performance.now() / 1000);
+  z.hp -= 1;
+  const now = performance.now() / 1000;
+  spawnBloodBurst(z.x, z.y - ZOMBIE_BODY_HH, now);
+  if (z.hp > 0) return false;
+  // 사망
+  const spec = ZOMBIE_SPEC[z.type];
   wave.zombies = wave.zombies.filter((x) => x.id !== id);
   wave.killCount += 1;
+  wave.recentKillPoints.push(spec.basePoints);
   return true;
 }
 
@@ -177,18 +237,22 @@ export function tryHitFromAttack(wave: ZombieWave, atk: AttackPayload): number {
   const hb = attackerHitbox(atk);
   const now = performance.now() / 1000;
   let killed = 0;
-  wave.zombies = wave.zombies.filter((z) => {
+  const survivors: Zombie[] = [];
+  for (const z of wave.zombies) {
     const zx0 = z.x - ZOMBIE_HIT_RADIUS;
     const zx1 = z.x + ZOMBIE_HIT_RADIUS;
     const zy0 = z.y - ZOMBIE_BODY_HH * 2;
     const zy1 = z.y;
     const hit = zx0 < hb.x1 && zx1 > hb.x0 && zy0 < hb.y1 && zy1 > hb.y0;
-    if (hit) {
-      killed++;
-      spawnBloodBurst(z.x, z.y - ZOMBIE_BODY_HH, now);
-    }
-    return !hit;
-  });
+    if (!hit) { survivors.push(z); continue; }
+    z.hp -= 1;
+    spawnBloodBurst(z.x, z.y - ZOMBIE_BODY_HH, now);
+    if (z.hp > 0) { survivors.push(z); continue; }
+    killed++;
+    const spec = ZOMBIE_SPEC[z.type];
+    wave.recentKillPoints.push(spec.basePoints);
+  }
+  wave.zombies = survivors;
   wave.killCount += killed;
   return killed;
 }
@@ -212,6 +276,11 @@ export function updateWave(
   if (now >= wave.nextSpawnAt) {
     wave.nextSpawnAt = now + currentSpawnInterval(wave, now);
     spawnOne(wave, now, map);
+  }
+  // 보스 — 90초마다 강제 스폰
+  if (now >= wave.nextBossAt) {
+    wave.nextBossAt = now + BOSS_INTERVAL;
+    spawnOne(wave, now, map, 'boss');
   }
   // 살아있는 플레이어 목록 (타깃 후보)
   const targets: { x: number; y: number }[] = [];
@@ -241,15 +310,16 @@ export function updateWave(
       cb.onLocalHit(ATTACK_DAMAGE, z.id);
       continue;
     }
-    // 이동
+    // 이동 — 타입별 스피드 배율 적용
     const dxT = tx - z.x;
     const dyT = ty - z.y;
     const distT = Math.hypot(dxT, dyT) || 1;
     if (distT > ATTACK_RANGE_PX) {
       const nx = dxT / distT;
       const ny = dyT / distT;
-      z.x += nx * ZOMBIE_SPEED_PX * dt;
-      z.y += ny * ZOMBIE_SPEED_PX * dt;
+      const speed = ZOMBIE_SPEED_PX * ZOMBIE_SPEC[z.type].speedMult;
+      z.x += nx * speed * dt;
+      z.y += ny * speed * dt;
       z.dir = dirFromVec(nx, ny);
     }
   }
@@ -273,27 +343,51 @@ export function drawZombies(
   if (!wave.active || !sheetReady) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  const dstW = Math.round(FRAME * charScale);
-  const dstH = Math.round(FRAME * charScale);
-  const footY = Math.round(58 * charScale); // 캐릭터와 동일한 발 y
+  const baseW = FRAME * charScale;
   for (const z of wave.zombies) {
+    const spec = ZOMBIE_SPEC[z.type];
+    const dstW = Math.round(baseW * spec.scale);
+    const dstH = dstW;
+    const footY = Math.round(58 * charScale * spec.scale);
     const sx = Math.round(z.x - camera.x);
     const sy = Math.round(z.y - camera.y);
     let row: number;
     let col: number;
     if (now < z.attackingUntil) {
       row = ROW_SPELL[z.dir];
-      // spellcast 7 frame — 진행률에 따라 0..6
       const phase = 1 - (z.attackingUntil - now) / ATTACK_MOTION_SEC;
       col = Math.min(6, Math.floor(phase * 7));
     } else {
       row = ROW_WALK[z.dir];
-      // 발자국 사이클 — walk 1~8
       col = 1 + Math.floor(now * 7) % 8;
     }
     const dx = sx - Math.round(dstW / 2);
     const dy = sy - footY;
     ctx.drawImage(sheet, col * FRAME, row * FRAME, FRAME, FRAME, dx, dy, dstW, dstH);
+    // 타입별 틴팅 (source-atop: 좀비 픽셀에만 색 입힘)
+    if (spec.tint) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(dx, dy, dstW, dstH);
+      ctx.clip();
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.fillStyle = spec.tint;
+      ctx.fillRect(dx, dy, dstW, dstH);
+      ctx.restore();
+    }
+    // HP 바 (탱크/보스만)
+    if (spec.showHpBar && z.hp < z.maxHp) {
+      const barW = dstW;
+      const barH = 3;
+      const bx = dx;
+      const by = dy - 5;
+      ctx.fillStyle = '#1a0e08';
+      ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
+      ctx.fillStyle = '#400000';
+      ctx.fillRect(bx, by, barW, barH);
+      ctx.fillStyle = z.type === 'boss' ? '#ff5050' : '#c84a4a';
+      ctx.fillRect(bx, by, Math.round(barW * (z.hp / z.maxHp)), barH);
+    }
   }
   ctx.restore();
 }

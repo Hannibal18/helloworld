@@ -46,14 +46,15 @@ export function makeScore(now: number): ScoreState {
 }
 
 // 좀비 1마리 처치 시 호출. 점수 + 콤보 갱신.
-export function addKill(s: ScoreState, now: number): void {
+// basePoints 생략하면 KILL_BASE_POINTS(10) 기본. 특수 좀비는 zombie.ts 의 spec.basePoints 전달.
+export function addKill(s: ScoreState, now: number, basePoints: number = KILL_BASE_POINTS): void {
   s.kills += 1;
   const inWindow = now - s.lastKillAt <= COMBO_WINDOW_SEC;
   s.comboCount = inWindow ? s.comboCount + 1 : 1;
   s.lastKillAt = now;
   if (s.comboCount > s.maxCombo) s.maxCombo = s.comboCount;
   const mult = Math.min(COMBO_MAX, s.comboCount);
-  const earned = KILL_BASE_POINTS * mult;
+  const earned = basePoints * mult;
   s.totalScore += earned;
   s.lastKillScore = earned;
   s.killPopUntil = now + KILL_POP_DURATION;
@@ -77,6 +78,48 @@ export function updateScore(s: ScoreState, dt: number, now: number): void {
 // 현재 콤보 배율 (1~COMBO_MAX). 0 = 콤보 안 됨.
 export function currentComboMult(s: ScoreState): number {
   return Math.min(COMBO_MAX, s.comboCount);
+}
+
+// ===== localStorage 최고 기록 =====
+const LS_KEY = 'helloworld:zombie:best';
+export interface BestRecord {
+  score: number;
+  kills: number;
+  survivalSec: number;
+  maxCombo: number;
+}
+const EMPTY_BEST: BestRecord = { score: 0, kills: 0, survivalSec: 0, maxCombo: 0 };
+
+export function loadBest(): BestRecord {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return { ...EMPTY_BEST };
+    const parsed = JSON.parse(raw);
+    return {
+      score: Number(parsed.score) || 0,
+      kills: Number(parsed.kills) || 0,
+      survivalSec: Number(parsed.survivalSec) || 0,
+      maxCombo: Number(parsed.maxCombo) || 0,
+    };
+  } catch {
+    return { ...EMPTY_BEST };
+  }
+}
+
+// 현재 run 결과로 기록 갱신. 갱신된 필드 목록 반환 (NEW RECORD 연출용).
+export function commitBest(s: ScoreState, now: number): { updated: (keyof BestRecord)[]; best: BestRecord } {
+  const survivalSec = Math.max(0, now - s.startedAt);
+  const cur = loadBest();
+  const updated: (keyof BestRecord)[] = [];
+  const next: BestRecord = { ...cur };
+  if (s.totalScore > cur.score)      { next.score = s.totalScore; updated.push('score'); }
+  if (s.kills > cur.kills)           { next.kills = s.kills; updated.push('kills'); }
+  if (survivalSec > cur.survivalSec) { next.survivalSec = survivalSec; updated.push('survivalSec'); }
+  if (s.maxCombo > cur.maxCombo)     { next.maxCombo = s.maxCombo; updated.push('maxCombo'); }
+  if (updated.length > 0) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch { /* 시크릿 모드 등 */ }
+  }
+  return { updated, best: next };
 }
 
 // 점수 등급 — 사망 화면 표시용. 임계값 직관 조정.
