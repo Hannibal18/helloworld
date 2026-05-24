@@ -48,7 +48,7 @@ import {
   type ZombieWave,
 } from './zombie';
 import { addKill, commitBest, drawScoreHud, loadBest, makeScore, updateScore, type ScoreState, gradeFor } from './score';
-import { getConfig, getStageProgress } from './config';
+import { getConfig, getStageProgress, setStageWeapons } from './config';
 import { playStageTransition, playBossAlert } from './sfx';
 import {
   clearAllOwned as clearAllOwnedWeapons,
@@ -69,7 +69,6 @@ import {
   lightningChargeLevel,
   makeWeaponsState,
   maybeSpawn as maybeSpawnWeapon,
-  setStageWeapons,
   stepProjectiles,
   type WeaponsState,
   type WeaponType,

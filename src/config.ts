@@ -300,3 +300,27 @@ function applyLoopMult(s: StageConfig, loopIdx: number, step: number): StageConf
 export function emptyStage(name: string): StageConfig {
   return mergeStage({ name, durationSec: 60 });
 }
+
+// ===== 현재 스테이지 weapons 캐시 =====
+// 순환 import 회피용: weapons.ts / player.ts / game.ts 가 공유. 이 모듈은
+// 의존성이 없으므로 어느 모듈에서나 안전하게 import 가능.
+let _currentStageWeapons: StageConfig['weapons'] | null = null;
+export function setStageWeapons(w: StageConfig['weapons'] | null): void {
+  _currentStageWeapons = w;
+}
+export function getStageWeaponsCurrent(): StageConfig['weapons'] | null {
+  return _currentStageWeapons;
+}
+export function getStageDamageMult(): number {
+  return _currentStageWeapons?.damageMult ?? 1;
+}
+// AK 발사 간격에 곱할 배율. fireRateMult 클수록 cooldown 작아짐.
+export function getStageAkCooldownMult(): number {
+  const m = _currentStageWeapons?.akFireRateMult ?? 1;
+  return m > 0 ? 1 / m : 1;
+}
+// 라이트닝/얼음/저주 풀차지 시 발사 갯수. cap 으로 상한 클램프.
+export function getStageChargedCount(cap: number): number {
+  const n = _currentStageWeapons?.chargedReleaseCount ?? 2;
+  return Math.max(1, Math.min(cap, Math.round(n)));
+}

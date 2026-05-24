@@ -12,33 +12,18 @@ import type { Camera } from './world';
 import type { LocalPlayer } from './player';
 import { play as playSfx } from './sfx';
 import { killZombieById, type ZombieWave } from './zombie';
-import { CFG_WEAPON_TYPES, type StageConfig } from './config';
+import {
+  CFG_WEAPON_TYPES,
+  getStageChargedCount,
+  getStageWeaponsCurrent,
+} from './config';
 
 export type WeaponType = 'lightning' | 'ice' | 'curse';
 export const WEAPON_TYPES: readonly WeaponType[] = ['lightning', 'ice', 'curse'];
 
-// 현재 스테이지의 weapons 설정 — game.ts 가 매 프레임 setStageWeapons() 로 갱신.
-// null 이면 모듈 내부 기본값(DROP_WEIGHTS/WEAPON_DROP_INTERVAL 등) 사용.
-let currentStageWeapons: StageConfig['weapons'] | null = null;
-export function setStageWeapons(w: StageConfig['weapons'] | null): void {
-  currentStageWeapons = w;
-}
-export function getStageWeaponsCurrent(): StageConfig['weapons'] | null {
-  return currentStageWeapons;
-}
-export function getStageDamageMult(): number {
-  return currentStageWeapons?.damageMult ?? 1;
-}
-// AK 발사 간격에 곱할 배율 (1 / fireRateMult). 클수록 느려짐.
-export function getStageAkCooldownMult(): number {
-  const m = currentStageWeapons?.akFireRateMult ?? 1;
-  return m > 0 ? 1 / m : 1;
-}
-// 라이트닝/얼음/저주 풀차지 시 발사 갯수. 캡은 호출자가 cap 인자로.
-function stageChargedCount(cap: number): number {
-  const n = currentStageWeapons?.chargedReleaseCount ?? 2;
-  return Math.max(1, Math.min(cap, Math.round(n)));
-}
+// 스테이지 weapons 설정 / 헬퍼들은 config.ts 에서 노출 (순환 import 회피).
+// 이 모듈은 그것들을 그대로 사용 + 내부 약식 alias 만 둠.
+const stageChargedCount = getStageChargedCount;
 
 // ===== 드랍 가중치 (rarity tier) =====
 // 액션 로그라이크 표준 패턴 — 약한 무기는 자주, 강한 무기는 드물게.
@@ -54,7 +39,7 @@ const DROP_WEIGHTS: Record<WeaponType, number> = {
 function pickWeaponByWeight(): WeaponType {
   if (DEBUG_LIGHTNING_ONLY) return 'lightning';
   // 스테이지 설정 우선 — allowed=false 인 무기는 제외, dropWeights 로 가중.
-  const sw = currentStageWeapons;
+  const sw = getStageWeaponsCurrent();
   if (sw) {
     let total = 0;
     for (const w of CFG_WEAPON_TYPES) {
@@ -194,10 +179,9 @@ export function maybeSpawn(
 ): void {
   if (!isHost) return;
   if (now < state.nextSpawnAt) return;
-  const interval = currentStageWeapons?.dropIntervalSec ?? WEAPON_DROP_INTERVAL;
-  state.nextSpawnAt = now + interval;
-  const maxDrops = currentStageWeapons?.maxDropsOnGround ?? WEAPON_MAX_DROPS;
-  if (state.drops.size >= maxDrops) return;
+  const sw = getStageWeaponsCurrent();
+  state.nextSpawnAt = now + (sw?.dropIntervalSec ?? WEAPON_DROP_INTERVAL);
+  if (state.drops.size >= (sw?.maxDropsOnGround ?? WEAPON_MAX_DROPS)) return;
   const pos = pickSpawnTile(map);
   if (!pos) return;
   const type = pickWeaponByWeight();
