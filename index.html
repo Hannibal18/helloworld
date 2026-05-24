@@ -57,6 +57,16 @@
         <!-- 킬/사망 중앙 배너 -->
         <div id="banner" class="banner"></div>
 
+        <!-- 좀비 모드 사망 화면 (점수 브레이크다운 + 재도전) -->
+        <div id="death-screen" class="death-screen hidden">
+          <div class="death-card">
+            <div class="death-title">쓰러졌다…</div>
+            <div class="death-grade" id="death-grade"></div>
+            <div class="death-stats" id="death-stats"></div>
+            <button id="death-retry" type="button" class="death-retry">다시 도전</button>
+          </div>
+        </div>
+
         <!-- 모바일 가상 컨트롤 -->
         <div id="touch-controls" class="touch-controls hidden">
           <div id="stick" class="stick">

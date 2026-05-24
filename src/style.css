@@ -148,6 +148,81 @@ input[type="text"], textarea {
   cursor: pointer;
 }
 .enter-btn:active { transform: translateY(1px); }
+
+/* ===== 좀비 모드 사망 화면 ===== */
+.death-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 4, 4, 0.78);
+  backdrop-filter: blur(3px);
+  pointer-events: auto;
+}
+.death-card {
+  width: min(320px, 86vw);
+  padding: 24px 22px;
+  background: linear-gradient(180deg, #2a1410, #140804);
+  border: 2px solid #a02a2a;
+  box-shadow: 0 0 0 2px #1a0e08, 0 8px 24px rgba(0,0,0,0.6);
+  text-align: center;
+  color: #f0e6d0;
+}
+.death-title {
+  font-family: "Galmuri11","NeoDunggeunmo", monospace;
+  font-size: 24px;
+  letter-spacing: 4px;
+  color: #ff5d5d;
+  text-shadow: 2px 2px 0 #1a0e08;
+  margin-bottom: 12px;
+}
+.death-grade {
+  font-family: "Galmuri11", monospace;
+  font-size: 72px;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 3px 3px 0 #1a0e08;
+  margin: 8px 0 16px;
+}
+.death-grade-tag {
+  display: block;
+  font-size: 14px;
+  font-weight: normal;
+  letter-spacing: 3px;
+  color: #c9b58d;
+  margin-top: 4px;
+  text-shadow: none;
+}
+.death-stats {
+  font-family: 'Apple SD Gothic Neo','Malgun Gothic', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.9;
+  text-align: left;
+  margin: 12px 0 18px;
+  padding: 0 8px;
+  border-top: 1px solid rgba(168, 80, 40, 0.5);
+  border-bottom: 1px solid rgba(168, 80, 40, 0.5);
+}
+.death-stats .row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+.death-stats .row b { color: #ffd84a; font-weight: 700; }
+.death-retry {
+  display: block; width: 100%;
+  padding: 12px;
+  font: inherit; font-size: 16px; letter-spacing: 4px;
+  font-family: "Galmuri11", monospace;
+  background: linear-gradient(180deg, #8a6232, #5d4220);
+  color: #fff7a8;
+  border: 2px solid #1a0e08;
+  cursor: pointer;
+}
+.death-retry:active { transform: translateY(1px); }
+
 .intro-hint {
   margin: 16px 0 0;
   font-size: 11px;

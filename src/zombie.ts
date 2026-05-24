@@ -21,11 +21,13 @@ import { ATTACK_COOLDOWN as PLAYER_ATTACK_COOLDOWN, ATTACK_DAMAGE as PLAYER_ATTA
 import { currentCharScale } from './sprites';
 import type { AttackPayload, Dir, RemotePlayer } from './types';
 
-export const ZOMBIE_WAVE_DURATION_SEC = 120;     // 한 웨이브 길이 (2분)
-export const ZOMBIE_WAVE_INTERVAL_SEC = 300;     // 웨이브 간 간격 (5분: 시작~다음 시작)
-const INITIAL_SPAWN = 8;
-const SPAWN_INTERVAL_SEC = 4;
-const MAX_ZOMBIES = 30;
+// 연속 스폰 모드 — 입장 후 끝없이 좀비 등장, 시간 따라 가속.
+// 더 이상 wave duration/interval 없음 (모드 시작 → 끝없이).
+const INITIAL_SPAWN = 6;
+const SPAWN_INTERVAL_BASE = 4.0;                 // 시작 시 spawn 주기 (초)
+const SPAWN_INTERVAL_MIN = 0.4;                  // 가속 한계
+const SPAWN_ACCEL_HALFLIFE_SEC = 60;             // 60초마다 spawn 주기 절반
+const MAX_ZOMBIES = 60;                          // 동시 존재 상한 (성능 보호)
 const ZOMBIE_SPEED_PX = PLAYER_SPEED * 0.3;      // 플레이어 속도의 30% (= 36 px/s)
 const ZOMBIE_BODY_HW = BODY_HW;                  // 캐릭터와 동일 크기
 const ZOMBIE_BODY_HH = BODY_HH;
@@ -53,24 +55,32 @@ interface Zombie {
 
 export interface ZombieWave {
   active: boolean;
-  startedAt: number;
-  endsAt: number;
+  startedAt: number;          // 모드 시작 시각 — 가속/난이도 곡선 기준
   zombies: Zombie[];
   nextSpawnAt: number;
-  // 호스트만 — 다음 웨이브 시작 시각
-  nextWaveAt: number;
+  // 호스트만 — 첫 시작 트리거 시각 (입장 후 약간 텀)
+  nextStartAt: number;
+  // 누적 처치 카운터 (출처 무관) — 외부에서 delta 추적해서 점수 계산
+  killCount: number;
 }
 
 export function makeZombieWave(now: number): ZombieWave {
   return {
     active: false,
     startedAt: 0,
-    endsAt: 0,
     zombies: [],
     nextSpawnAt: 0,
-    // 첫 웨이브는 입장 60초 후 트리거, 이후 ZOMBIE_WAVE_INTERVAL_SEC(5분) 주기.
-    nextWaveAt: now + 60,
+    nextStartAt: now + 3,     // 입장 후 3초 뒤 첫 좀비 등장
+    killCount: 0,
   };
+}
+
+// 현재 spawn 주기 — 시작 후 경과 시간에 따라 지수적으로 줄어듦 (난이도 가속).
+function currentSpawnInterval(wave: ZombieWave, now: number): number {
+  const elapsed = Math.max(0, now - wave.startedAt);
+  // halflife 60s → 60초마다 주기 절반. e.g., 0s=4.0, 60s=2.0, 120s=1.0, 180s=0.5
+  const interval = SPAWN_INTERVAL_BASE * Math.pow(0.5, elapsed / SPAWN_ACCEL_HALFLIFE_SEC);
+  return Math.max(SPAWN_INTERVAL_MIN, interval);
 }
 
 // ===== 스프라이트 로딩 =====
@@ -79,7 +89,7 @@ let sheetReady = false;
 sheet.src = '/sprites/zombie.png';
 sheet.onload = () => { sheetReady = true; };
 
-// ===== 호스트만 호출 — wave_start 트리거 시점 결정 =====
+// ===== 호스트만 호출 — 첫 시작 트리거 (1회만). 이후 끝없이 진행. =====
 export function maybeTriggerWave(
   wave: ZombieWave,
   now: number,
@@ -87,19 +97,19 @@ export function maybeTriggerWave(
   onTrigger: () => void,
 ): void {
   if (!isHost) return;
-  if (now < wave.nextWaveAt) return;
-  // 다음 웨이브 예약은 시작 시각 기준으로
-  wave.nextWaveAt = now + ZOMBIE_WAVE_INTERVAL_SEC;
+  if (wave.active) return;
+  if (now < wave.nextStartAt) return;
+  wave.nextStartAt = Infinity; // 다시 트리거 안 하도록
   onTrigger();
 }
 
-// ===== 웨이브 시작 (broadcast 받았을 때 모든 클라이언트가 호출) =====
+// ===== 좀비 모드 시작 (broadcast 받았을 때 모든 클라이언트가 호출). =====
+// 한 번 시작하면 끝없이 진행 — endsAt 없음.
 export function startWave(wave: ZombieWave, now: number, map: TileMap): void {
   wave.active = true;
   wave.startedAt = now;
-  wave.endsAt = now + ZOMBIE_WAVE_DURATION_SEC;
   wave.zombies = [];
-  wave.nextSpawnAt = now + SPAWN_INTERVAL_SEC;
+  wave.nextSpawnAt = now + currentSpawnInterval(wave, now);
   for (let i = 0; i < INITIAL_SPAWN; i++) {
     spawnOne(wave, now, map);
   }
@@ -152,9 +162,9 @@ export function bulletHitsZombie(wave: ZombieWave, bx: number, by: number): stri
 export function killZombieById(wave: ZombieWave, id: string): boolean {
   const z = wave.zombies.find((x) => x.id === id);
   if (!z) return false;
-  // 사망 시 피 분출 — 몸통 중심(발 기준 위로 살짝)
   spawnBloodBurst(z.x, z.y - ZOMBIE_BODY_HH, performance.now() / 1000);
   wave.zombies = wave.zombies.filter((x) => x.id !== id);
+  wave.killCount += 1;
   return true;
 }
 
@@ -179,6 +189,7 @@ export function tryHitFromAttack(wave: ZombieWave, atk: AttackPayload): number {
     }
     return !hit;
   });
+  wave.killCount += killed;
   return killed;
 }
 
@@ -197,14 +208,9 @@ export function updateWave(
   cb: ZombieHitCallbacks,
 ): void {
   if (!wave.active) return;
-  if (now >= wave.endsAt) {
-    wave.active = false;
-    wave.zombies = [];
-    return;
-  }
-  // 주기적 추가 스폰
+  // 연속 스폰 — 종료 없음. spawn 주기는 시간 따라 가속.
   if (now >= wave.nextSpawnAt) {
-    wave.nextSpawnAt = now + SPAWN_INTERVAL_SEC;
+    wave.nextSpawnAt = now + currentSpawnInterval(wave, now);
     spawnOne(wave, now, map);
   }
   // 살아있는 플레이어 목록 (타깃 후보)
@@ -334,9 +340,9 @@ export function drawWaveTimer(
   now: number,
 ): void {
   if (!wave.active) return;
-  const remain = Math.max(0, wave.endsAt - now);
-  const mm = Math.floor(remain / 60);
-  const ss = Math.floor(remain % 60).toString().padStart(2, '0');
+  const elapsed = Math.max(0, now - wave.startedAt);
+  const mm = Math.floor(elapsed / 60);
+  const ss = Math.floor(elapsed % 60).toString().padStart(2, '0');
   const text = `🧟 좀비 타임 ${mm}:${ss}`;
   const cssW = hudCtx.canvas.clientWidth;
   hudCtx.save();

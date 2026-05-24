@@ -38,7 +38,6 @@ import { ensureGunSprite, drawGunOverlay, drawDamageFlash } from './render';
 import {
   bulletHitsZombie,
   drawWaveAmbient,
-  drawWaveTimer,
   drawZombies,
   killZombieById,
   makeZombieWave,
@@ -48,6 +47,7 @@ import {
   updateWave,
   type ZombieWave,
 } from './zombie';
+import { addKill, drawScoreHud, makeScore, updateScore, type ScoreState, gradeFor } from './score';
 import {
   clearAllOwned as clearAllOwnedWeapons,
   drawLightningClouds,
@@ -265,6 +265,61 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
 
   // ===== 좀비 웨이브 =====
   const zombieWave: ZombieWave = makeZombieWave(nowSec());
+  // ===== 좀비 모드 점수/콤보 (로컬 전용) =====
+  let scoreState: ScoreState | null = null;
+  let prevZombieKills = 0;
+  // 마일스톤: 30초마다 자동 무기 드랍 (= 보유 갱신), 50킬마다 풀힐
+  let nextWeaponBoonAt = 0;
+  let lastHealKillThreshold = 0;
+  // 사망 화면 — 좀비 모드 한정. 사망 직후 1회 표시.
+  let deathScreenShown = false;
+  const deathScreenEl = document.getElementById('death-screen') as HTMLElement | null;
+  const deathGradeEl = document.getElementById('death-grade') as HTMLElement | null;
+  const deathStatsEl = document.getElementById('death-stats') as HTMLElement | null;
+  const deathRetryEl = document.getElementById('death-retry') as HTMLButtonElement | null;
+  const hideDeathScreen = () => { if (deathScreenEl) deathScreenEl.classList.add('hidden'); deathScreenShown = false; };
+  const showDeathScreen = (s: ScoreState | null) => {
+    if (!isZombieMode || !deathScreenEl || !s) return;
+    const elapsed = Math.max(0, nowSec() - s.startedAt);
+    const mm = Math.floor(elapsed / 60);
+    const ss = Math.floor(elapsed % 60).toString().padStart(2, '0');
+    const g = gradeFor(s.totalScore);
+    if (deathGradeEl) {
+      deathGradeEl.innerHTML = '';
+      const letter = document.createElement('span');
+      letter.textContent = g.letter;
+      letter.style.color = g.color;
+      const tag = document.createElement('span');
+      tag.className = 'death-grade-tag';
+      tag.textContent = g.tag;
+      deathGradeEl.appendChild(letter);
+      deathGradeEl.appendChild(tag);
+    }
+    if (deathStatsEl) {
+      deathStatsEl.innerHTML = `
+        <div class="row"><span>점수</span><b>${s.totalScore.toLocaleString()}</b></div>
+        <div class="row"><span>킬</span><b>${s.kills}</b></div>
+        <div class="row"><span>생존</span><b>${mm}:${ss}</b></div>
+        <div class="row"><span>최고 콤보</span><b>×${s.maxCombo}</b></div>
+      `;
+    }
+    deathScreenEl.classList.remove('hidden');
+    deathScreenShown = true;
+  };
+  // 재도전 — 사망 화면 닫고 즉시 부활 + 점수 리셋
+  if (deathRetryEl) {
+    deathRetryEl.addEventListener('click', () => {
+      hideDeathScreen();
+      // 부활 — deadUntil 무시
+      local.deadUntil = nowSec();
+      // 점수 리셋
+      const now = nowSec();
+      scoreState = makeScore(now);
+      prevZombieKills = zombieWave.killCount;
+      nextWeaponBoonAt = now + 30;
+      lastHealKillThreshold = zombieWave.killCount;
+    });
+  }
   const applyZombieWaveStart = (_p: ZombieWaveStartPayload) => {
     const now = nowSec();
     startWave(zombieWave, now, map);
@@ -341,7 +396,15 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     onGunDrop: (p: GunDropPayload) => applyGunDrop(p, nowSec()),
     onGunPickup: (p: GunPickupPayload) => applyGunPickup(p),
     onBullet: (p: BulletPayload) => applyBullet(p),
-    onZombieWaveStart: (p: ZombieWaveStartPayload) => applyZombieWaveStart(p),
+    onZombieWaveStart: (p: ZombieWaveStartPayload) => {
+      applyZombieWaveStart(p);
+      // 점수 시작
+      const now = nowSec();
+      scoreState = makeScore(now);
+      prevZombieKills = zombieWave.killCount;
+      nextWeaponBoonAt = now + 30;
+      lastHealKillThreshold = 0;
+    },
     onWeaponDrop: (p: WeaponDropPayload) => applyWeaponDrop(p, nowSec()),
     onWeaponPickup: (p: WeaponPickupPayload) => applyWeaponPickup(p),
     onDeath: (d: DeathPayload) => {
@@ -577,6 +640,34 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     });
     } // /isZombieMode
 
+    // ===== 점수 / 콤보 / 마일스톤 (좀비 모드만) =====
+    if (isZombieMode && scoreState) {
+      // 좀비 처치 카운트 delta → 콤보 누적
+      const killDelta = zombieWave.killCount - prevZombieKills;
+      for (let i = 0; i < killDelta; i++) addKill(scoreState, now);
+      prevZombieKills = zombieWave.killCount;
+      updateScore(scoreState, dt, now);
+
+      if (!local.dead) {
+        // 30초마다 보너스 무기 부여 (랜덤). 보유 무기 있으면 갱신.
+        if (now >= nextWeaponBoonAt) {
+          nextWeaponBoonAt = now + 30;
+          const pool: WeaponType[] = ['garlic', 'pistol', 'missile', 'lightning'];
+          const t = pool[Math.floor(Math.random() * pool.length)];
+          grantOwnership(weaponsState, t, now);
+          local.gunUntil = 0;
+          showBanner(ui, 'info', `🎁 보너스 무기: ${t.toUpperCase()}`);
+        }
+        // 50킬마다 풀힐
+        if (zombieWave.killCount - lastHealKillThreshold >= 50) {
+          lastHealKillThreshold = zombieWave.killCount;
+          local.hp = local.maxHp;
+          net.sendHp({ id: local.id, hp: local.hp });
+          showBanner(ui, 'info', '💖 +HP 풀힐');
+        }
+      }
+    }
+
     // HP 감소 감지 → 화면 붉은 플래시 + 진동 (출처 무관)
     if (local.hp < prevLocalHp) {
       local.damageFlashUntil = now + 0.3;
@@ -586,6 +677,12 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       }
     }
     prevLocalHp = local.hp;
+
+    // 좀비 모드 — 사망 화면 표시/숨김 토글
+    if (isZombieMode) {
+      if (local.dead && !deathScreenShown) showDeathScreen(scoreState);
+      else if (!local.dead && deathScreenShown) hideDeathScreen();
+    }
     // 자기 몸통(BODY AABB + 여유 패딩) 에 들어온 총알(자기 자신이 쏜 것 제외) 처리.
     // BODY 만으론 너무 작아서 잘 안 맞는다는 피드백 → 사방으로 BULLET_HIT_PAD 만큼 확장.
     if (!local.dead && now >= local.iFrameUntil) {
@@ -703,7 +800,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     if (isZombieMode) {
       drawZombies(ctx2d, camera, zombieWave, now);
       drawWaveAmbient(ctx2d, zombieWave, now);
-      drawWaveTimer(hudCtx, zombieWave, now);
+      if (scoreState) drawScoreHud(hudCtx, scoreState, now);
     }
 
     updateAndRenderParticles(ctx2d, camera.x, camera.y, realDt, now);
