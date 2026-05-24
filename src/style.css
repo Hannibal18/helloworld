@@ -109,6 +109,34 @@ input[type="text"], textarea {
   letter-spacing: 2px;
 }
 .nick-input:focus { border-color: #c8a04a; }
+.game-id-input {
+  margin-top: 8px;
+  text-transform: uppercase;     /* 방 코드 보기 좋게 대문자 */
+  font-size: 14px;
+  letter-spacing: 3px;
+}
+.mode-toggle {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+.mode-btn {
+  flex: 1;
+  padding: 10px 4px;
+  font: inherit; font-size: 13px; letter-spacing: 1px;
+  background: rgba(40, 28, 18, 0.6);
+  color: #c9b58d;
+  border: 2px solid #6a4a2a;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.mode-btn.active {
+  background: linear-gradient(180deg, #8a6232, #5d4220);
+  color: #fff7a8;
+  border-color: #c8a04a;
+}
+.mode-btn:active { transform: translateY(1px); }
 .enter-btn {
   margin-top: 12px;
   display: block; width: 100%;

@@ -3,6 +3,15 @@
 import { startGame } from './game';
 import { setupViewport } from './viewport';
 import { CHARACTER_COUNT, drawCharacterPreview, randomCharIdx } from './sprites';
+import type { GameMode } from './types';
+
+// 랜덤 방코드 — 친구한테 공유하기 좋은 짧은 영문/숫자.
+function randomGameId(len = 5): string {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // 헷갈리는 문자 제외 (O0I1L)
+  let s = '';
+  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
 
 function ready(fn: () => void): void {
   if (document.readyState === 'loading') {
@@ -14,11 +23,28 @@ function ready(fn: () => void): void {
 
 ready(() => {
   const nick = document.getElementById('nick') as HTMLInputElement;
+  const gameIdInput = document.getElementById('game-id') as HTMLInputElement;
   const btn = document.getElementById('enter') as HTMLButtonElement;
   if (!nick || !btn) return;
 
   // viewport(visible viewport) 추적 시작 — 입장 화면부터 CSS 변수 노출
   setupViewport();
+
+  // ===== 모드 토글 =====
+  let mode: GameMode = 'pk';
+  const modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.mode-btn'));
+  for (const b of modeButtons) {
+    b.addEventListener('click', () => {
+      const v = (b.dataset.mode === 'zombie' ? 'zombie' : 'pk') as GameMode;
+      mode = v;
+      for (const x of modeButtons) x.classList.toggle('active', x === b);
+    });
+  }
+
+  // ===== 방 코드 자동 생성 (placeholder 보조) =====
+  if (gameIdInput && !gameIdInput.value) {
+    // 입력 안 했으면 비워두기 — 입장 시 자동 채움
+  }
 
   // ===== 캐릭터 미리보기 + 다시 뽑기 =====
   // 입장 전 캐릭터를 골라본다. "다시 뽑기" 클릭마다 다른 시트로 교체.
@@ -51,8 +77,13 @@ ready(() => {
     let name = nick.value.trim();
     if (!name) name = `손님${Math.floor(Math.random() * 9000 + 1000)}`;
     name = name.slice(0, 12);
+    let gameId = (gameIdInput?.value ?? '').trim().toUpperCase().slice(0, 8);
+    if (!gameId) {
+      gameId = randomGameId();
+      if (gameIdInput) gameIdInput.value = gameId;
+    }
     try {
-      startGame(name, chosenCharIdx);
+      startGame({ name, charIdx: chosenCharIdx, gameId, mode });
     } catch (err) {
       // Supabase env 미설정 등
       console.error(err);

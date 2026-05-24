@@ -3,6 +3,9 @@
 
 export type Dir = 'up' | 'down' | 'left' | 'right';
 
+// 게임 모드 — 입장 시 선택. 채널 키에 포함돼 다른 모드끼리 격리됨.
+export type GameMode = 'pk' | 'zombie';
+
 // presence track payload — 누가 방에 있는지 (신원만)
 export interface PresenceMeta {
   id: string;

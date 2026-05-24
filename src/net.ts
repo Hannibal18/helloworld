@@ -5,6 +5,7 @@ import type {
   BulletPayload,
   ChatPayload,
   DeathPayload,
+  GameMode,
   GunDropPayload,
   GunPickupPayload,
   HpPayload,
@@ -69,17 +70,19 @@ export interface Net {
   unsubscribe: () => Promise<void>;
 }
 
-export function connect(meta: PresenceMeta, handlers: NetHandlers): Net {
+export function connect(meta: PresenceMeta, gameId: string, mode: GameMode, handlers: NetHandlers): Net {
   const client = getSupabase();
+  // 채널명 = room:{mode}:{gameId}. 같은 (mode, gameId) 인 사람끼리만 만남.
+  const channelName = `room-${mode}-${(gameId || 'default').toLowerCase()}`;
   // Supabase v2 의 `channel(topic)` 은 같은 토픽의 채널이 이미 있으면 그걸 그대로 돌려준다.
   // HMR 또는 재진입 시 이전 채널이 subscribed 상태로 남아 있으면 .on('presence', ...) 가 throw 하므로,
   // 기존 채널이 있으면 unsubscribe + removeChannel 로 정리한 다음 새로 만든다.
-  const existing = client.getChannels().find((c) => c.topic === 'realtime:baram-room');
+  const existing = client.getChannels().find((c) => c.topic === `realtime:${channelName}`);
   if (existing) {
     void existing.unsubscribe();
     void client.removeChannel(existing);
   }
-  const channel = client.channel('baram-room', {
+  const channel = client.channel(channelName, {
     config: {
       broadcast: { self: false },
       presence: { key: meta.id },

@@ -67,7 +67,7 @@ import {
 } from './weapons';
 import { input } from './input';
 import type {
-  AttackPayload, BulletPayload, ChatPayload, DeathPayload, GunDropPayload, GunPickupPayload,
+  AttackPayload, BulletPayload, ChatPayload, DeathPayload, GameMode, GunDropPayload, GunPickupPayload,
   HpPayload, PosPayload, PresenceMeta, RemotePlayer, WeaponDropPayload, WeaponPickupPayload, ZombieWaveStartPayload,
 } from './types';
 
@@ -82,13 +82,22 @@ const DEFAULT_CHAR_SCALE = 0.75;
 
 let gameStarted = false;
 
-export function startGame(name: string, charIdx?: number): void {
-  if (gameStarted) return;
-  gameStarted = true;
-  void startGameAsync(name, charIdx);
+export interface StartGameOpts {
+  name: string;
+  charIdx?: number;
+  gameId: string;       // 방 코드 (빈 문자열이면 'default')
+  mode: GameMode;       // 'pk' | 'zombie'
 }
 
-async function startGameAsync(name: string, charIdxArg?: number): Promise<void> {
+export function startGame(opts: StartGameOpts): void {
+  if (gameStarted) return;
+  gameStarted = true;
+  void startGameAsync(opts);
+}
+
+async function startGameAsync(opts: StartGameOpts): Promise<void> {
+  const { name, charIdx: charIdxArg, gameId, mode } = opts;
+  const isZombieMode = mode === 'zombie';
   const ui = uiHandles();
   showGame(ui);
 
@@ -286,7 +295,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
 
   // ===== 네트워크 =====
   const meta: PresenceMeta = { id: local.id, name, color, charIdx };
-  net = connect(meta, {
+  net = connect(meta, gameId, mode, {
     onPos: (p: PosPayload) => {
       const r = remotes.get(p.id);
       if (!r) return;
@@ -540,13 +549,14 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       });
     }
 
-    // ===== 좀비 웨이브 =====
-    maybeTriggerWave(zombieWave, now, isLocalHost(), () => {
-      // 호스트가 트리거 → 자기도 즉시 시작 + broadcast
-      applyZombieWaveStart({ startedAt: now });
-      net.sendZombieWaveStart({ startedAt: now });
-    });
-    updateWave(zombieWave, dt, now, map, local, remotes.values(), {
+    // ===== 좀비 웨이브 ===== (zombie 모드에서만)
+    if (isZombieMode) {
+      maybeTriggerWave(zombieWave, now, isLocalHost(), () => {
+        // 호스트가 트리거 → 자기도 즉시 시작 + broadcast
+        applyZombieWaveStart({ startedAt: now });
+        net.sendZombieWaveStart({ startedAt: now });
+      });
+      updateWave(zombieWave, dt, now, map, local, remotes.values(), {
       onLocalHit: (dmg) => {
         if (local.dead || now < local.iFrameUntil) return;
         local.hp = Math.max(0, local.hp - dmg);
@@ -565,6 +575,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
         }
       },
     });
+    } // /isZombieMode
 
     // HP 감소 감지 → 화면 붉은 플래시 + 진동 (출처 무관)
     if (local.hp < prevLocalHp) {
@@ -688,12 +699,12 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       drawLightningClouds(ctx2d, camera, weaponsState, now, local.x, local.y);
     }
 
-    // 좀비 — 캐릭터 위에 그림 (Y-소트는 v1 단순화로 캐릭터 위쪽 고정)
-    drawZombies(ctx2d, camera, zombieWave, now);
-    // 좀비 타임 ambient — 빨간 비네팅 + 박동. 캐릭터/좀비 다 그린 후 위에 덧칠.
-    drawWaveAmbient(ctx2d, zombieWave, now);
-    // 좀비 타이머 — HUD 캔버스 화면 중앙 상단
-    drawWaveTimer(hudCtx, zombieWave, now);
+    // 좀비 (zombie 모드만) — 캐릭터 위에 그림
+    if (isZombieMode) {
+      drawZombies(ctx2d, camera, zombieWave, now);
+      drawWaveAmbient(ctx2d, zombieWave, now);
+      drawWaveTimer(hudCtx, zombieWave, now);
+    }
 
     updateAndRenderParticles(ctx2d, camera.x, camera.y, realDt, now);
 
