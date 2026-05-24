@@ -72,138 +72,227 @@ export interface LobbyChatHandle {
   destroy(): void;
 }
 
-// ===== Ready 버튼 + 카운트다운 오버레이 =====
+// ===== 파티 시스템 UI =====
+// (옛 ready 버튼 / 카운트다운 오버레이는 파티 모델로 갈아엎음.)
 
-export interface ReadyButtonHandle {
-  setActive(active: boolean, zone: Difficulty | null, waitingCount: number): void;
-  setMyReady(ready: boolean): void;
+export interface PartyMemberInfo {
+  id: string;
+  name: string;
+  zone: Difficulty | null;     // 현재 어느 구역 안에 있는지 (없으면 null)
+  isLeader: boolean;
+}
+
+export interface PartyPanelHandle {
+  update(members: PartyMemberInfo[], canStart: boolean, startBlockedReason: string): void;
   destroy(): void;
 }
 
-// 우하단(공격 버튼 위쪽) 에 띄우는 큰 "준비" 버튼.
-// 활성 = 내가 구역 안 → 누르면 onPress(true), 다시 누르면 onPress(false).
-// 비활성 = 회색 표시 + 클릭 무시.
-export function setupReadyButton(onPress: (ready: boolean) => void): ReadyButtonHandle {
-  const btn = document.createElement('button');
-  btn.id = 'lobby-ready-btn';
-  btn.type = 'button';
-  btn.textContent = '구역에 들어가세요';
-  let active = false;
-  let myReady = false;
-  let zoneId: Difficulty | null = null;
-  let waitingCount = 0;
+// 좌상단 (roster pill 아래) 에 파티 패널 표시.
+// 파티장에게만 "출발" 버튼 — 모든 파티원이 같은 구역에 모여야 활성.
+export function setupPartyPanel(onStart: () => void, onLeave: () => void): PartyPanelHandle {
+  const root = document.createElement('div');
+  root.id = 'party-panel';
+  root.style.cssText = [
+    'position:fixed',
+    'top:calc(env(safe-area-inset-top) + 70px)',
+    'left:calc(env(safe-area-inset-left) + 8px)',
+    'z-index:6',
+    'background:rgba(20,14,8,0.85)',
+    'border:1px solid #6a4a2a',
+    'border-radius:8px',
+    'padding:8px 10px',
+    'min-width:140px',
+    'font:11px "Galmuri11", "Apple SD Gothic Neo", system-ui, sans-serif',
+    'color:#f0e6d0',
+    'pointer-events:auto',
+  ].join(';');
 
-  const updateStyle = () => {
-    const base = [
-      'position:fixed',
-      'right:calc(env(safe-area-inset-right) + 18px)',
-      'bottom:calc(env(safe-area-inset-bottom) + var(--vp-bottom, 0px) + 220px)',
-      'z-index:7',
-      'width:120px',
-      'padding:14px 8px',
-      'border-radius:60px',
-      'font:900 14px "Galmuri11", system-ui, sans-serif',
-      'letter-spacing:2px',
-      'cursor:pointer',
-      'text-align:center',
-      'line-height:1.3',
-      'pointer-events:auto',
-    ];
-    if (!active) {
-      base.push('background:rgba(40,28,18,0.7)');
-      base.push('color:#7a6a52');
-      base.push('border:2px solid #4a3422');
-      base.push('cursor:default');
-    } else if (myReady) {
-      base.push('background:linear-gradient(180deg,#5fd06a,#3a8a40)');
-      base.push('color:#0a1f0a');
-      base.push('border:2px solid #1a0e08');
-    } else {
-      base.push('background:linear-gradient(180deg,#ffd84a,#c08a20)');
-      base.push('color:#1a0e08');
-      base.push('border:2px solid #1a0e08');
-    }
-    btn.style.cssText = base.join(';');
-  };
+  const header = document.createElement('div');
+  header.style.cssText = 'font-weight:900;color:#ffd84a;letter-spacing:1px;margin-bottom:4px;';
+  const list = document.createElement('div');
+  list.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-bottom:6px;';
+  const startBtn = document.createElement('button');
+  startBtn.type = 'button';
+  startBtn.textContent = '출발';
+  const baseBtn = 'width:100%;padding:6px;font:900 12px "Galmuri11", system-ui, sans-serif;letter-spacing:2px;border:1px solid #1a0e08;border-radius:6px;cursor:pointer;';
+  startBtn.addEventListener('click', onStart);
+  const leaveBtn = document.createElement('button');
+  leaveBtn.type = 'button';
+  leaveBtn.textContent = '탈퇴';
+  leaveBtn.style.cssText = baseBtn + 'background:rgba(40,28,18,0.6);color:#c84a4a;border-color:#6a3030;margin-top:4px;font-size:10px;padding:4px;letter-spacing:1px;';
+  leaveBtn.addEventListener('click', onLeave);
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:10px;color:#9a8060;margin-top:4px;line-height:1.3;';
 
-  const updateLabel = () => {
-    if (!active) { btn.textContent = '구역에\n들어가세요'; return; }
-    const zoneName = zoneId === 'easy' ? '🟢 EASY' : zoneId === 'normal' ? '🟡 NORMAL' : '🔴 HELL';
-    btn.textContent = myReady
-      ? `${zoneName}\n대기 ${waitingCount}명\n(취소)`
-      : `${zoneName}\n대기 ${waitingCount}명\n준비!`;
-  };
-
-  btn.style.whiteSpace = 'pre-line';
-
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    if (!active) return;
-    myReady = !myReady;
-    onPress(myReady);
-    updateStyle(); updateLabel();
-  });
-
-  document.body.appendChild(btn);
-  updateStyle(); updateLabel();
+  root.append(header, list, startBtn, note, leaveBtn);
+  document.body.appendChild(root);
 
   return {
-    setActive: (a, zone, count) => {
-      const changed = a !== active || zone !== zoneId || count !== waitingCount;
-      active = a; zoneId = zone; waitingCount = count;
-      if (!a && myReady) {
-        myReady = false;
-        onPress(false);
+    update: (members, canStart, blockedReason) => {
+      const me = members.find((m) => m.isLeader);
+      header.textContent = `파티 (${members.length}/8)`;
+      list.innerHTML = '';
+      for (const m of members) {
+        const row = document.createElement('div');
+        const zoneIcon = m.zone === 'easy' ? '🟢' : m.zone === 'normal' ? '🟡' : m.zone === 'hell' ? '🔴' : '·';
+        row.textContent = `${m.isLeader ? '👑' : ' '} ${m.name} ${zoneIcon}`;
+        row.style.cssText = `padding:1px 0; ${m.zone ? 'color:#fff7a8' : 'color:#9a8060'};`;
+        list.appendChild(row);
       }
-      if (changed) { updateStyle(); updateLabel(); }
-    },
-    setMyReady: (r) => {
-      if (r !== myReady) {
-        myReady = r;
-        updateStyle(); updateLabel();
+      const iAmLeader = me && me.id && members.find((x) => x.isLeader)?.id === me.id;
+      // 출발 버튼 — leader 만 보임
+      const showStart = members.length >= 1;
+      startBtn.style.display = showStart ? 'block' : 'none';
+      if (canStart) {
+        startBtn.style.cssText = baseBtn + 'background:linear-gradient(180deg,#5fd06a,#3a8a40);color:#0a1f0a;';
+        startBtn.disabled = false;
+      } else {
+        startBtn.style.cssText = baseBtn + 'background:rgba(40,28,18,0.6);color:#7a6a52;cursor:default;';
+        startBtn.disabled = true;
       }
+      // 1인 파티면 출발 버튼만 보이고 탈퇴는 숨김
+      leaveBtn.style.display = members.length >= 2 ? 'block' : 'none';
+      note.textContent = canStart ? '' : (blockedReason || '');
+      void iAmLeader;
     },
-    destroy: () => { btn.remove(); },
+    destroy: () => { root.remove(); },
   };
 }
 
-// 매치 시작 카운트다운 — 화면 중앙에 큰 숫자.
-export interface CountdownOverlayHandle {
-  show(zone: Difficulty, secondsLeft: number, members: number): void;
+// ===== 초대 popup (받음) =====
+
+export interface InvitePopupHandle {
+  show(fromName: string, leaderName: string, onAccept: () => void, onDecline: () => void): void;
   hide(): void;
   destroy(): void;
 }
 
-export function setupCountdownOverlay(): CountdownOverlayHandle {
+export function setupInvitePopup(): InvitePopupHandle {
   const el = document.createElement('div');
-  el.id = 'lobby-countdown';
+  el.id = 'party-invite';
   el.style.cssText = [
     'position:fixed',
-    'top:50%',
+    'top:30%',
     'left:50%',
-    'transform:translate(-50%,-50%)',
-    'z-index:9',
-    'padding:18px 28px',
-    'background:rgba(20,14,8,0.85)',
-    'border:3px solid #ffd84a',
+    'transform:translate(-50%, -50%)',
+    'z-index:11',
+    'padding:18px 22px',
+    'background:rgba(20,14,8,0.95)',
+    'border:2px solid #ffd84a',
     'border-radius:12px',
     'text-align:center',
-    'font:900 32px "Galmuri11", system-ui, sans-serif',
-    'color:#ffd84a',
-    'letter-spacing:4px',
-    'text-shadow:2px 2px 0 #1a0e08',
-    'pointer-events:none',
+    'font:14px "Galmuri11", system-ui, sans-serif',
+    'color:#f0e6d0',
+    'min-width:220px',
+    'box-shadow:0 8px 24px rgba(0,0,0,0.6)',
     'display:none',
+    'pointer-events:auto',
   ].join(';');
   document.body.appendChild(el);
   return {
-    show: (zone, sec, members) => {
-      const zoneName = zone === 'easy' ? '🟢 EASY' : zone === 'normal' ? '🟡 NORMAL' : '🔴 HELL';
+    show: (fromName, leaderName, onA, onD) => {
+      el.innerHTML = '';
+      const title = document.createElement('div');
+      title.style.cssText = 'font-weight:900;color:#ffd84a;margin-bottom:6px;';
+      title.textContent = '🎉 파티 초대';
+      const msg = document.createElement('div');
+      msg.style.cssText = 'font-size:12px;line-height:1.5;margin-bottom:12px;';
+      msg.textContent = leaderName === fromName
+        ? `${fromName} 님의 파티에 초대받았습니다`
+        : `${fromName} 님 (${leaderName} 파티) 이 초대했습니다`;
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex;gap:6px;';
+      const mk = (label: string, color: string, onClick: () => void) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.style.cssText = `flex:1;padding:8px;font:900 13px "Galmuri11", system-ui, sans-serif;letter-spacing:2px;border:1px solid #1a0e08;border-radius:6px;cursor:pointer;background:${color};color:#1a0e08;`;
+        b.addEventListener('click', () => { el.style.display = 'none'; onClick(); });
+        return b;
+      };
+      btnRow.append(
+        mk('수락', 'linear-gradient(180deg,#5fd06a,#3a8a40)', onA),
+        mk('거절', 'linear-gradient(180deg,#d34a4a,#6a2a2a)', onD),
+      );
+      el.append(title, msg, btnRow);
       el.style.display = 'block';
-      el.innerHTML = `<div style="font-size:14px;letter-spacing:2px;margin-bottom:6px;color:#fff7a8">${zoneName} · ${members}명</div>${sec}<div style="font-size:11px;letter-spacing:1px;margin-top:4px;color:#c9b58d">초 후 출발…</div>`;
     },
     hide: () => { el.style.display = 'none'; },
     destroy: () => { el.remove(); },
+  };
+}
+
+// ===== 캐릭터 탭 메뉴 =====
+// 화면 좌표에 작은 popup 띄움. 메뉴 항목 onClick.
+
+export interface TapMenuHandle {
+  show(screenX: number, screenY: number, name: string, options: { label: string; onClick: () => void; danger?: boolean }[]): void;
+  hide(): void;
+  destroy(): void;
+}
+
+export function setupTapMenu(): TapMenuHandle {
+  const el = document.createElement('div');
+  el.id = 'tap-menu';
+  el.style.cssText = [
+    'position:fixed',
+    'z-index:10',
+    'background:rgba(20,14,8,0.95)',
+    'border:1px solid #ffd84a',
+    'border-radius:8px',
+    'padding:6px',
+    'min-width:120px',
+    'font:12px "Galmuri11", "Apple SD Gothic Neo", system-ui, sans-serif',
+    'color:#f0e6d0',
+    'box-shadow:0 4px 12px rgba(0,0,0,0.6)',
+    'display:none',
+    'pointer-events:auto',
+  ].join(';');
+  document.body.appendChild(el);
+
+  // 메뉴 밖 탭하면 닫기
+  const closeOnOutside = (e: MouseEvent | TouchEvent) => {
+    if (el.style.display === 'none') return;
+    if (!el.contains(e.target as Node)) {
+      el.style.display = 'none';
+    }
+  };
+  document.addEventListener('mousedown', closeOnOutside);
+  document.addEventListener('touchstart', closeOnOutside, { passive: true });
+
+  return {
+    show: (sx, sy, name, options) => {
+      el.innerHTML = '';
+      const title = document.createElement('div');
+      title.textContent = name;
+      title.style.cssText = 'font-weight:900;color:#ffd84a;padding:4px 8px;letter-spacing:1px;';
+      el.appendChild(title);
+      for (const opt of options) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = opt.label;
+        b.style.cssText = `display:block;width:100%;text-align:left;padding:8px;background:transparent;border:none;color:${opt.danger ? '#ff7070' : '#fff7a8'};font:inherit;cursor:pointer;border-radius:4px;`;
+        b.addEventListener('mouseenter', () => { b.style.background = 'rgba(255,255,255,0.06)'; });
+        b.addEventListener('mouseleave', () => { b.style.background = 'transparent'; });
+        b.addEventListener('click', () => { el.style.display = 'none'; opt.onClick(); });
+        el.appendChild(b);
+      }
+      // 화면 안에 들어오도록 위치 보정
+      el.style.left = '0px'; el.style.top = '0px';
+      el.style.display = 'block';
+      const rect = el.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const left = Math.max(8, Math.min(vw - rect.width - 8, sx - rect.width / 2));
+      const top = Math.max(8, Math.min(vh - rect.height - 8, sy - rect.height - 12));
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+    },
+    hide: () => { el.style.display = 'none'; },
+    destroy: () => {
+      document.removeEventListener('mousedown', closeOnOutside);
+      document.removeEventListener('touchstart', closeOnOutside);
+      el.remove();
+    },
   };
 }
 

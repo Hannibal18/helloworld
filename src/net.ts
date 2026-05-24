@@ -11,6 +11,10 @@ import type {
   HpPayload,
   LobbyReadyPayload,
   MatchStartPayload,
+  PartyAcceptPayload,
+  PartyDeclinePayload,
+  PartyInvitePayload,
+  PartyLeavePayload,
   PosPayload,
   PresenceMeta,
   WeaponDropPayload,
@@ -52,6 +56,10 @@ export interface NetHandlers {
   onWeaponPickup: (p: WeaponPickupPayload) => void;
   onLobbyReady: (p: LobbyReadyPayload) => void;
   onMatchStart: (p: MatchStartPayload) => void;
+  onPartyInvite: (p: PartyInvitePayload) => void;
+  onPartyAccept: (p: PartyAcceptPayload) => void;
+  onPartyDecline: (p: PartyDeclinePayload) => void;
+  onPartyLeave: (p: PartyLeavePayload) => void;
   onPresenceSync: (members: PresenceMeta[]) => void;
   onPresenceJoin: (members: PresenceMeta[]) => void;
   onPresenceLeave: (members: PresenceMeta[]) => void;
@@ -73,6 +81,10 @@ export interface Net {
   sendWeaponPickup: (p: WeaponPickupPayload) => void;
   sendLobbyReady: (p: LobbyReadyPayload) => void;
   sendMatchStart: (p: MatchStartPayload) => void;
+  sendPartyInvite: (p: PartyInvitePayload) => void;
+  sendPartyAccept: (p: PartyAcceptPayload) => void;
+  sendPartyDecline: (p: PartyDeclinePayload) => void;
+  sendPartyLeave: (p: PartyLeavePayload) => void;
   unsubscribe: () => Promise<void>;
 }
 
@@ -109,6 +121,10 @@ export function connect(meta: PresenceMeta, gameId: string, mode: GameMode, hand
     .on('broadcast', { event: 'weapon_pickup' }, ({ payload }) => handlers.onWeaponPickup(payload as WeaponPickupPayload))
     .on('broadcast', { event: 'lobby_ready' },   ({ payload }) => handlers.onLobbyReady(payload as LobbyReadyPayload))
     .on('broadcast', { event: 'match_start' },   ({ payload }) => handlers.onMatchStart(payload as MatchStartPayload))
+    .on('broadcast', { event: 'party_invite' },  ({ payload }) => handlers.onPartyInvite(payload as PartyInvitePayload))
+    .on('broadcast', { event: 'party_accept' },  ({ payload }) => handlers.onPartyAccept(payload as PartyAcceptPayload))
+    .on('broadcast', { event: 'party_decline' }, ({ payload }) => handlers.onPartyDecline(payload as PartyDeclinePayload))
+    .on('broadcast', { event: 'party_leave' },   ({ payload }) => handlers.onPartyLeave(payload as PartyLeavePayload))
     .on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState() as Record<string, readonly unknown[]>;
       const all: PresenceMeta[] = [];
@@ -147,6 +163,10 @@ export function connect(meta: PresenceMeta, gameId: string, mode: GameMode, hand
     sendWeaponPickup:   (p) => send('weapon_pickup', p),
     sendLobbyReady:     (p) => send('lobby_ready', p),
     sendMatchStart:     (p) => send('match_start', p),
+    sendPartyInvite:    (p) => send('party_invite', p),
+    sendPartyAccept:    (p) => send('party_accept', p),
+    sendPartyDecline:   (p) => send('party_decline', p),
+    sendPartyLeave:     (p) => send('party_leave', p),
     unsubscribe: async () => {
       try { await channel.untrack(); } catch { /* ignore */ }
       await channel.unsubscribe();

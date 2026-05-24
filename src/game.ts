@@ -22,8 +22,9 @@ import { attackPhaseFor, renderFrame, type RenderableRemote } from './render';
 import { setBubble, syncBubbles } from './bubbles';
 import {
   drawLobbyZones, getZoneAt, LOBBY_ZONES,
-  setupCountdownOverlay, setupLobbyChat, setupLobbyTitle, setupReadyButton,
-  type CountdownOverlayHandle, type Difficulty, type LobbyChatHandle, type ReadyButtonHandle,
+  setupInvitePopup, setupLobbyChat, setupLobbyTitle, setupPartyPanel, setupTapMenu,
+  type Difficulty, type InvitePopupHandle, type LobbyChatHandle,
+  type PartyMemberInfo, type PartyPanelHandle, type TapMenuHandle,
 } from './lobby';
 import { spawnHitBurst, updateAndRenderParticles } from './particles';
 import { loadMap, type TileMap } from './map';
@@ -81,7 +82,9 @@ import {
 import { input } from './input';
 import type {
   AttackPayload, BulletPayload, ChatPayload, DeathPayload, GameMode, GunDropPayload, GunPickupPayload,
-  HpPayload, LobbyReadyPayload, MatchStartPayload, PosPayload, PresenceMeta, RemotePlayer,
+  HpPayload, LobbyReadyPayload, MatchStartPayload,
+  PartyAcceptPayload, PartyDeclinePayload, PartyInvitePayload, PartyLeavePayload,
+  PosPayload, PresenceMeta, RemotePlayer,
   WeaponDropPayload, WeaponPickupPayload, ZombieWaveStartPayload,
 } from './types';
 
@@ -226,41 +229,144 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   setupInput({ isChatActive: () => lobbyChatFocused });
   setupTouchControls();
 
-  // ===== 광장 채팅 UI + 타이틀 + Ready + 카운트다운 (lobby 모드 전용) =====
+  // ===== 광장 채팅 UI + 타이틀 + 파티 패널 + 초대 popup + 탭 메뉴 (lobby 모드 전용) =====
   let lobbyChat: LobbyChatHandle | null = null;
-  let readyBtn: ReadyButtonHandle | null = null;
-  let countdownOverlay: CountdownOverlayHandle | null = null;
-  // ready 상태 (모든 클라가 추적). key = player id, value = ready 한 zone.
-  const lobbyReady = new Map<string, Difficulty>();
-  // 호스트 카운트다운 — 활성 중일 때 zone + 종료 시각.
-  let countdownZone: Difficulty | null = null;
-  let countdownEndsAt = 0;
-  const COUNTDOWN_SEC = 7;
-  let myReady: Difficulty | null = null;     // 내 현재 ready 구역
-  let myZone: Difficulty | null = null;      // 매 프레임 갱신 — 내가 어느 구역 안에 있는지
+  let partyPanel: PartyPanelHandle | null = null;
+  let invitePopup: InvitePopupHandle | null = null;
+  let tapMenu: TapMenuHandle | null = null;
 
-  const applyLobbyReady = (p: LobbyReadyPayload): void => {
-    if (p.zone) lobbyReady.set(p.id, p.zone);
-    else lobbyReady.delete(p.id);
+  // 파티 상태. partyId = leader id. 1인 파티 = 자기 자신.
+  const PARTY_MAX = 8;
+  let partyLeader = local.id;
+  const partyMembers = new Set<string>([local.id]);
+  // 다른 사람의 zone 추적 (파티 출발 조건 체크용) — 위치 broadcast 받을 때 갱신.
+  const remoteZones = new Map<string, Difficulty | null>();
+  let myZone: Difficulty | null = null;
+
+  const myPartyId = () => partyLeader;
+  const iAmLeader = () => partyLeader === local.id;
+
+  const resetToSoloParty = (): void => {
+    partyLeader = local.id;
+    partyMembers.clear();
+    partyMembers.add(local.id);
   };
 
-  // 호스트가 새 룸 ID 결정 + broadcast. 받는 측은 자기가 멤버면 페이지 리로드.
-  const applyMatchStart = (p: MatchStartPayload): void => {
-    if (!p.members.includes(local.id)) {
-      // 나는 그 매치 멤버 아님 — 광장 유지. 다른 매치 정보만 클리어.
-      for (const mid of p.members) lobbyReady.delete(mid);
-      return;
+  // 파티 멤버 정보 합성 — 패널에 줄 데이터.
+  const buildPartyMemberInfos = (): PartyMemberInfo[] => {
+    const out: PartyMemberInfo[] = [];
+    for (const mid of partyMembers) {
+      if (mid === local.id) {
+        out.push({ id: local.id, name: local.name, zone: myZone, isLeader: mid === partyLeader });
+      } else {
+        const r = remotes.get(mid);
+        out.push({
+          id: mid,
+          name: r?.name ?? '???',
+          zone: remoteZones.get(mid) ?? null,
+          isLeader: mid === partyLeader,
+        });
+      }
     }
-    // 나는 멤버 — URL 파라미터로 룸 ID + 난이도 실어 페이지 리로드.
+    // 파티장이 맨 위
+    out.sort((a, b) => (a.isLeader ? -1 : b.isLeader ? 1 : 0));
+    return out;
+  };
+
+  // 출발 가능 여부 — 모든 멤버가 같은 zone 에 있어야.
+  const checkCanStart = (infos: PartyMemberInfo[]): { ok: boolean; reason: string; zone: Difficulty | null } => {
+    if (!iAmLeader()) return { ok: false, reason: '파티장만 출발 가능', zone: null };
+    if (infos.length < 1) return { ok: false, reason: '', zone: null };
+    const firstZone = infos[0].zone;
+    if (!firstZone) return { ok: false, reason: '모든 파티원이 구역(EASY/NORMAL/HELL) 에 들어가야 출발', zone: null };
+    for (const m of infos) {
+      if (m.zone !== firstZone) return { ok: false, reason: '모든 파티원이 같은 구역에 모여야 출발', zone: null };
+    }
+    return { ok: true, reason: '', zone: firstZone };
+  };
+
+  // ===== 파티 액션 =====
+  const sendLeaveAndReset = (): void => {
+    if (partyMembers.size > 1) {
+      net.sendPartyLeave({ partyId: myPartyId(), byId: local.id });
+    }
+    resetToSoloParty();
+    refreshPartyUI();
+  };
+
+  const acceptInvite = (partyId: string, leaderId: string): void => {
+    // 현재 파티 떠나기
+    if (partyMembers.size > 1) {
+      net.sendPartyLeave({ partyId: myPartyId(), byId: local.id });
+    }
+    partyLeader = leaderId;
+    partyMembers.clear();
+    partyMembers.add(local.id);
+    partyMembers.add(leaderId);
+    net.sendPartyAccept({ partyId, byId: local.id, byName: local.name });
+    refreshPartyUI();
+  };
+
+  const refreshPartyUI = (): void => {
+    if (!partyPanel) return;
+    const infos = buildPartyMemberInfos();
+    const { ok, reason } = checkCanStart(infos);
+    partyPanel.update(infos, ok, reason);
+  };
+
+  // ===== 네트워크 핸들러 (lobby 전용 액션) =====
+  const applyLobbyReady = (_p: LobbyReadyPayload): void => { /* 옛 시스템 — 무시 */ };
+
+  const applyMatchStart = (p: MatchStartPayload): void => {
+    if (!p.members.includes(local.id)) return;
     const url = new URL(window.location.href);
     url.searchParams.set('battle', p.roomId);
     url.searchParams.set('diff', p.zone);
     url.searchParams.delete('lobby');
-    // 닉네임 보존 (다음 로드에서 nick input 복원)
     try { sessionStorage.setItem('helloworld:lastNick', local.name); } catch { /* noop */ }
     window.location.href = url.toString();
   };
 
+  const applyPartyInvite = (p: PartyInvitePayload): void => {
+    if (p.toId !== local.id || !invitePopup) return;
+    // 이미 내 파티에 가입돼 있으면 무시
+    if (partyLeader === p.partyId && partyMembers.has(local.id)) return;
+    invitePopup.show(p.fromName, p.leaderName,
+      () => acceptInvite(p.partyId, p.leaderId),
+      () => net.sendPartyDecline({ partyId: p.partyId, byId: local.id }),
+    );
+  };
+
+  const applyPartyAccept = (p: PartyAcceptPayload): void => {
+    if (p.partyId !== myPartyId()) return;
+    if (partyMembers.size >= PARTY_MAX) return;
+    partyMembers.add(p.byId);
+    pushChatLog(ui, '🎉 파티', `${p.byName} 합류`, '#ffd84a');
+    refreshPartyUI();
+  };
+
+  const applyPartyDecline = (p: PartyDeclinePayload): void => {
+    if (!iAmLeader() || p.partyId !== myPartyId()) return;
+    const r = remotes.get(p.byId);
+    pushChatLog(ui, '😔 파티', `${r?.name ?? '???'} 거절`, '#d34a4a');
+  };
+
+  const applyPartyLeave = (p: PartyLeavePayload): void => {
+    if (p.partyId !== myPartyId()) return;
+    if (p.byId === local.id) return;
+    // 떠난 사람이 leader 라면 → 파티 해산
+    if (p.byId === partyLeader) {
+      pushChatLog(ui, '👋 파티', `파티장이 해산`, '#c84a4a');
+      resetToSoloParty();
+    } else {
+      partyMembers.delete(p.byId);
+      const r = remotes.get(p.byId);
+      pushChatLog(ui, '👋 파티', `${r?.name ?? '???'} 탈퇴`, '#9a8060');
+    }
+    refreshPartyUI();
+  };
+
+  // ===== UI 세팅 =====
   if (isLobbyMode) {
     setupLobbyTitle();
     lobbyChat = setupLobbyChat((text) => {
@@ -274,17 +380,80 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       inputEl.addEventListener('focus', () => { lobbyChatFocused = true; });
       inputEl.addEventListener('blur', () => { lobbyChatFocused = false; });
     }
-    countdownOverlay = setupCountdownOverlay();
-    readyBtn = setupReadyButton((ready) => {
-      // 토글 — 활성 구역에서만 호출됨 (버튼이 비활성이면 click 무시)
-      myReady = ready ? myZone : null;
-      lobbyReady.set(local.id, myReady ?? 'easy');   // 자기 상태도 lobbyReady 에 (호스트 카운팅용)
-      if (!ready) lobbyReady.delete(local.id);
-      net.sendLobbyReady({ id: local.id, zone: myReady });
-    });
+    invitePopup = setupInvitePopup();
+    tapMenu = setupTapMenu();
+    partyPanel = setupPartyPanel(
+      () => {
+        // 출발 — leader 만, 조건 만족 시 동작 (UI 가드 + 여기서도 확인)
+        const infos = buildPartyMemberInfos();
+        const { ok, zone } = checkCanStart(infos);
+        if (!ok || !zone) return;
+        const roomId = 'B' + Math.random().toString(36).slice(2, 8).toUpperCase();
+        const members = infos.map((m) => m.id);
+        net.sendMatchStart({ zone, roomId, members });
+        applyMatchStart({ zone, roomId, members });
+      },
+      () => { sendLeaveAndReset(); },
+    );
+    refreshPartyUI();
   }
   void lobbyChat;
-  void LOBBY_ZONES;   // 미사용 경고 차단 — 시각화 + getZoneAt 이 내부적으로 사용
+  void LOBBY_ZONES;
+
+  // ===== 캐릭터 탭 감지 — 캔버스 클릭/터치 → 가장 가까운 원격 캐릭터 →  메뉴 =====
+  if (isLobbyMode && tapMenu) {
+    const canvasEl = ui.canvas;
+    const onTap = (clientX: number, clientY: number) => {
+      // 캔버스 안 좌표인지
+      const rect = canvasEl.getBoundingClientRect();
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+      // 캔버스(논리 픽셀) 좌표 → 월드 좌표
+      const cssX = clientX - rect.left;
+      const cssY = clientY - rect.top;
+      const sx = cssX * (canvasEl.width / rect.width);
+      const sy = cssY * (canvasEl.height / rect.height);
+      const worldX = sx + camera.x;
+      const worldY = sy + camera.y;
+      // 가장 가까운 원격 캐릭터 (HIT 반경 ≈ 24px)
+      let best: RemotePlayer | null = null;
+      let bestD2 = 24 * 24;
+      for (const r of remotes.values()) {
+        const dx = r.renderX - worldX;
+        const dy = (r.renderY + BODY_OFF_Y) - worldY;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < bestD2) { bestD2 = d2; best = r; }
+      }
+      if (!best) return;
+      const target = best;
+      // 이미 내 파티에 들어와 있으면 다른 메뉴 (탈퇴 추천 X — leader 권한)
+      const alreadyInParty = partyMembers.has(target.id);
+      const options: { label: string; onClick: () => void; danger?: boolean }[] = [];
+      if (!alreadyInParty) {
+        const can = partyMembers.size < PARTY_MAX;
+        options.push({
+          label: can ? '🎉 파티 초대' : `파티 가득참 (${PARTY_MAX}/${PARTY_MAX})`,
+          onClick: () => {
+            if (!can) return;
+            net.sendPartyInvite({
+              fromId: local.id, fromName: local.name,
+              toId: target.id,
+              partyId: myPartyId(), leaderId: partyLeader,
+              leaderName: iAmLeader() ? local.name : (remotes.get(partyLeader)?.name ?? '???'),
+            });
+            pushChatLog(ui, '📨 파티', `${target.name} 에게 초대 발송`, '#9ad8ff');
+          },
+        });
+      } else {
+        options.push({ label: '이미 같은 파티', onClick: () => { /* noop */ } });
+      }
+      tapMenu!.show(clientX, clientY, target.name, options);
+    };
+    canvasEl.addEventListener('click', (e) => onTap(e.clientX, e.clientY));
+    canvasEl.addEventListener('touchend', (e) => {
+      const t = e.changedTouches[0];
+      if (t) onTap(t.clientX, t.clientY);
+    }, { passive: true });
+  }
 
   // ===== 원격 플레이어 맵 =====
   const remotes = new Map<string, RemotePlayer>();
@@ -537,6 +706,10 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     onWeaponPickup: (p: WeaponPickupPayload) => applyWeaponPickup(p),
     onLobbyReady: (p: LobbyReadyPayload) => { applyLobbyReady(p); },
     onMatchStart: (p: MatchStartPayload) => { applyMatchStart(p); },
+    onPartyInvite: (p: PartyInvitePayload) => { applyPartyInvite(p); },
+    onPartyAccept: (p: PartyAcceptPayload) => { applyPartyAccept(p); },
+    onPartyDecline: (p: PartyDeclinePayload) => { applyPartyDecline(p); },
+    onPartyLeave: (p: PartyLeavePayload) => { applyPartyLeave(p); },
     onDeath: (d: DeathPayload) => {
       const now = nowSec();
       const r = remotes.get(d.id);
@@ -707,74 +880,22 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     // 멘탈 공격(욕 채팅) — X 키 또는 멘탈공격 버튼.
     if (consumeMentalAttack()) fireMentalAttack(now);
 
-    // ===== 대기 광장 — 구역/Ready/카운트다운 매니징 (lobby 모드 전용) =====
-    if (isLobbyMode && readyBtn && countdownOverlay) {
-      const z = getZoneAt(local.x, local.y);
-      myZone = z;
-      // 구역 안의 ready 사람 수 (자기 포함)
-      let waitingInZone = 0;
-      if (z) {
-        for (const rz of lobbyReady.values()) if (rz === z) waitingInZone++;
-      }
-      readyBtn.setActive(z !== null, z, waitingInZone);
-      // 구역 떠나면 자동 ready 해제 (broadcast)
-      if (myReady && (!z || z !== myReady)) {
-        const prev = myReady;
-        myReady = null;
-        lobbyReady.delete(local.id);
-        net.sendLobbyReady({ id: local.id, zone: null });
-        readyBtn.setMyReady(false);
-        void prev;
-      }
-
-      // 호스트 카운트다운 매니징 — id 사전순 최소 클라가 호스트.
-      // 호스트만 lobby_ready 변화를 보고 카운트다운 시작/취소 결정 + match_start broadcast.
-      if (isLocalHost()) {
-        // zone 별 ready 인원 카운트
-        const byZone = new Map<Difficulty, string[]>();
-        for (const [pid, rz] of lobbyReady) {
-          if (!byZone.has(rz)) byZone.set(rz, []);
-          byZone.get(rz)!.push(pid);
-        }
-        if (countdownZone === null) {
-          // 가장 많은 zone 부터 우선 (동률이면 hell > normal > easy)
-          const order: Difficulty[] = ['hell', 'normal', 'easy'];
-          for (const z2 of order) {
-            const list = byZone.get(z2);
-            if (list && list.length >= 1) {
-              countdownZone = z2;
-              countdownEndsAt = now + COUNTDOWN_SEC;
-              break;
-            }
-          }
-        } else {
-          const list = byZone.get(countdownZone);
-          if (!list || list.length === 0) {
-            // 모두 취소 → 카운트다운 중단
-            countdownZone = null;
-            countdownEndsAt = 0;
-          } else if (now >= countdownEndsAt) {
-            // 출발 — 새 룸 ID 생성 + broadcast
-            const roomId = 'B' + Math.random().toString(36).slice(2, 8).toUpperCase();
-            const members = list.slice();
-            net.sendMatchStart({ zone: countdownZone, roomId, members });
-            applyMatchStart({ zone: countdownZone, roomId, members });   // self 도 처리
-            countdownZone = null;
-            countdownEndsAt = 0;
-          }
+    // ===== 대기 광장 — 내 zone / 원격 zone 추적 + 파티 UI 갱신 =====
+    if (isLobbyMode) {
+      const newMyZone = getZoneAt(local.x, local.y);
+      let changed = newMyZone !== myZone;
+      myZone = newMyZone;
+      // 원격 zone 갱신 (위치는 net 으로 받아옴 — 매 프레임 재계산)
+      for (const r of remotes.values()) {
+        const z = getZoneAt(r.x, r.y);
+        const prev = remoteZones.get(r.id) ?? null;
+        if (z !== prev) {
+          remoteZones.set(r.id, z);
+          if (partyMembers.has(r.id)) changed = true;
         }
       }
-
-      // 카운트다운 오버레이 — 호스트가 산정한 값으로 그림 (호스트 X 면 안 보임).
-      // 호스트가 아닌 사람은 lobby_ready broadcast 만으로 카운트다운 시점을 알 수 없으므로
-      // v1 은 호스트 클라이언트에서만 시각화. (개선: 호스트가 cd_tick broadcast 도 보내기)
-      if (countdownZone !== null) {
-        const sec = Math.max(0, Math.ceil(countdownEndsAt - now));
-        const members = Array.from(lobbyReady.values()).filter((v) => v === countdownZone).length;
-        countdownOverlay.show(countdownZone, sec, members);
-      } else {
-        countdownOverlay.hide();
-      }
+      // 파티 멤버 zone 이 변하면 패널 갱신 (출발 버튼 활성/비활성)
+      if (changed) refreshPartyUI();
     }
 
     // ===== 스테이지 진행 — 시간 기반. config 의 stages 순서대로. =====
