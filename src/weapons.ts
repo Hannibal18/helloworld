@@ -13,8 +13,8 @@ import type { LocalPlayer } from './player';
 import { BODY_OFF_Y } from './player';
 import { bulletHitsZombie, killZombieById, type ZombieWave } from './zombie';
 
-export type WeaponType = 'garlic' | 'knives' | 'missile' | 'lightning';
-export const WEAPON_TYPES: readonly WeaponType[] = ['garlic', 'knives', 'missile', 'lightning'];
+export type WeaponType = 'garlic' | 'pistol' | 'missile' | 'lightning';
+export const WEAPON_TYPES: readonly WeaponType[] = ['garlic', 'pistol', 'missile', 'lightning'];
 
 export const WEAPON_DROP_INTERVAL = 45;   // sec (AK 60s 보다 살짝 짧게)
 export const WEAPON_MAX_DROPS = 3;
@@ -23,28 +23,27 @@ export const WEAPON_HOLD_DURATION = 30;
 
 const COOLDOWN: Record<WeaponType, number> = {
   garlic:    1.5,
-  knives:    0.8,
+  pistol:    0.4,   // AK(0.15) 보다 느린 단발 권총
   missile:   1.0,
   lightning: 2.5,
 };
 const COLOR: Record<WeaponType, string> = {
   garlic:    '#d8ff80',
-  knives:    '#ffffff',
+  pistol:    '#5fd06a',  // 초록 권총
   missile:   '#c060ff',
   lightning: '#ffd84a',
 };
 const SYMBOL: Record<WeaponType, string> = {
   garlic:    '🧄',
-  knives:    '🗡',
+  pistol:    '🔫',
   missile:   '✨',
   lightning: '⚡',
 };
 
 // ===== 튜닝 =====
 const GARLIC_RADIUS = 56;
-const KNIFE_SPEED = 460;
-const KNIFE_LIFE = 0.55;
-const KNIFE_FAN_ANGLE = 0.35;  // radians, ±0.35 = 약 40° 부채
+const PISTOL_SPEED = 600;             // AK(520) 보다 빠른 총알
+const PISTOL_LIFE = 0.7;
 const MISSILE_SPEED = 280;
 const MISSILE_LIFE = 1.6;
 const MISSILE_HOMING_TURN_RATE = 6;  // radians/sec — 회전 한계
@@ -63,7 +62,7 @@ export interface WeaponDrop {
 }
 interface Projectile {
   pid: string;
-  type: 'knives' | 'missile';
+  type: 'pistol' | 'missile';
   x: number; y: number;
   vx: number; vy: number;
   bornAt: number;
@@ -164,7 +163,7 @@ export function fireOwnedWeapons(
     fired(type);
     switch (type) {
       case 'garlic':    fireGarlic(state, now, local, wave); break;
-      case 'knives':    fireKnives(state, now, local); break;
+      case 'pistol':    firePistol(state, now, local); break;
       case 'missile':   fireMissile(state, now, local, wave); break;
       case 'lightning': fireLightning(state, now, local, wave); break;
     }
@@ -181,22 +180,19 @@ function fireGarlic(_state: WeaponsState, _now: number, local: LocalPlayer, wave
   });
 }
 
-function fireKnives(state: WeaponsState, now: number, local: LocalPlayer): void {
-  // 3-fan: 캐릭터 진행 방향 기준 -0.35 / 0 / +0.35 라디안
-  const baseAngle = dirAngle(local);
+function firePistol(state: WeaponsState, now: number, local: LocalPlayer): void {
+  // 단발 직선 — 캐릭터 진행 방향, AK 보다 느린 발사 빈도 + 빠른 총알.
+  const a = dirAngle(local);
   const cx = local.x;
   const cy = local.y + BODY_OFF_Y;
-  for (const offset of [-KNIFE_FAN_ANGLE, 0, KNIFE_FAN_ANGLE]) {
-    const a = baseAngle + offset;
-    state.projectiles.push({
-      pid: randomId(), type: 'knives',
-      x: cx, y: cy,
-      vx: Math.cos(a) * KNIFE_SPEED,
-      vy: Math.sin(a) * KNIFE_SPEED,
-      bornAt: now,
-      angle: a,
-    });
-  }
+  state.projectiles.push({
+    pid: randomId(), type: 'pistol',
+    x: cx, y: cy,
+    vx: Math.cos(a) * PISTOL_SPEED,
+    vy: Math.sin(a) * PISTOL_SPEED,
+    bornAt: now,
+    angle: a,
+  });
 }
 
 function fireMissile(state: WeaponsState, now: number, local: LocalPlayer, wave: ZombieWave): void {
@@ -269,7 +265,7 @@ export function stepProjectiles(state: WeaponsState, dt: number, now: number, wa
   state.bolts = state.bolts.filter((b) => now - b.bornAt <= LIGHTNING_LIFE);
   // 발사체
   state.projectiles = state.projectiles.filter((p) => {
-    const life = p.type === 'knives' ? KNIFE_LIFE : MISSILE_LIFE;
+    const life = p.type === 'pistol' ? PISTOL_LIFE : MISSILE_LIFE;
     if (now - p.bornAt > life) return false;
     // missile homing
     if (p.type === 'missile') {
@@ -372,19 +368,19 @@ export function drawProjectiles(
   for (const p of state.projectiles) {
     const sx = Math.round(p.x - camera.x);
     const sy = Math.round(p.y - camera.y);
-    if (p.type === 'knives') {
-      // 작은 흰 삼각형 (진행 방향 기준)
-      ctx.save();
-      ctx.translate(sx, sy);
-      ctx.rotate(p.angle);
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.moveTo(6, 0); ctx.lineTo(-4, 3); ctx.lineTo(-4, -3); ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = '#aaaaaa';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.restore();
+    if (p.type === 'pistol') {
+      // 초록 총알 + 잔상 (AK 노란 총알과 구분)
+      const tailLen = 10;
+      const norm = Math.hypot(p.vx, p.vy) || 1;
+      const tx = sx - (p.vx / norm) * tailLen;
+      const ty = sy - (p.vy / norm) * tailLen;
+      ctx.strokeStyle = 'rgba(95, 208, 106, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(sx, sy); ctx.stroke();
+      ctx.fillStyle = '#c8ffd0';
+      ctx.fillRect(sx - 2, sy - 2, 4, 4);
+      ctx.fillStyle = '#5fd06a';
+      ctx.fillRect(sx - 1, sy - 1, 2, 2);
     } else {
       // missile — 보라 orb + 글로우
       ctx.fillStyle = 'rgba(192, 96, 255, 0.35)';
@@ -398,23 +394,33 @@ export function drawProjectiles(
   ctx.restore();
 }
 
+// ===== AK 스프라이트 (머리 위 아이콘 + 드랍에 재사용) =====
+const akImg = new Image();
+let akReady = false;
+akImg.src = '/sprites/items/ak47.png';
+akImg.onload = () => { akReady = true; };
+
 // ===== 캐릭터 머리 위 보유 무기 아이콘 =====
-// 각 무기는 작은 황금 테두리 원 + 색점 + 심볼. 가로로 나열.
+// 황금 테두리 원 안에 무기 표시 — AK 는 실제 sprite, 나머지는 색점+심볼.
+type IconItem =
+  | { kind: 'ak' }
+  | { kind: 'weapon'; type: WeaponType };
+
 export function drawOwnedIcons(
   ctx: CanvasRenderingContext2D, camera: Camera,
   ownerX: number, ownerY: number, charH: number,
   weapons: WeaponType[], hasGun: boolean,
 ): void {
-  const items: { color: string; symbol: string }[] = [];
-  if (hasGun) items.push({ color: '#888', symbol: '🔫' });
-  for (const w of weapons) items.push({ color: COLOR[w], symbol: SYMBOL[w] });
+  const items: IconItem[] = [];
+  if (hasGun) items.push({ kind: 'ak' });
+  for (const w of weapons) items.push({ kind: 'weapon', type: w });
   if (items.length === 0) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.font = '700 10px "Apple SD Gothic Neo", system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const ICON_R = 7;
+  const ICON_R = 9;
   const GAP = 3;
   const total = items.length * (ICON_R * 2) + (items.length - 1) * GAP;
   const startX = Math.round(ownerX - camera.x - total / 2 + ICON_R);
@@ -426,12 +432,22 @@ export function drawOwnedIcons(
     ctx.lineWidth = 1.2;
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.beginPath(); ctx.arc(sx, y, ICON_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    // 색점
-    ctx.fillStyle = items[i].color;
-    ctx.beginPath(); ctx.arc(sx, y, 3, 0, Math.PI * 2); ctx.fill();
-    // 심볼 살짝 아래
-    ctx.fillStyle = '#1a0e08';
-    ctx.fillText(items[i].symbol, sx, y + 1);
+    const it = items[i];
+    if (it.kind === 'ak') {
+      if (akReady) {
+        const w = ICON_R * 2 - 2, h = Math.round(w * (akImg.height / akImg.width));
+        ctx.drawImage(akImg, sx - w / 2, y - h / 2, w, h);
+      } else {
+        ctx.fillStyle = '#aaa';
+        ctx.beginPath(); ctx.arc(sx, y, 3, 0, Math.PI * 2); ctx.fill();
+      }
+    } else {
+      // 색점 + 이모지 심볼
+      ctx.fillStyle = COLOR[it.type];
+      ctx.beginPath(); ctx.arc(sx, y, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1a0e08';
+      ctx.fillText(SYMBOL[it.type], sx, y + 1);
+    }
   }
   ctx.restore();
 }
