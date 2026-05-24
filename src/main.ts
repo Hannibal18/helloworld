@@ -3,7 +3,16 @@
 import { startGame } from './game';
 import { setupViewport } from './viewport';
 import { CHARACTER_COUNT, drawCharacterPreview, randomCharIdx } from './sprites';
+import { loadVariants, unlock as unlockSfx } from './sfx';
 import type { GameMode } from './types';
+
+// SFX 초기 등록 — 라이트닝 발사 음 4종 변형.
+loadVariants('lightning_bolt', [
+  '/audio/lightning/bolt1.mp3',
+  '/audio/lightning/bolt2.mp3',
+  '/audio/lightning/bolt3.mp3',
+  '/audio/lightning/bolt4.mp3',
+], 0.55);
 
 // 랜덤 방코드 — 친구한테 공유하기 좋은 짧은 영문/숫자.
 function randomGameId(len = 5): string {
@@ -74,6 +83,8 @@ ready(() => {
   nick.focus();
 
   const enter = () => {
+    // iOS Safari 자동 재생 차단 해제 — 첫 사용자 제스처에서 SFX unlock
+    unlockSfx();
     let name = nick.value.trim();
     if (!name) name = `손님${Math.floor(Math.random() * 9000 + 1000)}`;
     name = name.slice(0, 12);

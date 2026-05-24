@@ -405,6 +405,8 @@ function stepStorms(state: WeaponsState, now: number, wave: ZombieWave): void {
       const branches = generateBranches(pts);
       state.bolts.push({ pts, branches, bornAt: now });
       state.impacts.push({ x: tx, y: ty, bornAt: now });
+      // 효과음 — bolt 한 발당 한 번. 변형 4종 중 랜덤.
+      playSfx('lightning_bolt');
     }
   }
 }
