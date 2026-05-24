@@ -17,7 +17,6 @@ const ZOMBIE_LABEL: Record<CfgZombieType, string> = {
   normal: '🧟 일반', fast: '🏃 빠른', tank: '🛡 탱크', gold: '💰 골드',
 };
 const WEAPON_LABEL: Record<CfgWeaponType, string> = {
-  garlic: '🧄 마늘', pistol: '🔫 권총', missile: '✨ 미사일',
   lightning: '⚡ 라이트닝', ice: '❄ 얼음', curse: '💀 저주',
 };
 
@@ -307,7 +306,7 @@ function renderWeaponsBlock(stage: StageConfig): HTMLElement {
       const v = parseFloat(input.value);
       if (!Number.isNaN(v)) {
         if (!stage.weapons.perWeapon) {
-          stage.weapons.perWeapon = { garlic: { cooldownMult: 1 }, pistol: { cooldownMult: 1 }, missile: { cooldownMult: 1 }, lightning: { cooldownMult: 1 }, ice: { cooldownMult: 1 }, curse: { cooldownMult: 1 } };
+          stage.weapons.perWeapon = { lightning: { cooldownMult: 1 }, ice: { cooldownMult: 1 }, curse: { cooldownMult: 1 } };
         }
         stage.weapons.perWeapon[w].cooldownMult = Math.max(0.1, v);
       }

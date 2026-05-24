@@ -742,7 +742,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         // 30초마다 보너스 무기 부여 (랜덤). 보유 무기 있으면 갱신.
         if (now >= nextWeaponBoonAt) {
           nextWeaponBoonAt = now + 30;
-          const pool: WeaponType[] = ['garlic', 'pistol', 'missile', 'lightning', 'ice', 'curse'];
+          const pool: WeaponType[] = ['lightning', 'ice', 'curse'];
           const t = pool[Math.floor(Math.random() * pool.length)];
           grantOwnership(weaponsState, t, now);
           local.gunUntil = 0;

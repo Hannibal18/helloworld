@@ -9,7 +9,7 @@
 export const CFG_ZOMBIE_TYPES = ['normal', 'fast', 'tank', 'gold'] as const;
 export type CfgZombieType = typeof CFG_ZOMBIE_TYPES[number];
 
-export const CFG_WEAPON_TYPES = ['garlic', 'pistol', 'missile', 'lightning', 'ice', 'curse'] as const;
+export const CFG_WEAPON_TYPES = ['lightning', 'ice', 'curse'] as const;
 export type CfgWeaponType = typeof CFG_WEAPON_TYPES[number];
 
 export interface StageConfig {
@@ -34,7 +34,6 @@ export interface StageConfig {
 
 function defaultPerWeapon(): Record<CfgWeaponType, { cooldownMult: number }> {
   return {
-    garlic: { cooldownMult: 1 }, pistol: { cooldownMult: 1 }, missile: { cooldownMult: 1 },
     lightning: { cooldownMult: 1 }, ice: { cooldownMult: 1 }, curse: { cooldownMult: 1 },
   };
 }
@@ -71,8 +70,8 @@ function mkStage(name: string, dur: number, z: Partial<StageConfig['zombie']>, w
     weapons: {
       dropIntervalSec: w.dropIntervalSec ?? 45,
       maxDropsOnGround: w.maxDropsOnGround ?? 3,
-      allowed: { garlic: true, pistol: true, missile: false, lightning: false, ice: false, curse: false, ...(w.allowed ?? {}) },
-      dropWeights: { garlic: 5, pistol: 45, missile: 25, lightning: 12, ice: 8, curse: 5, ...(w.dropWeights ?? {}) },
+      allowed: { lightning: true, ice: false, curse: false, ...(w.allowed ?? {}) },
+      dropWeights: { lightning: 12, ice: 8, curse: 5, ...(w.dropWeights ?? {}) },
       damageMult: w.damageMult ?? 1,
       perWeapon: { ...defaultPerWeapon(), ...(w.perWeapon ?? {}) },
     },
@@ -85,31 +84,30 @@ export const DEFAULT_CONFIG: GameConfig = {
   score: { killBase: 10, comboWindowSec: 2, comboMax: 8, timePointsPerSec: 1 },
   stages: [
     // 🧪 임시 테스트 스테이지 — 얼음/저주/라이트닝 빠른 드랍 + 좀비 적게.
-    // 테스트 끝나면 워밍업 스테이지로 복원 예정.
     mkStage('Stage 1 — 🧪 무기 테스트', 300,
       { typeWeights: { normal: 100, fast: 0, tank: 0, gold: 0 }, spawnIntervalMult: 2.0 },
       {
         dropIntervalSec: 3,
         maxDropsOnGround: 12,
-        allowed: { garlic: false, pistol: false, missile: false, lightning: true, ice: true, curse: true },
-        dropWeights: { garlic: 0, pistol: 0, missile: 0, lightning: 1, ice: 1, curse: 1 },
+        allowed: { lightning: true, ice: true, curse: true },
+        dropWeights: { lightning: 1, ice: 1, curse: 1 },
       },
     ),
     mkStage('Stage 2 — 빠른 적 등장', 60,
       { typeWeights: { normal: 70, fast: 25, tank: 0, gold: 5 }, spawnIntervalMult: 0.85, speedMult: 1.05 },
-      { dropIntervalSec: 30, allowed: { garlic: true, pistol: true, missile: true, lightning: false, ice: false, curse: false } },
+      { dropIntervalSec: 30, allowed: { lightning: true, ice: false, curse: false } },
     ),
     mkStage('Stage 3 — 탱크 합류', 90,
       { typeWeights: { normal: 55, fast: 30, tank: 12, gold: 3 }, spawnIntervalMult: 0.7, speedMult: 1.1, hpMult: 1.1, bossEnabled: true },
-      { dropIntervalSec: 25, allowed: { garlic: true, pistol: true, missile: true, lightning: true, ice: false, curse: false } },
+      { dropIntervalSec: 25, allowed: { lightning: true, ice: true, curse: false } },
     ),
     mkStage('Stage 4 — 밀려온다', 90,
       { typeWeights: { normal: 40, fast: 35, tank: 20, gold: 5 }, spawnIntervalMult: 0.55, speedMult: 1.15, hpMult: 1.2, bossEnabled: true },
-      { dropIntervalSec: 22, allowed: { garlic: true, pistol: true, missile: true, lightning: true, ice: true, curse: false } },
+      { dropIntervalSec: 22, allowed: { lightning: true, ice: true, curse: true } },
     ),
     mkStage('Stage 5 — 지옥', 120,
       { typeWeights: { normal: 30, fast: 35, tank: 30, gold: 5 }, spawnIntervalMult: 0.4, speedMult: 1.25, hpMult: 1.4, bossEnabled: true },
-      { dropIntervalSec: 18, allowed: { garlic: true, pistol: true, missile: true, lightning: true, ice: true, curse: true } },
+      { dropIntervalSec: 18, allowed: { lightning: true, ice: true, curse: true } },
     ),
   ],
   loopLastStage: true,

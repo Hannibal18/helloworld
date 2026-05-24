@@ -82,8 +82,8 @@ export interface ZombieWaveStartPayload {
   startedAt: number; // 호스트 기준 sec (참고용 — 실제 클라이언트는 자기 now 사용)
 }
 
-// 보조 무기 드랍 (Garlic/Pistol/Missile/Lightning).
-export type WeaponTypePayload = 'garlic' | 'pistol' | 'missile' | 'lightning' | 'ice' | 'curse';
+// 보조 무기 드랍 (Lightning/Ice/Curse — 모두 차지/방출 방식).
+export type WeaponTypePayload = 'lightning' | 'ice' | 'curse';
 export interface WeaponDropPayload {
   id: string;
   type: WeaponTypePayload;

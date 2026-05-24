@@ -10,13 +10,12 @@
 import { isBlocked, type TileMap } from './map';
 import type { Camera } from './world';
 import type { LocalPlayer } from './player';
-import { BODY_OFF_Y } from './player';
 import { play as playSfx } from './sfx';
-import { bulletHitsZombie, killZombieById, type ZombieWave } from './zombie';
+import { killZombieById, type ZombieWave } from './zombie';
 import { CFG_WEAPON_TYPES, type StageConfig } from './config';
 
-export type WeaponType = 'garlic' | 'pistol' | 'missile' | 'lightning' | 'ice' | 'curse';
-export const WEAPON_TYPES: readonly WeaponType[] = ['garlic', 'pistol', 'missile', 'lightning', 'ice', 'curse'];
+export type WeaponType = 'lightning' | 'ice' | 'curse';
+export const WEAPON_TYPES: readonly WeaponType[] = ['lightning', 'ice', 'curse'];
 
 // 현재 스테이지의 weapons 설정 — game.ts 가 매 프레임 setStageWeapons() 로 갱신.
 // null 이면 모듈 내부 기본값(DROP_WEIGHTS/WEAPON_DROP_INTERVAL 등) 사용.
@@ -30,20 +29,14 @@ export function getStageDamageMult(): number {
 
 // ===== 드랍 가중치 (rarity tier) =====
 // 액션 로그라이크 표준 패턴 — 약한 무기는 자주, 강한 무기는 드물게.
-// 단순 가중 랜덤 (weighted random). 합 = 100 으로 % 직관적.
-//   pistol    45%  common      — 약한 단발 권총 (튜토리얼 격)
-//   missile   25%  uncommon    — 호밍, 안정적
-//   lightning 12%  rare        — 체인, 멀티 타깃
-//   ice        8%  rare        — 차지/방출 AOE 결빙(킬)
-//   curse      5%  epic        — 차지/방출 다중 즉사
-//   garlic     5%  epic        — 무지향성 AOE, 가장 강력
+// 단순 가중 랜덤 (weighted random) — 폴백용. 평소엔 스테이지 설정이 우선.
+//   lightning  체인, 멀티 타깃
+//   ice        차지/방출 AOE 결빙(킬)
+//   curse      차지/방출 다중 즉사
 const DROP_WEIGHTS: Record<WeaponType, number> = {
-  pistol:    45,
-  missile:   25,
-  lightning: 12,
-  ice:        8,
-  curse:      5,
-  garlic:     5,
+  lightning: 1,
+  ice:       1,
+  curse:     1,
 };
 function pickWeaponByWeight(): WeaponType {
   if (DEBUG_LIGHTNING_ONLY) return 'lightning';
@@ -83,38 +76,18 @@ export const WEAPON_MAX_DROPS = DEBUG_LIGHTNING_ONLY ? 12 : 3;
 export const WEAPON_PICKUP_RADIUS = 18;
 export const WEAPON_HOLD_DURATION = 30;
 
-const COOLDOWN: Record<WeaponType, number> = {
-  garlic:    1.5,
-  pistol:    0.4,   // AK(0.15) 보다 느린 단발 권총
-  missile:   1.0,
-  lightning: 2.5,
-  ice:       0,     // 차지/방출 — fireOwnedWeapons 미사용
-  curse:     0,     // 차지/방출 — fireOwnedWeapons 미사용
-};
 const COLOR: Record<WeaponType, string> = {
-  garlic:    '#d8ff80',
-  pistol:    '#5fd06a',  // 초록 권총
-  missile:   '#c060ff',
   lightning: '#ffd84a',
   ice:       '#88e0ff',
   curse:     '#222',
 };
 const SYMBOL: Record<WeaponType, string> = {
-  garlic:    '🧄',
-  pistol:    '🔫',
-  missile:   '✨',
   lightning: '⚡',
   ice:       '❄',
   curse:     '💀',
 };
 
 // ===== 튜닝 =====
-const GARLIC_RADIUS = 56;
-const PISTOL_SPEED = 600;             // AK(520) 보다 빠른 총알
-const PISTOL_LIFE = 0.7;
-const MISSILE_SPEED = 280;
-const MISSILE_LIFE = 1.6;
-const MISSILE_HOMING_TURN_RATE = 6;  // radians/sec — 회전 한계
 // 라이트닝 — 차지/방출 시스템 (특수 메커니즘).
 const LIGHTNING_LIFE = 0.18;           // 단일 zigzag 라이트닝 비주얼 지속
 const LIGHTNING_MAX_CHARGE_SEC = 3.0;  // 풀차지까지 시간
@@ -133,14 +106,6 @@ export interface WeaponDrop {
   x: number;
   y: number;
   spawnedAt: number;
-}
-interface Projectile {
-  pid: string;
-  type: 'pistol' | 'missile';
-  x: number; y: number;
-  vx: number; vy: number;
-  bornAt: number;
-  angle: number;            // 현재 진행 각도 (homing 갱신용)
 }
 interface LightningBolt {
   // 메인 폴리라인 (시작 → 끝)
@@ -172,7 +137,6 @@ interface LightningStorm {
 
 export interface WeaponsState {
   drops: Map<string, WeaponDrop>;
-  projectiles: Projectile[];
   bolts: LightningBolt[];
   impacts: LightningImpact[];
   storms: LightningStorm[];
@@ -196,7 +160,6 @@ export interface WeaponsState {
 export function makeWeaponsState(now: number): WeaponsState {
   return {
     drops: new Map(),
-    projectiles: [],
     bolts: [],
     impacts: [],
     storms: [],
@@ -268,25 +231,13 @@ export function clearAllOwned(state: WeaponsState): void {
 
 // ===== 자동 발사 — 보유한 무기 각자 쿨다운대로 =====
 // attackHeld=true 일 때 매 프레임 호출. 좀비 wave 참조해서 타깃 찾고 데미지 적용.
+// 보유 무기 만료 처리 (모든 무기가 차지/방출 방식이라 자동 발사는 없음).
+// _local / _wave / _fired 는 시그니처 유지를 위해 남겨둠 — 새 무기 추가 대비.
 export function fireOwnedWeapons(
-  state: WeaponsState, now: number, local: LocalPlayer, wave: ZombieWave, fired: (type: WeaponType) => void,
+  state: WeaponsState, now: number, _local: LocalPlayer, _wave: ZombieWave, _fired: (type: WeaponType) => void,
 ): void {
-  if (local.dead) return;
   for (const [type, expireAt] of Array.from(state.owned.entries())) {
-    if (now >= expireAt) { state.owned.delete(type); state.lastFire.delete(type); continue; }
-    // 차지/방출 무기들은 fireOwnedWeapons 가 처리하지 않음 (각자 handle*Input 호출 측에서)
-    if (type === 'lightning' || type === 'ice' || type === 'curse') continue;
-    const last = state.lastFire.get(type) ?? -Infinity;
-    // 스테이지의 perWeapon.cooldownMult 적용 (기본 1). 작을수록 빠른 발사.
-    const cdMult = currentStageWeapons?.perWeapon?.[type]?.cooldownMult ?? 1;
-    if (now - last < COOLDOWN[type] * cdMult) continue;
-    state.lastFire.set(type, now);
-    fired(type);
-    switch (type) {
-      case 'garlic':    fireGarlic(state, now, local, wave); break;
-      case 'pistol':    firePistol(state, now, local); break;
-      case 'missile':   fireMissile(state, now, local, wave); break;
-    }
+    if (now >= expireAt) { state.owned.delete(type); state.lastFire.delete(type); }
   }
 }
 
@@ -461,75 +412,7 @@ function stepStorms(state: WeaponsState, now: number, wave: ZombieWave): void {
   }
 }
 
-function fireGarlic(_state: WeaponsState, _now: number, local: LocalPlayer, wave: ZombieWave): void {
-  // 즉시 AOE — 캐릭터 몸 중심 반경 안 좀비 1 데미지
-  const cx = local.x, cy = local.y + BODY_OFF_Y;
-  const R2 = GARLIC_RADIUS * GARLIC_RADIUS;
-  const targets = wave.zombies.filter((z) => (z.x - cx) ** 2 + (z.y - cy) ** 2 <= R2);
-  for (const z of targets) killZombieById(wave, z.id);
-}
-
-function firePistol(state: WeaponsState, now: number, local: LocalPlayer): void {
-  // 단발 직선 — 캐릭터 진행 방향, AK 보다 느린 발사 빈도 + 빠른 총알.
-  const a = dirAngle(local);
-  const cx = local.x;
-  const cy = local.y + BODY_OFF_Y;
-  state.projectiles.push({
-    pid: randomId(), type: 'pistol',
-    x: cx, y: cy,
-    vx: Math.cos(a) * PISTOL_SPEED,
-    vy: Math.sin(a) * PISTOL_SPEED,
-    bornAt: now,
-    angle: a,
-  });
-}
-
-function fireMissile(state: WeaponsState, now: number, local: LocalPlayer, wave: ZombieWave): void {
-  const cx = local.x;
-  const cy = local.y + BODY_OFF_Y;
-  // 발사 각도는 가장 가까운 좀비 방향, 없으면 진행 방향
-  let a = dirAngle(local);
-  const target = nearestZombie(wave, cx, cy);
-  if (target) a = Math.atan2(target.y - cy, target.x - cx);
-  state.projectiles.push({
-    pid: randomId(), type: 'missile',
-    x: cx, y: cy,
-    vx: Math.cos(a) * MISSILE_SPEED,
-    vy: Math.sin(a) * MISSILE_SPEED,
-    bornAt: now,
-    angle: a,
-  });
-}
-
 // 구버전 자동 체인 라이트닝 제거 — 차지/방출 방식으로 대체 (spawnLightningStorm).
-
-function dirAngle(local: LocalPlayer): number {
-  // 캐릭터 방향(p.dir) 기반 라디안 (오른쪽=0)
-  switch (local.dir) {
-    case 'right': return 0;
-    case 'down':  return Math.PI / 2;
-    case 'left':  return Math.PI;
-    case 'up':    return -Math.PI / 2;
-  }
-}
-
-function nearestZombie(
-  wave: ZombieWave, x: number, y: number,
-  maxRange: number = Infinity,
-  exclude?: Set<string>,
-): { id: string; x: number; y: number } | null {
-  if (!wave.active) return null;
-  const maxR2 = maxRange * maxRange;
-  let best: { id: string; x: number; y: number } | null = null;
-  let bestD2 = maxR2;
-  for (const z of wave.zombies) {
-    if (exclude?.has(z.id)) continue;
-    const dx = z.x - x, dy = z.y - y;
-    const d2 = dx * dx + dy * dy;
-    if (d2 < bestD2) { bestD2 = d2; best = { id: z.id, x: z.x, y: z.y }; }
-  }
-  return best;
-}
 
 // ===== 헬퍼: 지그재그 폴리라인 + 가지치기 =====
 type Pt = { x: number; y: number };
@@ -577,8 +460,9 @@ function generateBranches(mainPts: Pt[]): Pt[][] {
   return branches;
 }
 
-// ===== 매 프레임 — 발사체 위치 갱신 + 좀비 충돌 + 만료 =====
-export function stepProjectiles(state: WeaponsState, dt: number, now: number, wave: ZombieWave): void {
+// ===== 매 프레임 — 라이트닝/얼음/저주 비주얼 진행 =====
+// (dt 미사용 — 차지/방출 인프라가 시각 자체적으로 시간 관리)
+export function stepProjectiles(state: WeaponsState, _dt: number, now: number, wave: ZombieWave): void {
   // 라이트닝 비주얼 만료
   state.bolts = state.bolts.filter((b) => now - b.bornAt <= LIGHTNING_LIFE);
   state.impacts = state.impacts.filter((i) => now - i.bornAt <= IMPACT_LIFE);
@@ -586,37 +470,6 @@ export function stepProjectiles(state: WeaponsState, dt: number, now: number, wa
   stepStorms(state, now, wave);
   // 차지형 애니메이션 캐스트(ice, curse) — 만료된 cast 이벤트 제거
   stepAnimCastEffects(state, now);
-  // 발사체
-  state.projectiles = state.projectiles.filter((p) => {
-    const life = p.type === 'pistol' ? PISTOL_LIFE : MISSILE_LIFE;
-    if (now - p.bornAt > life) return false;
-    // missile homing
-    if (p.type === 'missile') {
-      const t = nearestZombie(wave, p.x, p.y);
-      if (t) {
-        const targetAngle = Math.atan2(t.y - p.y, t.x - p.x);
-        let diff = targetAngle - p.angle;
-        // wrap to [-PI, PI]
-        while (diff >  Math.PI) diff -= 2 * Math.PI;
-        while (diff < -Math.PI) diff += 2 * Math.PI;
-        const maxTurn = MISSILE_HOMING_TURN_RATE * dt;
-        if (diff > maxTurn) diff = maxTurn;
-        if (diff < -maxTurn) diff = -maxTurn;
-        p.angle += diff;
-        p.vx = Math.cos(p.angle) * MISSILE_SPEED;
-        p.vy = Math.sin(p.angle) * MISSILE_SPEED;
-      }
-    }
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    // 좀비 충돌
-    const zid = bulletHitsZombie(wave, p.x, p.y);
-    if (zid) {
-      killZombieById(wave, zid);
-      return false;
-    }
-    return true;
-  });
 }
 
 // ===== 렌더: 드랍 (땅 위), 발사체 (날아다님), 보유 아이콘 (캐릭터 머리 위) =====
@@ -740,33 +593,6 @@ export function drawProjectiles(
         ctx.lineTo(sx + Math.cos(a) * r3, sy + Math.sin(a) * r3);
         ctx.stroke();
       }
-    }
-  }
-  // 발사체
-  for (const p of state.projectiles) {
-    const sx = Math.round(p.x - camera.x);
-    const sy = Math.round(p.y - camera.y);
-    if (p.type === 'pistol') {
-      // 초록 총알 + 잔상 (AK 노란 총알과 구분)
-      const tailLen = 10;
-      const norm = Math.hypot(p.vx, p.vy) || 1;
-      const tx = sx - (p.vx / norm) * tailLen;
-      const ty = sy - (p.vy / norm) * tailLen;
-      ctx.strokeStyle = 'rgba(95, 208, 106, 0.7)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(sx, sy); ctx.stroke();
-      ctx.fillStyle = '#c8ffd0';
-      ctx.fillRect(sx - 2, sy - 2, 4, 4);
-      ctx.fillStyle = '#5fd06a';
-      ctx.fillRect(sx - 1, sy - 1, 2, 2);
-    } else {
-      // missile — 보라 orb + 글로우
-      ctx.fillStyle = 'rgba(192, 96, 255, 0.35)';
-      ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#c060ff';
-      ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(sx, sy, 1.5, 0, Math.PI * 2); ctx.fill();
     }
   }
   ctx.restore();
