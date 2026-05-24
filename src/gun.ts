@@ -45,7 +45,9 @@ export function makeGunState(now: number): GunState {
   return {
     drops: new Map(),
     bullets: [],
-    nextSpawnAt: now + GUN_DROP_INTERVAL,
+    // 첫 드랍은 입장 15초 후 (이후엔 GUN_DROP_INTERVAL=60s 주기).
+    // 좀비 첫 웨이브(60s)와 시점 겹치지 않도록 분리.
+    nextSpawnAt: now + 15,
   };
 }
 
