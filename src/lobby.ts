@@ -72,6 +72,34 @@ export interface LobbyChatHandle {
   destroy(): void;
 }
 
+// 화면 정중앙 상단의 "대기실" 라벨 — 광장 진입 시 한 번 띄움.
+export interface LobbyTitleHandle { destroy(): void; }
+export function setupLobbyTitle(): LobbyTitleHandle {
+  const el = document.createElement('div');
+  el.id = 'lobby-title';
+  el.textContent = '대기실';
+  el.style.cssText = [
+    'position:fixed',
+    'top:calc(env(safe-area-inset-top) + 8px)',
+    'left:50%',
+    'transform:translateX(-50%)',
+    'z-index:6',
+    'pointer-events:none',
+    // 픽셀 폰트 — Galmuri11 (이미 인덱스에 로드됨)
+    'font:900 22px "Galmuri11", "NeoDunggeunmo", monospace',
+    'letter-spacing:6px',
+    'color:#ffe080',
+    // 픽셀 룩 살리는 다중 스트로크 + 부드러운 글로우
+    'text-shadow:2px 2px 0 #1a0e08, -2px 2px 0 #1a0e08, 2px -2px 0 #1a0e08, -2px -2px 0 #1a0e08, 0 0 12px rgba(255,200,80,0.4)',
+    'padding:4px 16px',
+    'background:rgba(20,14,8,0.55)',
+    'border:2px solid #6a4a2a',
+    'border-radius:4px',
+  ].join(';');
+  document.body.appendChild(el);
+  return { destroy: () => { el.remove(); } };
+}
+
 export function setupLobbyChat(onSend: (text: string) => void): LobbyChatHandle {
   const root = document.createElement('div');
   root.id = 'lobby-chat';
@@ -91,7 +119,12 @@ export function setupLobbyChat(onSend: (text: string) => void): LobbyChatHandle 
   input.type = 'text';
   input.placeholder = '메시지... (Enter 전송)';
   input.maxLength = 80;
+  // 모바일 키보드 자동완성/자동수정/자동대문자/맞춤법 모두 차단.
   input.autocomplete = 'off';
+  input.setAttribute('autocorrect', 'off');
+  input.setAttribute('autocapitalize', 'off');
+  input.setAttribute('spellcheck', 'false');
+  input.setAttribute('inputmode', 'text');
   input.style.cssText = [
     'flex:1',
     'min-width:0',

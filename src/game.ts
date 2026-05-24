@@ -20,7 +20,7 @@ import {
 } from './player';
 import { attackPhaseFor, renderFrame, type RenderableRemote } from './render';
 import { setBubble, syncBubbles } from './bubbles';
-import { drawLobbyZones, setupLobbyChat, type LobbyChatHandle } from './lobby';
+import { drawLobbyZones, setupLobbyChat, setupLobbyTitle, type LobbyChatHandle } from './lobby';
 import { spawnHitBurst, updateAndRenderParticles } from './particles';
 import { loadMap, type TileMap } from './map';
 import { setupDebugPanel, updateDebugInfo, type DebugState } from './debug';
@@ -202,9 +202,10 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   setupInput({ isChatActive: () => lobbyChatFocused });
   setupTouchControls();
 
-  // ===== 광장 채팅 UI (lobby 모드 전용) =====
+  // ===== 광장 채팅 UI + 타이틀 (lobby 모드 전용) =====
   let lobbyChat: LobbyChatHandle | null = null;
   if (isLobbyMode) {
+    setupLobbyTitle();
     lobbyChat = setupLobbyChat((text) => {
       // 광장에서 보낸 메시지 — 머리 위 말풍선 + 채팅 로그 + broadcast
       const n = nowSec();
