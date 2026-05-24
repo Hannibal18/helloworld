@@ -352,10 +352,33 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     sendDeath: (killerId) => net.sendDeath({ id: local.id, killerId }),
     fireBullet: (x, y, vx, vy) => {
       const now = nowSec();
+      // 좀비 모드: 주변 좀비를 자동 조준 — 가장 가까운 좀비 쪽으로 총알 방향 보정.
+      // AIM_RANGE 보다 가까운 좀비가 있으면 그 쪽으로 발사, 없으면 기존 방향 유지.
+      let fvx = vx, fvy = vy;
+      if (isZombieMode && zombieWave.active && zombieWave.zombies.length > 0) {
+        const AIM_RANGE = 360;            // AK 사거리(0.7s × 520) 보다 살짝 짧게
+        const AIM_RANGE2 = AIM_RANGE * AIM_RANGE;
+        let bestZ: typeof zombieWave.zombies[number] | null = null;
+        let bestD2 = AIM_RANGE2;
+        for (const z of zombieWave.zombies) {
+          const dx = z.x - x;
+          const dy = (z.y - 14) - y;       // z.y 는 발 위치 — 몸통 중심으로 보정
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestD2) { bestD2 = d2; bestZ = z; }
+        }
+        if (bestZ) {
+          const dx = bestZ.x - x;
+          const dy = (bestZ.y - 14) - y;
+          const len = Math.hypot(dx, dy) || 1;
+          const speed = Math.hypot(vx, vy) || 520;
+          fvx = (dx / len) * speed;
+          fvy = (dy / len) * speed;
+        }
+      }
       const bid = crypto.randomUUID();
       // 로컬에 즉시 추가하고 broadcast
-      addBullet(gunState, bid, local.id, local.name, x, y, vx, vy, now);
-      net.sendBullet({ bid, ownerId: local.id, ownerName: local.name, x, y, vx, vy });
+      addBullet(gunState, bid, local.id, local.name, x, y, fvx, fvy, now);
+      net.sendBullet({ bid, ownerId: local.id, ownerName: local.name, x, y, vx: fvx, vy: fvy });
     },
   });
 
