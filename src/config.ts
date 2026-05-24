@@ -45,7 +45,7 @@ function defaultPerWeapon(): Record<CfgWeaponType, { cooldownMult: number }> {
 }
 
 export interface GameConfig {
-  version: 2;
+  version: 3;
   player: {
     hpMax: number;
     moveSpeedMult: number;
@@ -87,7 +87,7 @@ function mkStage(name: string, dur: number, z: Partial<StageConfig['zombie']>, w
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
-  version: 2,
+  version: 3,
   player: { hpMax: 140, moveSpeedMult: 1 },
   score: { killBase: 10, comboWindowSec: 2, comboMax: 8, timePointsPerSec: 1 },
   stages: [
@@ -99,21 +99,21 @@ export const DEFAULT_CONFIG: GameConfig = {
         maxDropsOnGround: 12,
         allowed: { lightning: true, ice: true, curse: true },
         dropWeights: { lightning: 1, ice: 1, curse: 1 },
-        akFireRateMult: 1.0,
+        akFireRateMult: 0.1,
         chargedReleaseCount: 5,  // 테스트라 충분히 보이게
       },
     ),
     mkStage('Stage 2 — 빠른 적 등장', 60,
       { typeWeights: { normal: 70, fast: 25, tank: 0, gold: 5 }, spawnIntervalMult: 0.85, speedMult: 1.05 },
-      { dropIntervalSec: 30, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 1.0, chargedReleaseCount: 2 },
+      { dropIntervalSec: 30, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 0.3, chargedReleaseCount: 2 },
     ),
     mkStage('Stage 3 — 탱크 합류', 90,
       { typeWeights: { normal: 55, fast: 30, tank: 12, gold: 3 }, spawnIntervalMult: 0.7, speedMult: 1.1, hpMult: 1.1, bossEnabled: true },
-      { dropIntervalSec: 25, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 1.3, chargedReleaseCount: 3 },
+      { dropIntervalSec: 25, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 0.7, chargedReleaseCount: 3 },
     ),
     mkStage('Stage 4 — 밀려온다', 90,
       { typeWeights: { normal: 40, fast: 35, tank: 20, gold: 5 }, spawnIntervalMult: 0.55, speedMult: 1.15, hpMult: 1.2, bossEnabled: true },
-      { dropIntervalSec: 22, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.6, chargedReleaseCount: 5 },
+      { dropIntervalSec: 22, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.2, chargedReleaseCount: 5 },
     ),
     mkStage('Stage 5 — 지옥', 120,
       { typeWeights: { normal: 30, fast: 35, tank: 30, gold: 5 }, spawnIntervalMult: 0.4, speedMult: 1.25, hpMult: 1.4, bossEnabled: true },
@@ -138,9 +138,9 @@ function deepClone<T>(v: T): T {
 function migrate(raw: unknown): GameConfig {
   if (!raw || typeof raw !== 'object') return deepClone(DEFAULT_CONFIG);
   const r = raw as Partial<GameConfig>;
-  const versionOk = r.version === 2;
+  const versionOk = r.version === 3;
   const merged: GameConfig = {
-    version: 2,
+    version: 3,
     player: { ...DEFAULT_CONFIG.player, ...(r.player ?? {}) },
     score: { ...DEFAULT_CONFIG.score, ...(r.score ?? {}) },
     stages: versionOk && Array.isArray(r.stages) && r.stages.length > 0
