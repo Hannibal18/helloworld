@@ -189,4 +189,31 @@ ready(() => {
   nick.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') enter();
   });
+
+  // ===== 매치메이킹 자동 진입 =====
+  // URL 에 ?battle=ROOM 이 있으면 인트로 카드 숨기고 검은 "입장중…" 오버레이
+  // 1.5초 보여준 뒤 enter() 자동 호출 — 캐릭터 선택 화면 건너뜀.
+  if (battleRoom) {
+    try { (document.querySelector('.intro-card') as HTMLElement | null)?.style.setProperty('display', 'none'); } catch { /* noop */ }
+    const overlay = document.createElement('div');
+    overlay.id = 'battle-loading';
+    overlay.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:9999',
+      'background:#000', 'color:#ffd84a',
+      'display:flex', 'flex-direction:column', 'align-items:center', 'justify-content:center',
+      'gap:14px',
+      'font:900 22px "Galmuri11","NeoDunggeunmo",monospace',
+      'letter-spacing:4px',
+      'text-shadow:2px 2px 0 #1a0e08',
+    ].join(';');
+    const title = document.createElement('div');
+    const diffLabel = battleDiff === 'easy' ? '🟢 EASY' : battleDiff === 'normal' ? '🟡 NORMAL' : battleDiff === 'hell' ? '🔴 HELL' : '';
+    title.textContent = diffLabel ? `${diffLabel} 전투장 입장중…` : '전투장 입장중…';
+    const sub = document.createElement('div');
+    sub.style.cssText = 'font-size:12px;letter-spacing:2px;color:#c9b58d;';
+    sub.textContent = `Room ${battleRoom}`;
+    overlay.append(title, sub);
+    document.body.appendChild(overlay);
+    setTimeout(() => enter(), 1500);
+  }
 });
