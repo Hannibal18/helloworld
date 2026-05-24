@@ -305,10 +305,12 @@ export function lightningEyesVisual(state: WeaponsState, now: number): { frame: 
     const frame = inCycle < 0.5 ? 0 : 2;
     return { frame, alpha: 1.0 };
   }
-  // 차지 중 — alpha 50%, 프레임은 차지 진행률에 따라 0→2
-  const frac = Math.min(1, (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC);
+  // 차지 중 — 0.3초 동안 0→0.5 fade-in, 이후 0.5 유지. 프레임은 차지 진행률에 따라 0→2.
+  const elapsed = now - state.lightningChargeStartedAt;
+  const frac = Math.min(1, elapsed / LIGHTNING_MAX_CHARGE_SEC);
   const frame = Math.min(2, Math.floor(frac * 3));
-  return { frame, alpha: 0.5 };
+  const fadeIn = Math.min(1, elapsed / 0.3);
+  return { frame, alpha: 0.5 * fadeIn };
 }
 
 // 번개 origin = 눈 위치 (캐릭터 머리 위쪽 고정 오프셋). 발사 시점의 local 좌표 사용.
@@ -713,7 +715,8 @@ const EYES_SCALE = 1.5;   // 32 → 48 px 로 살짝 키워서 잘 보이게
 const eyesImg = new Image();
 let eyesReady = false;
 eyesImg.src = '/sprites/effects/eyes.png';
-eyesImg.onload = () => { eyesReady = true; };
+eyesImg.onload = () => { eyesReady = true; console.info('[weapons] eyes.png loaded', eyesImg.width, eyesImg.height); };
+eyesImg.onerror = (e) => { console.error('[weapons] eyes.png load failed', e); };
 
 // 캐릭터 근처(머리 위쪽)에 차지 중인 눈을 그림.
 // renderer 가 game loop 에서 lightningEyesVisual() 결과 받아 호출.
@@ -722,19 +725,31 @@ export function drawLightningEyes(
   ownerX: number, ownerY: number, charH: number,
   visual: { frame: number; alpha: number },
 ): void {
-  if (!eyesReady) return;
   const dst = Math.round(EYES_FRAME * EYES_SCALE);
   const sx = Math.round(ownerX - camera.x - dst / 2);
   // 머리 위 (charH 만큼 올라가서 + 무기 아이콘 살짝 위)
   const sy = Math.round(ownerY - camera.y - charH - 60);
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, visual.alpha));
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(
-    eyesImg,
-    visual.frame * EYES_FRAME, 0, EYES_FRAME, EYES_FRAME,
-    sx, sy, dst, dst,
-  );
+  if (eyesReady) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(
+      eyesImg,
+      visual.frame * EYES_FRAME, 0, EYES_FRAME, EYES_FRAME,
+      sx, sy, dst, dst,
+    );
+  } else {
+    // 폴백 — 이미지 로딩 안됐을 때라도 눈에 띄게 보라 원
+    ctx.fillStyle = '#c060ff';
+    ctx.beginPath();
+    ctx.arc(sx + dst / 2, sy + dst / 2, dst / 2 - 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', sx + dst / 2, sy + dst / 2);
+  }
   ctx.restore();
 }
 
