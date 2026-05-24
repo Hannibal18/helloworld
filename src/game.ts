@@ -95,7 +95,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
   // ===== 맵 로드 =====
   let map: TileMap;
   try {
-    map = await loadMap('/assets/maps/town.json');
+    map = await loadMap('/maps/zombie_road.json');
   } catch (err) {
     console.error(err);
     alert(`${(err as Error).message}\n\nREADME 의 '맵 만들기' 섹션을 참고하세요.`);

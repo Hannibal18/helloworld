@@ -14,6 +14,9 @@ export interface Tileset {
   imagePath: string;              // 디버그/에러 메시지용
   imageLoaded: boolean;
   imageError: string | null;
+  // localId(타일셋 내부 ID) → 타일 내부 좌표(0..tilewidth) 기준 충돌 사각형들.
+  // Tiled 의 Tile Collision Editor 로 그린 도형. width/height 0 인 Point 객체는 무시.
+  tileCollisions: Map<number, Array<{ x: number; y: number; w: number; h: number }>>;
 }
 
 export type Layer =
@@ -70,7 +73,19 @@ interface RawTileset {
   image?: string;
   imagewidth?: number;
   imageheight?: number;
-  source?: string; // 외부 .tsx 참조 — 본 로더는 미지원
+  source?: string;   // 외부 .tsj 참조 — fetch 해서 embed 처럼 처리
+  tiles?: RawTilesetTile[]; // per-tile 데이터 (충돌·애니메이션·속성)
+}
+interface RawTilesetTile {
+  id: number;
+  objectgroup?: {
+    objects?: Array<{
+      x: number;
+      y: number;
+      width?: number;
+      height?: number;
+    }>;
+  };
 }
 interface RawLayer {
   id?: number;
@@ -100,18 +115,43 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
   const jsonDir = jsonUrl.replace(/[^/]*$/, ''); // 디렉토리 경로
   const imagePromises: Promise<void>[] = [];
 
-  for (const t of raw.tilesets) {
-    if (t.source) {
-      console.warn(`[map] external .tsx 참조 (${t.source}) 는 지원되지 않습니다. 타일셋을 맵에 embed 해주세요.`);
-      continue;
+  for (const tRef of raw.tilesets) {
+    // 외부 .tsj 참조면 fetch 해서 embedded 처럼 펼친다.
+    let t: RawTileset = tRef;
+    let tilesetDir = jsonDir;
+    if (tRef.source) {
+      const tsjUrl = new URL(tRef.source, location.origin + jsonDir).pathname;
+      const tsjRes = await fetch(tsjUrl);
+      if (!tsjRes.ok) {
+        console.warn(`[map] 외부 타일셋 ${tsjUrl} 로드 실패 (HTTP ${tsjRes.status}). 스킵합니다.`);
+        continue;
+      }
+      const tsjRaw = (await tsjRes.json()) as RawTileset;
+      t = { ...tsjRaw, firstgid: tRef.firstgid };
+      tilesetDir = tsjUrl.replace(/[^/]*$/, ''); // .tsj 가 있는 폴더 기준으로 image 경로 해석
     }
+
     const tilewidth  = t.tilewidth  ?? raw.tilewidth;
     const tileheight = t.tileheight ?? raw.tileheight;
     const columns    = t.columns    ?? Math.floor((t.imagewidth ?? 0) / tilewidth);
     const tilecount  = t.tilecount  ?? 0;
-    const imagePath  = t.image ? new URL(t.image, location.origin + jsonDir).pathname : '';
+    const imagePath  = t.image ? new URL(t.image, location.origin + tilesetDir).pathname : '';
+
+    // per-tile 충돌 도형 모음 — Tile Collision Editor 의 사각형들.
+    // width 또는 height 가 0/undefined 인 객체는 Point 도구로 찍은 점이라 무시.
+    const tileCollisions = new Map<number, Array<{ x: number; y: number; w: number; h: number }>>();
+    for (const tileEntry of t.tiles ?? []) {
+      const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
+      for (const o of tileEntry.objectgroup?.objects ?? []) {
+        const w = o.width ?? 0;
+        const h = o.height ?? 0;
+        if (w > 0 && h > 0) rects.push({ x: o.x, y: o.y, w, h });
+      }
+      if (rects.length > 0) tileCollisions.set(tileEntry.id, rects);
+    }
+
     const ts: Tileset = {
-      firstgid: t.firstgid,
+      firstgid: tRef.firstgid,
       name: t.name ?? 'unnamed',
       columns,
       tilecount,
@@ -121,6 +161,7 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
       imagePath,
       imageLoaded: false,
       imageError: null,
+      tileCollisions,
     };
     tilesets.push(ts);
 
@@ -131,8 +172,7 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
         img.onerror = () => {
           ts.imageError = `이미지 로드 실패: ${imagePath}`;
           console.warn(`[map] ${ts.imageError}\n` +
-            `public/assets/tilesets/ 에 해당 파일을 넣어주세요 (16×16 타일셋 PNG). ` +
-            `없는 동안은 단색 placeholder 로 표시됩니다.`);
+            `해당 폴더에 PNG 파일을 넣어주세요. 없는 동안은 단색 placeholder 로 표시됩니다.`);
           resolve();
         };
         img.src = imagePath;
@@ -185,8 +225,13 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
   }
 
   // ===== 충돌 모음 =====
-  // 'collision' 이름의 레이어를 우선. objectgroup 이면 사각형들, tilelayer 면 비제로 칸이 16x16 충돌.
+  // 두 가지 소스를 합쳐서 만든다:
+  //  1) 'collision' 이름의 별도 레이어 (objectgroup or tilelayer) — 레거시/town.json 방식
+  //  2) 모든 tile layer 의 각 타일에 대해, 타일셋이 갖는 per-tile 충돌 도형 — zombie_road 방식
+  //     (Tiled 의 Tile Collision Editor 에서 그린 사각형들)
   const collisionRects: CollisionRect[] = [];
+
+  // 1) 별도 collision 레이어
   const colLayer = layerByName.get('collision');
   if (colLayer) {
     if (colLayer.kind === 'object') {
@@ -199,7 +244,6 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
         }
       }
     } else {
-      // tile layer collision
       const tw = raw.tilewidth, th = raw.tileheight;
       for (let i = 0; i < colLayer.data.length; i++) {
         if (colLayer.data[i] !== 0) {
@@ -210,6 +254,38 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
             x1: tx * tw + tw, y1: ty * th + th,
           });
         }
+      }
+    }
+  }
+
+  // 2) per-tile 충돌 — 모든 tile layer 를 훑으며 각 타일이 자체 충돌박스를 갖는지 확인.
+  //    같은 칸에 여러 레이어가 겹쳐도 OK (중복 충돌박스 생겨도 isBlocked 결과 동일).
+  const tw = raw.tilewidth, th = raw.tileheight;
+  for (const layer of layers) {
+    if (layer.kind !== 'tile') continue;
+    for (let i = 0; i < layer.data.length; i++) {
+      const gid = layer.data[i];
+      if (gid <= 0) continue;
+      // 인라인 tileset 매칭 (resolveTile 과 같은 로직이지만 TileMap 객체가 아직 없으므로).
+      let matched: Tileset | null = null;
+      for (let j = tilesets.length - 1; j >= 0; j--) {
+        if (gid >= tilesets[j].firstgid) { matched = tilesets[j]; break; }
+      }
+      if (!matched) continue;
+      const localId = gid - matched.firstgid;
+      const localRects = matched.tileCollisions.get(localId);
+      if (!localRects) continue;
+      const tx = i % layer.width;
+      const ty = Math.floor(i / layer.width);
+      const worldX0 = tx * tw;
+      const worldY0 = ty * th;
+      for (const lr of localRects) {
+        collisionRects.push({
+          x0: worldX0 + lr.x,
+          y0: worldY0 + lr.y,
+          x1: worldX0 + lr.x + lr.w,
+          y1: worldY0 + lr.y + lr.h,
+        });
       }
     }
   }
