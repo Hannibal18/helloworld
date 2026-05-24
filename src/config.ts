@@ -40,7 +40,7 @@ function defaultPerWeapon(): Record<CfgWeaponType, { cooldownMult: number }> {
 }
 
 export interface GameConfig {
-  version: 1;
+  version: 2;
   player: {
     hpMax: number;
     moveSpeedMult: number;
@@ -80,13 +80,20 @@ function mkStage(name: string, dur: number, z: Partial<StageConfig['zombie']>, w
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
-  version: 1,
+  version: 2,
   player: { hpMax: 140, moveSpeedMult: 1 },
   score: { killBase: 10, comboWindowSec: 2, comboMax: 8, timePointsPerSec: 1 },
   stages: [
-    mkStage('Stage 1 — 워밍업', 60,
-      { typeWeights: { normal: 100, fast: 0, tank: 0, gold: 0 }, spawnIntervalMult: 1.0 },
-      { dropIntervalSec: 30, allowed: { garlic: true, pistol: true, missile: false, lightning: false, ice: false, curse: false } },
+    // 🧪 임시 테스트 스테이지 — 얼음/저주/라이트닝 빠른 드랍 + 좀비 적게.
+    // 테스트 끝나면 워밍업 스테이지로 복원 예정.
+    mkStage('Stage 1 — 🧪 무기 테스트', 300,
+      { typeWeights: { normal: 100, fast: 0, tank: 0, gold: 0 }, spawnIntervalMult: 2.0 },
+      {
+        dropIntervalSec: 3,
+        maxDropsOnGround: 12,
+        allowed: { garlic: false, pistol: false, missile: false, lightning: true, ice: true, curse: true },
+        dropWeights: { garlic: 0, pistol: 0, missile: 0, lightning: 1, ice: 1, curse: 1 },
+      },
     ),
     mkStage('Stage 2 — 빠른 적 등장', 60,
       { typeWeights: { normal: 70, fast: 25, tank: 0, gold: 5 }, spawnIntervalMult: 0.85, speedMult: 1.05 },
@@ -119,14 +126,16 @@ function deepClone<T>(v: T): T {
 }
 
 // 저장된 설정과 기본값을 머지 — 필드가 추가돼도 옛 저장본이 깨지지 않게.
+// 버전이 다르면 stages 만 기본값으로 리셋 (플레이어/점수 등 글로벌은 보존).
 function migrate(raw: unknown): GameConfig {
   if (!raw || typeof raw !== 'object') return deepClone(DEFAULT_CONFIG);
   const r = raw as Partial<GameConfig>;
+  const versionOk = r.version === 2;
   const merged: GameConfig = {
-    version: 1,
+    version: 2,
     player: { ...DEFAULT_CONFIG.player, ...(r.player ?? {}) },
     score: { ...DEFAULT_CONFIG.score, ...(r.score ?? {}) },
-    stages: Array.isArray(r.stages) && r.stages.length > 0
+    stages: versionOk && Array.isArray(r.stages) && r.stages.length > 0
       ? r.stages.map((s) => mergeStage(s as Partial<StageConfig>))
       : deepClone(DEFAULT_CONFIG.stages),
     loopLastStage: r.loopLastStage ?? DEFAULT_CONFIG.loopLastStage,
