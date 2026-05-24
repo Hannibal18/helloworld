@@ -40,8 +40,8 @@ try {
     '/audio/lightning/bolt4.mp3',
   ], 0.55);
   // 저주 — 차지 시작 시 늑대 울음, 데미지 입힐 때 타격음.
-  loadSfx('curse_charge', '/audio/curse/charge.mp3', 0.55);
-  loadSfx('curse_hit', '/audio/curse/hit.mp3', 0.7);
+  loadSfx('curse_charge', '/audio/curse/charge.mp3', 0.9);
+  loadSfx('curse_hit', '/audio/curse/hit.mp3', 1.0);
 } catch (e) {
   console.warn('[sfx preload]', e);
 }
