@@ -16,6 +16,7 @@ import type {
   PartyInvitePayload,
   PartyLeavePayload,
   PosPayload,
+  RevivePayload,
   PresenceMeta,
   WeaponDropPayload,
   WeaponPickupPayload,
@@ -60,6 +61,7 @@ export interface NetHandlers {
   onPartyAccept: (p: PartyAcceptPayload) => void;
   onPartyDecline: (p: PartyDeclinePayload) => void;
   onPartyLeave: (p: PartyLeavePayload) => void;
+  onRevive: (p: RevivePayload) => void;
   onPresenceSync: (members: PresenceMeta[]) => void;
   onPresenceJoin: (members: PresenceMeta[]) => void;
   onPresenceLeave: (members: PresenceMeta[]) => void;
@@ -85,6 +87,7 @@ export interface Net {
   sendPartyAccept: (p: PartyAcceptPayload) => void;
   sendPartyDecline: (p: PartyDeclinePayload) => void;
   sendPartyLeave: (p: PartyLeavePayload) => void;
+  sendRevive: (p: RevivePayload) => void;
   unsubscribe: () => Promise<void>;
 }
 
@@ -125,6 +128,7 @@ export function connect(meta: PresenceMeta, gameId: string, mode: GameMode, hand
     .on('broadcast', { event: 'party_accept' },  ({ payload }) => handlers.onPartyAccept(payload as PartyAcceptPayload))
     .on('broadcast', { event: 'party_decline' }, ({ payload }) => handlers.onPartyDecline(payload as PartyDeclinePayload))
     .on('broadcast', { event: 'party_leave' },   ({ payload }) => handlers.onPartyLeave(payload as PartyLeavePayload))
+    .on('broadcast', { event: 'revive' },        ({ payload }) => handlers.onRevive(payload as RevivePayload))
     .on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState() as Record<string, readonly unknown[]>;
       const all: PresenceMeta[] = [];
@@ -167,6 +171,7 @@ export function connect(meta: PresenceMeta, gameId: string, mode: GameMode, hand
     sendPartyAccept:    (p) => send('party_accept', p),
     sendPartyDecline:   (p) => send('party_decline', p),
     sendPartyLeave:     (p) => send('party_leave', p),
+    sendRevive:         (p) => send('revive', p),
     unsubscribe: async () => {
       try { await channel.untrack(); } catch { /* ignore */ }
       await channel.unsubscribe();

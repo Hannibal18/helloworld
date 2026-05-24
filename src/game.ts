@@ -84,7 +84,7 @@ import type {
   AttackPayload, BulletPayload, ChatPayload, DeathPayload, GameMode, GunDropPayload, GunPickupPayload,
   HpPayload, LobbyReadyPayload, MatchStartPayload,
   PartyAcceptPayload, PartyDeclinePayload, PartyInvitePayload, PartyLeavePayload,
-  PosPayload, PresenceMeta, RemotePlayer,
+  PosPayload, PresenceMeta, RemotePlayer, RevivePayload,
   WeaponDropPayload, WeaponPickupPayload, ZombieWaveStartPayload,
 } from './types';
 
@@ -541,6 +541,38 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   let scoreState: ScoreState | null = null;
   // 마일스톤: 50킬마다 풀힐 (보너스 무기는 제거됨)
   let lastHealKillThreshold = 0;
+
+  // ===== 비석 부활 (zombie 모드) =====
+  // 내가 살아 있을 때, 죽은 동료(local/remote) 의 비석 근처 (REVIVE_RADIUS px)
+  // 안에 머무르면 progress 누적. REVIVE_TIME_SEC 도달 시 broadcast → 부활.
+  const REVIVE_RADIUS = 36;
+  const REVIVE_TIME_SEC = 3.0;
+  const reviveProgress = new Map<string, number>();      // targetId → 누적 초
+
+  const applyRevive = (p: RevivePayload): void => {
+    if (p.targetId === local.id) {
+      // 내가 부활됨
+      local.dead = false;
+      local.hp = Math.max(1, Math.floor(local.maxHp * 0.5));
+      local.deadUntil = 0;
+      local.iFrameUntil = nowSec() + 2.0;
+      net.sendHp({ id: local.id, hp: local.hp });
+      const reviver = remotes.get(p.byId);
+      showBanner(ui, 'info', `🙏 ${reviver?.name ?? '???'} 님이 부활시켜줌`);
+      refreshRanking();
+    } else {
+      const r = remotes.get(p.targetId);
+      if (r) {
+        r.dead = false;
+        r.hp = Math.max(1, Math.floor(r.maxHp * 0.5));
+        r.deadUntil = 0;
+      }
+      const target = remotes.get(p.targetId);
+      const reviver = p.byId === local.id ? local : remotes.get(p.byId);
+      pushChatLog(ui, '🙏 부활', `${reviver?.name ?? '???'} → ${target?.name ?? '???'}`, '#9ad8ff');
+    }
+    reviveProgress.delete(p.targetId);
+  };
   // 사망 화면 — 좀비 모드 한정. 사망 직후 1회 표시.
   let deathScreenShown = false;
   const deathScreenEl = document.getElementById('death-screen') as HTMLElement | null;
@@ -710,6 +742,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     onPartyAccept: (p: PartyAcceptPayload) => { applyPartyAccept(p); },
     onPartyDecline: (p: PartyDeclinePayload) => { applyPartyDecline(p); },
     onPartyLeave: (p: PartyLeavePayload) => { applyPartyLeave(p); },
+    onRevive: (p: RevivePayload) => { applyRevive(p); },
     onDeath: (d: DeathPayload) => {
       const now = nowSec();
       const r = remotes.get(d.id);
@@ -1038,6 +1071,35 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
           net.sendHp({ id: local.id, hp: local.hp });
           showBanner(ui, 'info', '💖 +HP 풀힐');
         }
+
+        // ===== 비석 부활 진행도 누적 =====
+        // 죽은 사람(local 은 자기 자신 부활 X) 의 위치(footX, footY) 근처 →  dt 만큼 누적.
+        // 떨어지면 progress 리셋.
+        const seen = new Set<string>();
+        for (const r of remotes.values()) {
+          if (!r.dead) continue;
+          const dx = local.x - r.renderX;
+          const dy = (local.y + BODY_OFF_Y) - (r.renderY + BODY_OFF_Y);
+          if (dx * dx + dy * dy <= REVIVE_RADIUS * REVIVE_RADIUS) {
+            const prog = (reviveProgress.get(r.id) ?? 0) + dt;
+            seen.add(r.id);
+            if (prog >= REVIVE_TIME_SEC) {
+              // 부활 broadcast + 자기 자신에게도 적용
+              const payload: RevivePayload = { targetId: r.id, byId: local.id };
+              net.sendRevive(payload);
+              applyRevive(payload);
+            } else {
+              reviveProgress.set(r.id, prog);
+            }
+          }
+        }
+        // 안 본 항목들은 리셋
+        for (const tid of Array.from(reviveProgress.keys())) {
+          if (!seen.has(tid)) reviveProgress.delete(tid);
+        }
+      } else {
+        // 내가 죽었으면 아무도 부활 진행 못함 (내가 reviver 가 아니므로)
+        reviveProgress.clear();
       }
     }
 
@@ -1182,6 +1244,34 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       drawZombies(ctx2d, camera, zombieWave, now);
       drawWaveAmbient(ctx2d, zombieWave, now);
       if (scoreState) drawScoreHud(hudCtx, scoreState, now);
+      // 비석 부활 진행 — 비석 머리 위에 진행 바.
+      if (reviveProgress.size > 0) {
+        ctx2d.save();
+        ctx2d.imageSmoothingEnabled = false;
+        for (const [tid, sec] of reviveProgress) {
+          const r = remotes.get(tid);
+          if (!r || !r.dead) continue;
+          const sx = Math.round(r.renderX - camera.x);
+          const sy = Math.round(r.renderY - camera.y) - 36;   // 비석 머리 위
+          const W = 32;
+          const H = 4;
+          const frac = Math.min(1, sec / REVIVE_TIME_SEC);
+          ctx2d.fillStyle = '#1a0e08';
+          ctx2d.fillRect(sx - W / 2 - 1, sy - 1, W + 2, H + 2);
+          ctx2d.fillStyle = '#3a8a40';
+          ctx2d.fillRect(sx - W / 2, sy, W, H);
+          ctx2d.fillStyle = '#9fff9f';
+          ctx2d.fillRect(sx - W / 2, sy, Math.round(W * frac), H);
+          // "부활 중…" 텍스트
+          ctx2d.font = '700 9px "Galmuri11", system-ui, sans-serif';
+          ctx2d.textAlign = 'center';
+          ctx2d.fillStyle = '#1a0e08';
+          ctx2d.fillText('부활 중', sx + 1, sy - 4);
+          ctx2d.fillStyle = '#9fff9f';
+          ctx2d.fillText('부활 중', sx, sy - 5);
+        }
+        ctx2d.restore();
+      }
     }
     // 대기 광장 — 3 난이도 구역 시각화
     if (isLobbyMode) {

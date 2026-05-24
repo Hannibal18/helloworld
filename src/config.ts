@@ -45,7 +45,7 @@ function defaultPerWeapon(): Record<CfgWeaponType, { cooldownMult: number }> {
 }
 
 export interface GameConfig {
-  version: 3;
+  version: 4;
   player: {
     hpMax: number;
     moveSpeedMult: number;
@@ -88,7 +88,7 @@ function mkStage(name: string, dur: number, z: Partial<StageConfig['zombie']>, w
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
-  version: 3,
+  version: 4,
   player: { hpMax: 140, moveSpeedMult: 1 },
   score: { killBase: 10, comboWindowSec: 2, comboMax: 8, timePointsPerSec: 1 },
   stages: [
@@ -123,53 +123,64 @@ export const DEFAULT_CONFIG: GameConfig = {
   ],
   loopLastStage: true,
   loopDifficultyStep: 0.15,
-  // ===== 매치메이킹 난이도 프리셋 =====
+  // ===== 매치메이킹 난이도 프리셋 (전반적으로 어렵게 — 쉬운 것 보다 도전적이게) =====
   presets: {
     easy: [
-      mkStage('🟢 EASY 1', 90,
-        { typeWeights: { normal: 100, fast: 0, tank: 0, gold: 0 }, spawnIntervalMult: 1.5, speedMult: 0.9 },
-        { dropIntervalSec: 25, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 0.8, chargedReleaseCount: 3 },
+      mkStage('🟢 EASY 1 — 적응', 60,
+        { typeWeights: { normal: 100, fast: 0, tank: 0, gold: 0 }, spawnIntervalMult: 1.1, speedMult: 1.0 },
+        { dropIntervalSec: 20, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 0.7, chargedReleaseCount: 2 },
       ),
-      mkStage('🟢 EASY 2', 120,
-        { typeWeights: { normal: 80, fast: 20, tank: 0, gold: 0 }, spawnIntervalMult: 1.2, speedMult: 0.95 },
-        { dropIntervalSec: 22, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 1.0, chargedReleaseCount: 4 },
+      mkStage('🟢 EASY 2 — 속도', 60,
+        { typeWeights: { normal: 60, fast: 35, tank: 5, gold: 0 }, spawnIntervalMult: 0.9, speedMult: 1.05 },
+        { dropIntervalSec: 18, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 1.0, chargedReleaseCount: 3 },
       ),
-      mkStage('🟢 EASY 3', 999,
-        { typeWeights: { normal: 70, fast: 25, tank: 5, gold: 0 }, spawnIntervalMult: 1.0, speedMult: 1.0, hpMult: 1.0 },
-        { dropIntervalSec: 20, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.2, chargedReleaseCount: 5 },
+      mkStage('🟢 EASY 3 — 합류', 90,
+        { typeWeights: { normal: 45, fast: 35, tank: 18, gold: 2 }, spawnIntervalMult: 0.7, speedMult: 1.1, hpMult: 1.15, bossEnabled: true },
+        { dropIntervalSec: 16, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.3, chargedReleaseCount: 4 },
+      ),
+      mkStage('🟢 EASY 4 — 끝없는', 999,
+        { typeWeights: { normal: 35, fast: 35, tank: 25, gold: 5 }, spawnIntervalMult: 0.55, speedMult: 1.15, hpMult: 1.25, bossEnabled: true },
+        { dropIntervalSec: 14, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.5, chargedReleaseCount: 5 },
       ),
     ],
     normal: [
-      // NORMAL = 위의 기본 stages 와 동일한 패턴 (테스트 모드 제외).
-      mkStage('🟡 NORMAL 1', 60,
-        { typeWeights: { normal: 80, fast: 20, tank: 0, gold: 0 }, spawnIntervalMult: 1.0, speedMult: 1.0 },
-        { dropIntervalSec: 22, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 0.5, chargedReleaseCount: 2 },
+      mkStage('🟡 NORMAL 1 — 본격', 60,
+        { typeWeights: { normal: 70, fast: 25, tank: 5, gold: 0 }, spawnIntervalMult: 0.9, speedMult: 1.05 },
+        { dropIntervalSec: 18, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 0.6, chargedReleaseCount: 2 },
       ),
-      mkStage('🟡 NORMAL 2', 90,
-        { typeWeights: { normal: 60, fast: 30, tank: 10, gold: 0 }, spawnIntervalMult: 0.8, speedMult: 1.1, hpMult: 1.1, bossEnabled: true },
-        { dropIntervalSec: 18, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 1.0, chargedReleaseCount: 3 },
+      mkStage('🟡 NORMAL 2 — 탱크', 75,
+        { typeWeights: { normal: 50, fast: 30, tank: 18, gold: 2 }, spawnIntervalMult: 0.7, speedMult: 1.15, hpMult: 1.15, bossEnabled: true },
+        { dropIntervalSec: 15, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 1.0, chargedReleaseCount: 3 },
       ),
-      mkStage('🟡 NORMAL 3', 999,
-        { typeWeights: { normal: 40, fast: 35, tank: 20, gold: 5 }, spawnIntervalMult: 0.6, speedMult: 1.2, hpMult: 1.2, bossEnabled: true },
-        { dropIntervalSec: 15, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.5, chargedReleaseCount: 5 },
+      mkStage('🟡 NORMAL 3 — 압박', 90,
+        { typeWeights: { normal: 35, fast: 35, tank: 25, gold: 5 }, spawnIntervalMult: 0.55, speedMult: 1.25, hpMult: 1.3, bossEnabled: true },
+        { dropIntervalSec: 13, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.4, chargedReleaseCount: 4 },
+      ),
+      mkStage('🟡 NORMAL 4 — 끝없는', 999,
+        { typeWeights: { normal: 25, fast: 35, tank: 30, gold: 10 }, spawnIntervalMult: 0.42, speedMult: 1.35, hpMult: 1.5, bossEnabled: true },
+        { dropIntervalSec: 11, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.8, chargedReleaseCount: 6 },
       ),
     ],
     hell: [
-      mkStage('🔴 HELL 1', 60,
-        { typeWeights: { normal: 60, fast: 30, tank: 10, gold: 0 }, spawnIntervalMult: 0.7, speedMult: 1.15, hpMult: 1.1 },
-        { dropIntervalSec: 18, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 0.5, chargedReleaseCount: 2 },
+      mkStage('🔴 HELL 1 — 적의 환영', 50,
+        { typeWeights: { normal: 50, fast: 40, tank: 10, gold: 0 }, spawnIntervalMult: 0.65, speedMult: 1.2, hpMult: 1.1, bossEnabled: true },
+        { dropIntervalSec: 14, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 0.5, chargedReleaseCount: 2 },
       ),
-      mkStage('🔴 HELL 2', 60,
-        { typeWeights: { normal: 40, fast: 35, tank: 20, gold: 5 }, spawnIntervalMult: 0.5, speedMult: 1.25, hpMult: 1.2, bossEnabled: true },
-        { dropIntervalSec: 15, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 1.0, chargedReleaseCount: 3 },
+      mkStage('🔴 HELL 2 — 탱크 행렬', 70,
+        { typeWeights: { normal: 35, fast: 35, tank: 25, gold: 5 }, spawnIntervalMult: 0.5, speedMult: 1.3, hpMult: 1.25, bossEnabled: true },
+        { dropIntervalSec: 12, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 1.0, chargedReleaseCount: 3 },
       ),
-      mkStage('🔴 HELL 3', 90,
-        { typeWeights: { normal: 25, fast: 35, tank: 30, gold: 10 }, spawnIntervalMult: 0.4, speedMult: 1.35, hpMult: 1.35, bossEnabled: true },
-        { dropIntervalSec: 12, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.5, chargedReleaseCount: 5 },
+      mkStage('🔴 HELL 3 — 광기', 80,
+        { typeWeights: { normal: 25, fast: 35, tank: 30, gold: 10 }, spawnIntervalMult: 0.4, speedMult: 1.4, hpMult: 1.45, bossEnabled: true },
+        { dropIntervalSec: 10, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.5, chargedReleaseCount: 5 },
       ),
-      mkStage('🔴 HELL 4 — 죽음의 행진', 999,
-        { typeWeights: { normal: 15, fast: 30, tank: 40, gold: 15 }, spawnIntervalMult: 0.3, speedMult: 1.5, hpMult: 1.6, bossEnabled: true },
-        { dropIntervalSec: 10, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 2.0, chargedReleaseCount: 8 },
+      mkStage('🔴 HELL 4 — 절망', 90,
+        { typeWeights: { normal: 15, fast: 30, tank: 40, gold: 15 }, spawnIntervalMult: 0.35, speedMult: 1.45, hpMult: 1.65, bossEnabled: true },
+        { dropIntervalSec: 9, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.8, chargedReleaseCount: 7 },
+      ),
+      mkStage('🔴 HELL 5 — 끝없는 죽음', 999,
+        { typeWeights: { normal: 10, fast: 25, tank: 45, gold: 20 }, spawnIntervalMult: 0.3, speedMult: 1.55, hpMult: 1.9, bossEnabled: true },
+        { dropIntervalSec: 8, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 2.2, chargedReleaseCount: 10 },
       ),
     ],
   },
@@ -189,9 +200,9 @@ function deepClone<T>(v: T): T {
 function migrate(raw: unknown): GameConfig {
   if (!raw || typeof raw !== 'object') return deepClone(DEFAULT_CONFIG);
   const r = raw as Partial<GameConfig>;
-  const versionOk = r.version === 3;
+  const versionOk = r.version === 4;
   const merged: GameConfig = {
-    version: 3,
+    version: 4,
     player: { ...DEFAULT_CONFIG.player, ...(r.player ?? {}) },
     score: { ...DEFAULT_CONFIG.score, ...(r.score ?? {}) },
     stages: versionOk && Array.isArray(r.stages) && r.stages.length > 0

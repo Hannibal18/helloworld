@@ -144,6 +144,13 @@ export interface PartyLeavePayload {
   byId: string;
 }
 
+// ===== 비석 부활 (zombie 모드) =====
+// 죽은 사람 옆에 살아있는 동료가 3초 머무르면 부활.
+export interface RevivePayload {
+  targetId: string;     // 부활 대상
+  byId: string;         // 부활시킨 사람
+}
+
 // 원격 플레이어의 시각용 상태 (수신 측에서 유지)
 export interface RemotePlayer {
   id: string;
