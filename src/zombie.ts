@@ -30,12 +30,17 @@ const SPAWN_INTERVAL_MIN = 0.25;
 const MAX_ZOMBIES = 72;
 
 // 파티원 수 — game.ts 가 매 프레임 setRoomPlayerCount() 갱신. 1 이상.
+// 좀비/무기 모두 이 partyScale 을 사용 (weapons.ts 도 import).
 let _playerCount = 1;
 export function setRoomPlayerCount(n: number): void {
   _playerCount = Math.max(1, n);
 }
-function partyScale(): number {
+export function getPartyScale(): number {
   return Math.min(3.0, Math.sqrt(_playerCount));
+}
+// 내부용 별칭 (이전 코드 호환)
+function partyScale(): number {
+  return getPartyScale();
 }
 const ZOMBIE_SPEED_PX = PLAYER_SPEED * 0.3;      // 플레이어 속도의 30% (= 36 px/s)
 const ZOMBIE_BODY_HW = BODY_HW;                  // 캐릭터와 동일 크기

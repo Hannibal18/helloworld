@@ -11,7 +11,7 @@ import { isBlocked, type TileMap } from './map';
 import type { Camera } from './world';
 import type { LocalPlayer } from './player';
 import { play as playSfx, type SfxHandle } from './sfx';
-import { killZombieById, type ZombieWave } from './zombie';
+import { getPartyScale, killZombieById, type ZombieWave } from './zombie';
 import {
   CFG_WEAPON_TYPES,
   getStageChargedCount,
@@ -180,8 +180,12 @@ export function maybeSpawn(
   if (!isHost) return;
   if (now < state.nextSpawnAt) return;
   const sw = getStageWeaponsCurrent();
-  state.nextSpawnAt = now + (sw?.dropIntervalSec ?? WEAPON_DROP_INTERVAL);
-  if (state.drops.size >= (sw?.maxDropsOnGround ?? WEAPON_MAX_DROPS)) return;
+  // 파티원 수 √N 비례 — 좀비와 같은 공식. 스폰 빨라지고 cap 늘어남.
+  const ps = getPartyScale();
+  const interval = (sw?.dropIntervalSec ?? WEAPON_DROP_INTERVAL) / ps;
+  state.nextSpawnAt = now + interval;
+  const maxDrops = Math.round((sw?.maxDropsOnGround ?? WEAPON_MAX_DROPS) * ps);
+  if (state.drops.size >= maxDrops) return;
   const pos = pickSpawnTile(map);
   if (!pos) return;
   const type = pickWeaponByWeight();
