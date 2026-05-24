@@ -20,6 +20,7 @@ import {
 } from './player';
 import { attackPhaseFor, renderFrame, type RenderableRemote } from './render';
 import { setBubble, syncBubbles } from './bubbles';
+import { drawLobbyZones, setupLobbyChat, type LobbyChatHandle } from './lobby';
 import { spawnHitBurst, updateAndRenderParticles } from './particles';
 import { loadMap, type TileMap } from './map';
 import { setupDebugPanel, updateDebugInfo, type DebugState } from './debug';
@@ -106,6 +107,7 @@ export function startGame(opts: StartGameOpts): void {
 async function startGameAsync(opts: StartGameOpts): Promise<void> {
   const { name, charIdx: charIdxArg, gameId, mode } = opts;
   const isZombieMode = mode === 'zombie';
+  const isLobbyMode = mode === 'lobby';
   const ui = uiHandles();
   showGame(ui);
 
@@ -195,8 +197,30 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   };
 
   // ===== 입력 =====
-  setupInput({ isChatActive: () => false });
+  // 광장 채팅 입력에 포커스 들어가 있을 땐 게임 키 입력 무시 (방향키 누르며 타이핑 방지).
+  let lobbyChatFocused = false;
+  setupInput({ isChatActive: () => lobbyChatFocused });
   setupTouchControls();
+
+  // ===== 광장 채팅 UI (lobby 모드 전용) =====
+  let lobbyChat: LobbyChatHandle | null = null;
+  if (isLobbyMode) {
+    lobbyChat = setupLobbyChat((text) => {
+      // 광장에서 보낸 메시지 — 머리 위 말풍선 + 채팅 로그 + broadcast
+      const n = nowSec();
+      local.chatText = text;
+      local.chatUntil = n + 4;
+      broadcastLocalChat(text);
+    });
+    // input focus 추적 — 입력 중 게임 키 무시
+    const inputEl = lobbyChat ? (document.querySelector('#lobby-chat input') as HTMLInputElement | null) : null;
+    if (inputEl) {
+      inputEl.addEventListener('focus', () => { lobbyChatFocused = true; });
+      inputEl.addEventListener('blur', () => { lobbyChatFocused = false; });
+    }
+  }
+  // 미사용 변수 경고 방지 — Phase 2 에서 destroy 사용 예정
+  void lobbyChat;
 
   // ===== 원격 플레이어 맵 =====
   const remotes = new Map<string, RemotePlayer>();
@@ -648,48 +672,51 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       setStageWeapons(getConfig().stages[0]?.weapons ?? null);
     }
 
-    // ===== 총(AK) — 스폰/픽업/총알 진행/자기 피격 체크 =====
-    // 호스트 클라이언트만 새 드랍 결정 + broadcast (중복 방지)
-    maybeSpawnGun(gunState, now, map, isLocalHost(), (drop: GunDrop) => {
-      applyGunDrop({ id: drop.id, x: drop.x, y: drop.y }, drop.spawnedAt);
-      net.sendGunDrop({ id: drop.id, x: drop.x, y: drop.y });
-    });
-    // 로컬 발 좌표가 드랍 반경 안이면 픽업
-    if (!local.dead) {
-      const got = findPickup(gunState, local.x, local.y);
-      if (got) {
-        gunState.drops.delete(got.id);
-        local.gunUntil = now + GUN_HOLD_DURATION;
-        clearAllOwnedWeapons(weaponsState);   // 한 번에 한 무기 — 보조 무기 해제
-        net.sendGunPickup({ id: got.id, by: local.id });
+    // ===== 무기/총알/픽업 — 대기광장(lobby) 에서는 스킵 (구경만) =====
+    if (!isLobbyMode) {
+      // ===== 총(AK) — 스폰/픽업/총알 진행/자기 피격 체크 =====
+      // 호스트 클라이언트만 새 드랍 결정 + broadcast (중복 방지)
+      maybeSpawnGun(gunState, now, map, isLocalHost(), (drop: GunDrop) => {
+        applyGunDrop({ id: drop.id, x: drop.x, y: drop.y }, drop.spawnedAt);
+        net.sendGunDrop({ id: drop.id, x: drop.x, y: drop.y });
+      });
+      // 로컬 발 좌표가 드랍 반경 안이면 픽업
+      if (!local.dead) {
+        const got = findPickup(gunState, local.x, local.y);
+        if (got) {
+          gunState.drops.delete(got.id);
+          local.gunUntil = now + GUN_HOLD_DURATION;
+          clearAllOwnedWeapons(weaponsState);   // 한 번에 한 무기 — 보조 무기 해제
+          net.sendGunPickup({ id: got.id, by: local.id });
+        }
       }
-    }
-    // 총알 위치 갱신 + 만료/벽 충돌 시 제거
-    stepBullets(gunState, dt, now, map);
-    // ===== 보조 무기: 드랍 스폰 / 픽업 / 자동 발사 / 발사체 진행 =====
-    maybeSpawnWeapon(weaponsState, now, map, isLocalHost(), (drop) => {
-      applyWeaponDrop({ id: drop.id, type: drop.type, x: drop.x, y: drop.y }, drop.spawnedAt);
-      net.sendWeaponDrop({ id: drop.id, type: drop.type, x: drop.x, y: drop.y });
-    });
-    if (!local.dead) {
-      const got = findWeaponPickup(weaponsState, local.x, local.y);
-      if (got) {
-        weaponsState.drops.delete(got.id);
-        grantOwnership(weaponsState, got.type, now);
-        local.gunUntil = 0;                    // 한 번에 한 무기 — AK 해제
-        net.sendWeaponPickup({ id: got.id, by: local.id, type: got.type });
+      // 총알 위치 갱신 + 만료/벽 충돌 시 제거
+      stepBullets(gunState, dt, now, map);
+      // ===== 보조 무기: 드랍 스폰 / 픽업 / 자동 발사 / 발사체 진행 =====
+      maybeSpawnWeapon(weaponsState, now, map, isLocalHost(), (drop) => {
+        applyWeaponDrop({ id: drop.id, type: drop.type, x: drop.x, y: drop.y }, drop.spawnedAt);
+        net.sendWeaponDrop({ id: drop.id, type: drop.type, x: drop.x, y: drop.y });
+      });
+      if (!local.dead) {
+        const got = findWeaponPickup(weaponsState, local.x, local.y);
+        if (got) {
+          weaponsState.drops.delete(got.id);
+          grantOwnership(weaponsState, got.type, now);
+          local.gunUntil = 0;                    // 한 번에 한 무기 — AK 해제
+          net.sendWeaponPickup({ id: got.id, by: local.id, type: got.type });
+        }
       }
+      if (input.attackHeld) {
+        fireOwnedWeapons(weaponsState, now, local, zombieWave, () => { /* no-op for now */ });
+      }
+      // 라이트닝 — press: 차지 시작, release: 차지량 비례 storm 발사
+      handleLightningInput(weaponsState, now, input.attackHeld, prevAttackHeld, local, zombieWave, camera);
+      // ice / curse — 동일한 차지/방출 패턴 (lightning 패턴과 같음, 한 번에 한 무기만 보유하므로 충돌 없음)
+      handleIceInput(weaponsState, now, input.attackHeld, prevAttackHeld, local, zombieWave);
+      handleCurseInput(weaponsState, now, input.attackHeld, prevAttackHeld, local, zombieWave);
+      prevAttackHeld = input.attackHeld;
+      stepProjectiles(weaponsState, dt, now, zombieWave);
     }
-    if (input.attackHeld) {
-      fireOwnedWeapons(weaponsState, now, local, zombieWave, () => { /* no-op for now */ });
-    }
-    // 라이트닝 — press: 차지 시작, release: 차지량 비례 storm 발사
-    handleLightningInput(weaponsState, now, input.attackHeld, prevAttackHeld, local, zombieWave, camera);
-    // ice / curse — 동일한 차지/방출 패턴 (lightning 패턴과 같음, 한 번에 한 무기만 보유하므로 충돌 없음)
-    handleIceInput(weaponsState, now, input.attackHeld, prevAttackHeld, local, zombieWave);
-    handleCurseInput(weaponsState, now, input.attackHeld, prevAttackHeld, local, zombieWave);
-    prevAttackHeld = input.attackHeld;
-    stepProjectiles(weaponsState, dt, now, zombieWave);
 
     // 총알 vs 좀비 — killZombieById 가 스테이지 damageMult 자동 적용.
     if (zombieWave.active && gunState.bullets.length > 0) {
@@ -894,6 +921,10 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       drawZombies(ctx2d, camera, zombieWave, now);
       drawWaveAmbient(ctx2d, zombieWave, now);
       if (scoreState) drawScoreHud(hudCtx, scoreState, now);
+    }
+    // 대기 광장 — 3 난이도 구역 시각화
+    if (isLobbyMode) {
+      drawLobbyZones(ctx2d, camera, now);
     }
 
     updateAndRenderParticles(ctx2d, camera.x, camera.y, realDt, now);

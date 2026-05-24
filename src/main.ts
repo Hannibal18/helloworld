@@ -79,9 +79,9 @@ ready(() => {
   setupViewport();
 
   // ===== 모드 토글 =====
-  // 현재 UI 에서 토글/방코드 모두 .hidden 처리됨 — 좀비 모드 단독 운영.
-  // 추후 부활하려면 index.html 의 .hidden 제거.
-  let mode: GameMode = 'zombie';
+  // 현재: 입장 = 대기광장 'lobby'. 거기서 매치메이킹으로 'zombie' 룸 이동.
+  // PK 토글/방코드 UI 는 hidden — 추후 부활 시 mode 가 'pk' 가 될 수 있음.
+  let mode: GameMode = 'lobby';
   const modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.mode-btn'));
   for (const b of modeButtons) {
     b.addEventListener('click', () => {
@@ -146,10 +146,12 @@ ready(() => {
       let name = nick.value.trim();
       if (!name) name = `손님${Math.floor(Math.random() * 9000 + 1000)}`;
       name = name.slice(0, 12);
-      // 좀비 모드 단독 운영: 모든 접속자가 'default' 한 방에 모임.
+      // 모드별 룸 결정. lobby=LOBBY, zombie=DEFAULT, pk=input/random.
       let gameId = (gameIdInput?.value ?? '').trim().toUpperCase().slice(0, 8);
       if (!gameId) {
-        gameId = mode === 'zombie' ? 'DEFAULT' : randomGameId();
+        if (mode === 'lobby') gameId = 'LOBBY';
+        else if (mode === 'zombie') gameId = 'DEFAULT';
+        else gameId = randomGameId();
         if (gameIdInput) gameIdInput.value = gameId;
       }
       startGame({ name, charIdx: chosenCharIdx, gameId, mode });
