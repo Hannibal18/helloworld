@@ -83,7 +83,7 @@ export interface ZombieWaveStartPayload {
 }
 
 // 보조 무기 드랍 (Garlic/Pistol/Missile/Lightning).
-export type WeaponTypePayload = 'garlic' | 'pistol' | 'missile' | 'lightning';
+export type WeaponTypePayload = 'garlic' | 'pistol' | 'missile' | 'lightning' | 'ice' | 'curse';
 export interface WeaponDropPayload {
   id: string;
   type: WeaponTypePayload;

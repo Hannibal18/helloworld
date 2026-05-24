@@ -211,12 +211,17 @@ export function bulletHitsZombie(wave: ZombieWave, bx: number, by: number): stri
   return null;
 }
 // damage 만큼 깎고, hp <= 0 이면 제거 + 점수 큐 push + killCount 증가.
-// 반환: 실제로 죽었는지 (탱크 등 아직 살아 있으면 false). damage 미지정 시 1.
-export function killZombieById(wave: ZombieWave, id: string, damage: number = 1): boolean {
+// damage 미지정 시 현재 스테이지의 weapons.damageMult (round) 자동 적용 —
+// 모든 무기(AK/권총/미사일/라이트닝/마늘/얼음/저주)가 별도 코드 없이 자동 반영.
+// 명시적으로 1 을 넘기면 멀티플라이어 무시.
+export function killZombieById(wave: ZombieWave, id: string, damage?: number): boolean {
   const z = wave.zombies.find((x) => x.id === id);
   if (!z) return false;
-  z.hp -= Math.max(1, Math.round(damage));
   const now = performance.now() / 1000;
+  const dmg = damage !== undefined
+    ? Math.max(1, Math.round(damage))
+    : Math.max(1, Math.round(getStageDamageMult(wave, now)));
+  z.hp -= dmg;
   spawnBloodBurst(z.x, z.y - ZOMBIE_BODY_HH, now);
   if (z.hp > 0) return false;
   // 사망
@@ -225,6 +230,12 @@ export function killZombieById(wave: ZombieWave, id: string, damage: number = 1)
   wave.killCount += 1;
   wave.recentKillPoints.push(spec.basePoints);
   return true;
+}
+
+function getStageDamageMult(wave: ZombieWave, now: number): number {
+  if (!wave.active) return 1;
+  const elapsed = Math.max(0, now - wave.startedAt);
+  return getStageProgress(getConfig(), elapsed).stage.weapons.damageMult;
 }
 
 // ===== 플레이어 공격 vs 좀비 — 한 대 맞으면 죽음 =====

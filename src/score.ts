@@ -1,15 +1,14 @@
 // 좀비 모드 점수/콤보/생존 시간 — 로컬 플레이어 1인 전용 state.
 //
-// 콤보: 마지막 킬로부터 COMBO_WINDOW_SEC 안에 다음 킬이 들어오면 콤보 증가.
-//      배율 = min(COMBO_MAX, 콤보 카운트). 점수 = BASE * 배율.
-// 시간 점수: 매 초 +TIME_POINTS_PER_SEC 자동 누적.
+// 콤보 윈도우/최대 배율/킬 기본 점수/초당 생존 점수는 모두 대시보드 (config.score)
+// 에서 읽음 — 런타임 변경 즉시 반영.
 
-const KILL_BASE_POINTS = 10;
-const COMBO_WINDOW_SEC = 2.0;
-const COMBO_MAX = 8;
-const TIME_POINTS_PER_SEC = 1;  // 1초 생존 = 1점
+import { getConfig } from './config';
+
 const KILL_POP_DURATION = 0.4;
 const COMBO_BREAK_FX_SEC = 0.4;  // 콤보가 만료되면 짧게 알림
+
+function scoreCfg() { return getConfig().score; }
 
 export interface ScoreState {
   startedAt: number;            // 모드 시작 시각 (sec)
@@ -46,15 +45,17 @@ export function makeScore(now: number): ScoreState {
 }
 
 // 좀비 1마리 처치 시 호출. 점수 + 콤보 갱신.
-// basePoints 생략하면 KILL_BASE_POINTS(10) 기본. 특수 좀비는 zombie.ts 의 spec.basePoints 전달.
-export function addKill(s: ScoreState, now: number, basePoints: number = KILL_BASE_POINTS): void {
+// basePoints 생략하면 config.score.killBase. 특수 좀비는 zombie.ts 의 spec.basePoints 전달.
+export function addKill(s: ScoreState, now: number, basePoints?: number): void {
+  const c = scoreCfg();
   s.kills += 1;
-  const inWindow = now - s.lastKillAt <= COMBO_WINDOW_SEC;
+  const inWindow = now - s.lastKillAt <= c.comboWindowSec;
   s.comboCount = inWindow ? s.comboCount + 1 : 1;
   s.lastKillAt = now;
   if (s.comboCount > s.maxCombo) s.maxCombo = s.comboCount;
-  const mult = Math.min(COMBO_MAX, s.comboCount);
-  const earned = basePoints * mult;
+  const mult = Math.min(c.comboMax, s.comboCount);
+  const bp = basePoints ?? c.killBase;
+  const earned = bp * mult;
   s.totalScore += earned;
   s.lastKillScore = earned;
   s.killPopUntil = now + KILL_POP_DURATION;
@@ -63,21 +64,22 @@ export function addKill(s: ScoreState, now: number, basePoints: number = KILL_BA
 
 // 매 프레임 호출 — 생존 시간 보너스, 콤보 만료 체크.
 export function updateScore(s: ScoreState, dt: number, now: number): void {
+  const c = scoreCfg();
   s.timeBudget += dt;
   while (s.timeBudget >= 1) {
     s.timeBudget -= 1;
-    s.totalScore += TIME_POINTS_PER_SEC;
+    s.totalScore += c.timePointsPerSec;
   }
-  if (s.comboCount > 0 && now - s.lastKillAt > COMBO_WINDOW_SEC) {
+  if (s.comboCount > 0 && now - s.lastKillAt > c.comboWindowSec) {
     if (s.prevComboShown >= 2) s.comboBreakUntil = now + COMBO_BREAK_FX_SEC;
     s.comboCount = 0;
   }
   if (s.comboCount > 0) s.prevComboShown = s.comboCount;
 }
 
-// 현재 콤보 배율 (1~COMBO_MAX). 0 = 콤보 안 됨.
+// 현재 콤보 배율 (1~comboMax). 0 = 콤보 안 됨.
 export function currentComboMult(s: ScoreState): number {
-  return Math.min(COMBO_MAX, s.comboCount);
+  return Math.min(scoreCfg().comboMax, s.comboCount);
 }
 
 // ===== localStorage 최고 기록 =====

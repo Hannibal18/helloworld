@@ -570,7 +570,6 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
 
   // ===== 스테이지 진행 (config 의 stages 기반) =====
   let currentStageTotalIdx = -1;       // 변경 감지용
-  let currentDamageMult = 1;           // 매 프레임 갱신, 총알/공격 데미지에 곱함
   // 우상단 HUD 에 작은 스테이지 표시 — 동적으로 삽입.
   let stagePillEl: HTMLDivElement | null = null;
   if (isZombieMode) {
@@ -614,7 +613,6 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       const elapsed = now - zombieWave.startedAt;
       const progress = getStageProgress(getConfig(), elapsed);
       setStageWeapons(progress.stage.weapons);
-      currentDamageMult = progress.stage.weapons.damageMult;
       if (progress.totalIdx !== currentStageTotalIdx) {
         currentStageTotalIdx = progress.totalIdx;
         showBanner(ui, 'info', `🎯 ${progress.stage.name}`);
@@ -672,13 +670,12 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     prevAttackHeld = input.attackHeld;
     stepProjectiles(weaponsState, dt, now, zombieWave);
 
-    // 총알 vs 좀비 — 스테이지 damageMult 적용. 적중한 총알 제거.
+    // 총알 vs 좀비 — killZombieById 가 스테이지 damageMult 자동 적용.
     if (zombieWave.active && gunState.bullets.length > 0) {
-      const dmg = Math.max(1, Math.round(currentDamageMult));
       gunState.bullets = gunState.bullets.filter((b) => {
         const zid = bulletHitsZombie(zombieWave, b.x, b.y);
         if (zid) {
-          killZombieById(zombieWave, zid, dmg);
+          killZombieById(zombieWave, zid);
           return false; // 총알 제거
         }
         return true;

@@ -7,6 +7,7 @@ import type { AttackPayload, Dir, PosPayload } from './types';
 import { consumeAttack, dirFromInput, input } from './input';
 import { spawnHitBurst } from './particles';
 import { GUN_FIRE_COOLDOWN as GUN_FIRE_COOLDOWN_SEC, BULLET_SPEED } from './gun';
+import { getConfig } from './config';
 
 // 공격 사양 (spec §7) — LPC 표준 32px 타일 기준.
 // HP 14칸 × 10HP = 140. 공격 1대 = 20HP = 2칸. 7방 맞으면 사망.
@@ -173,8 +174,9 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
     p.dir = dirFromInput(p.dir);
     // 대각선이면 정규화
     const len = Math.hypot(mx, my) || 1;
-    const vx = (mx / len) * SPEED * dt;
-    const vy = (my / len) * SPEED * dt;
+    const speedMult = getConfig().player.moveSpeedMult ?? 1;
+    const vx = (mx / len) * SPEED * speedMult * dt;
+    const vy = (my / len) * SPEED * speedMult * dt;
     tryMove(p, vx, vy, map);
     p.walkTimer += dt;
     if (p.walkTimer > 0.18) {
