@@ -16,6 +16,29 @@ import { bulletHitsZombie, killZombieById, type ZombieWave } from './zombie';
 export type WeaponType = 'garlic' | 'pistol' | 'missile' | 'lightning';
 export const WEAPON_TYPES: readonly WeaponType[] = ['garlic', 'pistol', 'missile', 'lightning'];
 
+// ===== 드랍 가중치 (rarity tier) =====
+// 액션 로그라이크 표준 패턴 — 약한 무기는 자주, 강한 무기는 드물게.
+// 단순 가중 랜덤 (weighted random). 합 = 100 으로 % 직관적.
+//   pistol    50%  common      — 약한 단발 권총 (튜토리얼 격)
+//   missile   28%  uncommon    — 호밍, 안정적
+//   lightning 15%  rare        — 체인, 멀티 타깃
+//   garlic     7%  epic        — 무지향성 AOE, 가장 강력
+const DROP_WEIGHTS: Record<WeaponType, number> = {
+  pistol:    50,
+  missile:   28,
+  lightning: 15,
+  garlic:     7,
+};
+function pickWeaponByWeight(): WeaponType {
+  const total = WEAPON_TYPES.reduce((s, t) => s + DROP_WEIGHTS[t], 0);
+  let r = Math.random() * total;
+  for (const t of WEAPON_TYPES) {
+    r -= DROP_WEIGHTS[t];
+    if (r < 0) return t;
+  }
+  return WEAPON_TYPES[0];
+}
+
 export const WEAPON_DROP_INTERVAL = 45;   // sec (AK 60s 보다 살짝 짧게)
 export const WEAPON_MAX_DROPS = 3;
 export const WEAPON_PICKUP_RADIUS = 18;
@@ -107,7 +130,7 @@ export function maybeSpawn(
   if (state.drops.size >= WEAPON_MAX_DROPS) return;
   const pos = pickSpawnTile(map);
   if (!pos) return;
-  const type = WEAPON_TYPES[Math.floor(Math.random() * WEAPON_TYPES.length)];
+  const type = pickWeaponByWeight();
   emit({ id: randomId(), type, x: pos.x, y: pos.y, spawnedAt: now });
 }
 
