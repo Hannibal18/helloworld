@@ -88,28 +88,48 @@ ready(() => {
   // 모바일에서 입력창 자동 줌 방지를 위해 폰트 크기는 CSS 로 처리
   nick.focus();
 
-  const enter = () => {
-    // iOS Safari 자동 재생 차단 해제 — 첫 사용자 제스처에서 SFX/BGM 둘 다 풀어야 함
-    unlockSfx();
-    startBgm();
-    let name = nick.value.trim();
-    if (!name) name = `손님${Math.floor(Math.random() * 9000 + 1000)}`;
-    name = name.slice(0, 12);
-    // 좀비 모드 단독 운영: 모든 접속자가 'default' 한 방에 모임.
-    // PK 모드 부활 시: input 값 우선, 빈 값이면 randomGameId() 로 새 방 생성.
-    let gameId = (gameIdInput?.value ?? '').trim().toUpperCase().slice(0, 8);
-    if (!gameId) {
-      gameId = mode === 'zombie' ? 'DEFAULT' : randomGameId();
-      if (gameIdInput) gameIdInput.value = gameId;
+  // 입장 시 발생한 마지막 에러 메시지를 모바일에서도 볼 수 있게 인트로에 표시.
+  // (콘솔 접근이 어려운 모바일 디버깅용 — 한 줄 추가에 큰 도움)
+  const introCard = document.querySelector('.intro-card');
+  const showIntroError = (msg: string) => {
+    if (!introCard) { alert(msg); return; }
+    let banner = document.getElementById('intro-error');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'intro-error';
+      banner.style.cssText = 'margin-top:10px;padding:8px;background:#3a1010;color:#ff9a9a;border:1px solid #a02a2a;border-radius:6px;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;';
+      introCard.appendChild(banner);
     }
+    banner.textContent = msg;
+  };
+
+  const enter = () => {
     try {
+      // iOS Safari 자동 재생 차단 해제 — 첫 사용자 제스처에서 SFX/BGM 둘 다 풀어야 함
+      try { unlockSfx(); } catch (e) { console.warn('unlockSfx', e); }
+      try { startBgm(); } catch (e) { console.warn('startBgm', e); }
+      let name = nick.value.trim();
+      if (!name) name = `손님${Math.floor(Math.random() * 9000 + 1000)}`;
+      name = name.slice(0, 12);
+      // 좀비 모드 단독 운영: 모든 접속자가 'default' 한 방에 모임.
+      let gameId = (gameIdInput?.value ?? '').trim().toUpperCase().slice(0, 8);
+      if (!gameId) {
+        gameId = mode === 'zombie' ? 'DEFAULT' : randomGameId();
+        if (gameIdInput) gameIdInput.value = gameId;
+      }
       startGame({ name, charIdx: chosenCharIdx, gameId, mode });
     } catch (err) {
-      // Supabase env 미설정 등
-      console.error(err);
-      alert(`${(err as Error).message}\n\nREADME 의 §1(설정) 단계를 따라 .env 를 채워주세요.`);
+      console.error('[enter] sync error', err);
+      showIntroError(`입장 실패: ${(err as Error)?.message ?? err}`);
     }
   };
+  // startGame 안의 비동기 에러도 알림
+  window.addEventListener('unhandledrejection', (e) => {
+    showIntroError(`비동기 에러: ${e.reason?.message ?? e.reason}`);
+  });
+  window.addEventListener('error', (e) => {
+    showIntroError(`스크립트 에러: ${e.message}`);
+  });
 
   btn.addEventListener('click', enter);
   nick.addEventListener('keydown', (e) => {
