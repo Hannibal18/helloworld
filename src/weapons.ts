@@ -465,8 +465,8 @@ export function stepProjectiles(state: WeaponsState, _dt: number, now: number, w
   state.impacts = state.impacts.filter((i) => now - i.bornAt <= IMPACT_LIFE);
   // 라이트닝 폭풍 — 구름 + 다발 번개
   stepStorms(state, now, wave);
-  // 차지형 애니메이션 캐스트(ice, curse) — 만료된 cast 이벤트 제거
-  stepAnimCastEffects(state, now);
+  // 차지형 애니메이션 캐스트(ice, curse) — 위치별 triggerAt 발화 + 만료 제거
+  stepAnimCastEffects(state, now, wave);
 }
 
 // ===== 렌더: 드랍 (땅 위), 발사체 (날아다님), 보유 아이콘 (캐릭터 머리 위) =====
@@ -821,7 +821,7 @@ interface AnimCastConfig {
   blinkCount: number;
   // 옵션 SFX — 정의되면 sfx.ts 의 키로 재생.
   sfxChargeKey?: string;    // press 시 1회
-  sfxHitKey?: string;       // executeCast 시 1회
+  sfxHitKey?: string;       // 폭발 시 — staggerSec 적용 시 매 위치마다 재생
   maxMarkers: number;
   minRadius: number;
   maxRadius: number;
@@ -830,11 +830,15 @@ interface AnimCastConfig {
   castScale: number;        // 캐스트 재생 시 픽셀 배율
   markerScale: number;      // 차지 마커 픽셀 배율
   killRadius: number;       // 각 캐스트 위치 기준 nearest-zombie 탐색 반경
+  // 폭발을 순차적으로 — i 번째 위치는 (i × staggerSec) 만큼 지연.
+  // 0 이면 일제히. 0.15 = 150ms 간격.
+  staggerSec: number;
 }
 
+// 캐스트 1회 — 여러 위치가 순차 폭발. 각 위치는 자기 triggerAt 에 발화.
 interface AnimCastEvent {
   bornAt: number;
-  positions: { x: number; y: number }[];
+  positions: { x: number; y: number; triggerAt: number; fired: boolean }[];
 }
 
 interface AnimCastState {
@@ -873,6 +877,7 @@ const ICE_CONFIG: AnimCastConfig = {
   castScale: 1.6,
   markerScale: 1.1,
   killRadius: 44,
+  staggerSec: 0,             // 얼음 = 일제 (생성 순서 효과 X)
 };
 
 const CURSE_CONFIG: AnimCastConfig = {
@@ -890,14 +895,19 @@ const CURSE_CONFIG: AnimCastConfig = {
   maxRadius: 130,
   yBias: -16,
   minPairDist: 52,
-  castScale: 1.8,
-  markerScale: 1.1,
-  killRadius: 48,
+  castScale: 2.34,           // 1.8 × 1.3 — 폭발 비주얼 1.3배
+  markerScale: 1.43,         // 1.1 × 1.3 — 차지 구름 1.3배
+  killRadius: 62,            // 48 × 1.3 — 폭발 범위 1.3배
+  staggerSec: 0.15,          // 생긴 순서대로 150ms 간격 폭발
 };
 
-// 캐스트 이벤트가 화면에 남아 있어야 할 총 시간 (모든 프레임 재생 + 약간 여유)
-function castLifeSec(cfg: AnimCastConfig): number {
+// 단일 위치 애니메이션 길이 (모든 프레임 재생).
+function castFrameLifeSec(cfg: AnimCastConfig): number {
   return (cfg.frameCount * cfg.frameDurMs) / 1000;
+}
+// 캐스트 이벤트가 화면에 남아 있어야 할 총 시간 = 마지막 위치의 시작 + 프레임 길이.
+function castTotalLifeSec(cfg: AnimCastConfig, n: number): number {
+  return (Math.max(0, n - 1) * cfg.staggerSec) + castFrameLifeSec(cfg);
 }
 
 // ===== 스프라이트 로딩 =====
@@ -940,34 +950,42 @@ function generateAnimMarkers(state: AnimCastState, cfg: AnimCastConfig): void {
   state.markerOffsets = out;
 }
 
-// 캐스트 실행 — N개 위치 캡처 + 각 위치 nearest 좀비 1마리 즉사 (위치당 중복 제거).
+// 캐스트 스케줄 — N개 위치 캡처 + 각 위치를 i × staggerSec 지연 후 발화하도록 등록.
+// 실제 폭발/킬/SFX 는 stepAnimCasts 가 triggerAt 도달 시 처리.
 function executeCast(
   state: AnimCastState, cfg: AnimCastConfig, count: number,
-  now: number, localX: number, localY: number, wave: ZombieWave,
+  now: number, localX: number, localY: number, _wave: ZombieWave,
 ): void {
-  const positions: { x: number; y: number }[] = [];
+  const positions: { x: number; y: number; triggerAt: number; fired: boolean }[] = [];
   for (let i = 0; i < count; i++) {
     const off = state.markerOffsets[i] ?? { rx: 0, ry: -40 };
-    positions.push({ x: localX + off.rx, y: localY + off.ry });
+    positions.push({
+      x: localX + off.rx,
+      y: localY + off.ry,
+      triggerAt: now + i * cfg.staggerSec,
+      fired: false,
+    });
   }
   state.casts.push({ bornAt: now, positions });
-  const claimed = new Set<string>();
+}
+
+// 위치 1개의 발화 — nearest 좀비 1마리 킬 + hit SFX (중복 방지용 claimed Set 외부 주입).
+function firePosition(cfg: AnimCastConfig, wave: ZombieWave, p: { x: number; y: number }, claimed: Set<string>): void {
   const r2 = cfg.killRadius * cfg.killRadius;
-  for (const p of positions) {
-    let bestId: string | null = null;
-    let bestD2 = r2;
-    for (const z of wave.zombies) {
-      if (claimed.has(z.id)) continue;
-      const dx = z.x - p.x;
-      const dy = (z.y - 14) - p.y;  // 좀비 몸통 중심 근사
-      const d2 = dx * dx + dy * dy;
-      if (d2 < bestD2) { bestD2 = d2; bestId = z.id; }
-    }
-    if (bestId !== null) {
-      claimed.add(bestId);
-      killZombieById(wave, bestId);
-    }
+  let bestId: string | null = null;
+  let bestD2 = r2;
+  for (const z of wave.zombies) {
+    if (claimed.has(z.id)) continue;
+    const dx = z.x - p.x;
+    const dy = (z.y - 14) - p.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) { bestD2 = d2; bestId = z.id; }
   }
+  if (bestId !== null) {
+    claimed.add(bestId);
+    killZombieById(wave, bestId);
+  }
+  if (cfg.sfxHitKey) playSfx(cfg.sfxHitKey);
 }
 
 function handleAnimCastInput(
@@ -1003,7 +1021,7 @@ function handleAnimCastInput(
   if (state.fullChargedAt !== null && (now - state.fullChargedAt) >= blinkTotal) {
     const n = stageChargedCount(cfg.maxMarkers);
     executeCast(state, cfg, n, now, localX, localY, wave);
-    if (cfg.sfxHitKey) playSfx(cfg.sfxHitKey);
+    // hit SFX 는 stepAnimCasts 가 각 위치 발화 시 재생 (순차).
     if (attackHeldNow) {
       state.chargeStartedAt = now;
       state.fullChargedAt = null;
@@ -1024,9 +1042,20 @@ function handleAnimCastInput(
   }
 }
 
-function stepAnimCasts(state: AnimCastState, cfg: AnimCastConfig, now: number): void {
-  const life = castLifeSec(cfg);
-  state.casts = state.casts.filter((c) => now - c.bornAt < life);
+function stepAnimCasts(state: AnimCastState, cfg: AnimCastConfig, now: number, wave: ZombieWave): void {
+  // 각 캐스트 내 위치별로 triggerAt 도달 시 발화 (킬 + SFX). 한 캐스트 안에서
+  // 위치끼리는 같은 좀비 중복 킬 X — claimed Set 으로 격리.
+  for (const c of state.casts) {
+    let claimed: Set<string> | null = null;
+    for (const p of c.positions) {
+      if (p.fired || now < p.triggerAt) continue;
+      if (!claimed) claimed = new Set<string>();
+      firePosition(cfg, wave, p, claimed);
+      p.fired = true;
+    }
+  }
+  // 만료 — 마지막 위치 발화 + 프레임 재생이 끝났을 때
+  state.casts = state.casts.filter((c) => now - c.bornAt < castTotalLifeSec(cfg, c.positions.length));
 }
 
 function animCastChargeLevel(state: AnimCastState, cfg: AnimCastConfig, now: number): number {
@@ -1096,10 +1125,12 @@ function drawAnimCastEffects(
   ctx.imageSmoothingEnabled = false;
   const dst = Math.round(cfg.frameSize * cfg.castScale);
   for (const c of state.casts) {
-    const elapsedMs = (now - c.bornAt) * 1000;
-    const frame = Math.floor(elapsedMs / cfg.frameDurMs);
-    if (frame < 0 || frame >= cfg.frameCount) continue;
     for (const p of c.positions) {
+      // 위치별 자기 triggerAt 부터 애니메이션 시작 — stagger 시 순차 표시.
+      const elapsedMs = (now - p.triggerAt) * 1000;
+      if (elapsedMs < 0) continue;        // 아직 차례 아님
+      const frame = Math.floor(elapsedMs / cfg.frameDurMs);
+      if (frame >= cfg.frameCount) continue;
       const sx = Math.round(p.x - camera.x - dst / 2);
       const sy = Math.round(p.y - camera.y - dst / 2);
       ctx.drawImage(img, frame * cfg.frameSize, 0, cfg.frameSize, cfg.frameSize, sx, sy, dst, dst);
@@ -1126,9 +1157,9 @@ export function handleCurseInput(
   handleAnimCastInput(state.curse, CURSE_CONFIG, owned, now, attackHeldNow, attackHeldPrev, local.x, local.y, wave);
 }
 
-export function stepAnimCastEffects(state: WeaponsState, now: number): void {
-  stepAnimCasts(state.ice, ICE_CONFIG, now);
-  stepAnimCasts(state.curse, CURSE_CONFIG, now);
+export function stepAnimCastEffects(state: WeaponsState, now: number, wave: ZombieWave): void {
+  stepAnimCasts(state.ice, ICE_CONFIG, now, wave);
+  stepAnimCasts(state.curse, CURSE_CONFIG, now, wave);
 }
 
 export function iceChargeLevel(state: WeaponsState, now: number): number {
