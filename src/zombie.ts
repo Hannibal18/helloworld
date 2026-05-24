@@ -167,12 +167,21 @@ function spawnOne(wave: ZombieWave, now: number, map: TileMap, forceType?: Zombi
   if (wave.zombies.length >= MAX_ZOMBIES) return;
   const TILE = map.tileW;
   const margin = TILE * 2;
+  // 통과 가능한 위치를 찾을 때까지 재시도 — 나무/물 위 스폰 방지.
+  // 최대 16번 → 못 찾으면 이번 틱은 스폰 포기 (다음 nextSpawnAt 에 재시도).
+  const ZF_HW = ZOMBIE_BODY_HW * 0.7;
+  const ZF_HH = 5;
   let x = 0, y = 0;
-  const side = Math.floor(Math.random() * 4);
-  if (side === 0) { x = margin + Math.random() * (map.pixelW - margin * 2); y = margin; }
-  else if (side === 1) { x = margin + Math.random() * (map.pixelW - margin * 2); y = map.pixelH - margin; }
-  else if (side === 2) { x = margin; y = margin + Math.random() * (map.pixelH - margin * 2); }
-  else { x = map.pixelW - margin; y = margin + Math.random() * (map.pixelH - margin * 2); }
+  let placed = false;
+  for (let tries = 0; tries < 16; tries++) {
+    const side = Math.floor(Math.random() * 4);
+    if (side === 0) { x = margin + Math.random() * (map.pixelW - margin * 2); y = margin; }
+    else if (side === 1) { x = margin + Math.random() * (map.pixelW - margin * 2); y = map.pixelH - margin; }
+    else if (side === 2) { x = margin; y = margin + Math.random() * (map.pixelH - margin * 2); }
+    else { x = map.pixelW - margin; y = margin + Math.random() * (map.pixelH - margin * 2); }
+    if (!isBlocked(map, x, y - ZF_HH, ZF_HW, ZF_HH)) { placed = true; break; }
+  }
+  if (!placed) return;
   const type = forceType ?? pickZombieType(wave, now);
   const spec = ZOMBIE_SPEC[type];
   const hpMult = currentStageZombie(wave, now).hpMult;
