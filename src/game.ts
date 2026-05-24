@@ -50,6 +50,7 @@ import {
 } from './zombie';
 import {
   clearAllOwned as clearAllOwnedWeapons,
+  drawLightningEyes,
   drawOwnedIcons,
   drawProjectiles,
   drawWeaponDrops,
@@ -58,6 +59,7 @@ import {
   grantOwnership,
   handleLightningInput,
   lightningChargeLevel,
+  lightningEyesVisual,
   makeWeaponsState,
   maybeSpawn as maybeSpawnWeapon,
   stepProjectiles,
@@ -683,6 +685,9 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     if (!local.dead) {
       const charge = lightningChargeLevel(weaponsState, now);
       drawOwnedIcons(ctx2d, camera, local.x, local.y, CHAR_H, ownedTypes, now < local.gunUntil, charge);
+      // 라이트닝 차지 중인 눈 (캐릭터 머리 위쪽). 차지 중 alpha 0.5, 풀차지 1.0 + 깜빡임.
+      const ev = lightningEyesVisual(weaponsState, now);
+      if (ev) drawLightningEyes(ctx2d, camera, local.x, local.y, CHAR_H, ev);
     }
 
     // 좀비 — 캐릭터 위에 그림 (Y-소트는 v1 단순화로 캐릭터 위쪽 고정)

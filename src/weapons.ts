@@ -78,6 +78,10 @@ const LIGHTNING_MIN_BOLTS = 1;
 const LIGHTNING_BOLT_STAGGER = 0.08;   // 번개간 간격
 const LIGHTNING_CLOUD_LIFE = 1.2;      // 구름 표시 시간
 const LIGHTNING_RANGE_VIEW_PAD = 64;   // 카메라 viewport 밖 좀비도 약간 잡음
+// 풀차지 후 자동 발사 전 깜빡임 시퀀스 — 눈이 3회 깜빡 (close/open).
+const LIGHTNING_BLINK_PER_SEC = 0.16;  // 한 사이클(closed→open) 시간
+const LIGHTNING_BLINK_COUNT = 3;
+const LIGHTNING_BLINK_TOTAL = LIGHTNING_BLINK_PER_SEC * LIGHTNING_BLINK_COUNT;
 
 // ===== 타입 =====
 export interface WeaponDrop {
@@ -125,6 +129,8 @@ export interface WeaponsState {
   nextSpawnAt: number;
   // 라이트닝 차지 시작 시각 (null = 차지 중 아님)
   lightningChargeStartedAt: number | null;
+  // 풀차지 도달 시각 (null = 아직 풀차지 아님). 풀차지 이후 깜빡임 시퀀스 진행.
+  lightningFullChargedAt: number | null;
 }
 
 export function makeWeaponsState(now: number): WeaponsState {
@@ -137,6 +143,7 @@ export function makeWeaponsState(now: number): WeaponsState {
     lastFire: new Map(),
     nextSpawnAt: now + 25, // 첫 드랍 25초 후
     lightningChargeStartedAt: null,
+    lightningFullChargedAt: null,
   };
 }
 
@@ -232,17 +239,33 @@ export function handleLightningInput(
   const isLightning = !local.dead && (state.owned.get('lightning') ?? 0) > now;
   if (!isLightning) {
     state.lightningChargeStartedAt = null;
+    state.lightningFullChargedAt = null;
     return;
   }
-  // press
+  // press → 차지 시작
   if (attackHeldNow && !attackHeldPrev) {
     state.lightningChargeStartedAt = now;
+    state.lightningFullChargedAt = null;
   }
-  // release
+  // hold → 풀차지 도달 감지
+  if (attackHeldNow && state.lightningChargeStartedAt !== null && state.lightningFullChargedAt === null) {
+    const frac = (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC;
+    if (frac >= 1) state.lightningFullChargedAt = now;
+  }
+  const origin = lightningOriginFor(local.x, local.y);
+  // 풀차지 후 깜빡임 시퀀스 끝 → 자동 발사
+  if (state.lightningFullChargedAt !== null && (now - state.lightningFullChargedAt) >= LIGHTNING_BLINK_TOTAL) {
+    state.lightningChargeStartedAt = null;
+    state.lightningFullChargedAt = null;
+    spawnLightningStorm(state, now, 1.0, wave, camera, origin);
+    return;
+  }
+  // release before 풀차지 — 현재 차지량 비례로 발사 (풀차지 직후 release 도 1.0)
   if (!attackHeldNow && attackHeldPrev && state.lightningChargeStartedAt !== null) {
     const chargeFrac = Math.min(1, (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC);
     state.lightningChargeStartedAt = null;
-    spawnLightningStorm(state, now, chargeFrac, wave, camera);
+    state.lightningFullChargedAt = null;
+    spawnLightningStorm(state, now, chargeFrac, wave, camera, origin);
   }
 }
 
@@ -252,9 +275,32 @@ export function lightningChargeLevel(state: WeaponsState, now: number): number {
   return Math.min(1, (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC);
 }
 
+// 차지 중 캐릭터 근처에 그릴 "눈" 상태 — 렌더용
+// frame: 0..2 (eyes.png 의 프레임 인덱스), alpha: 0..1
+export function lightningEyesVisual(state: WeaponsState, now: number): { frame: number; alpha: number } | null {
+  if (state.lightningChargeStartedAt === null) return null;
+  if (state.lightningFullChargedAt !== null) {
+    // 풀차지 — 100% 불투명 + 프레임 2 고정 + 깜빡임 (closed=프레임0, open=프레임2)
+    const t = now - state.lightningFullChargedAt;
+    const cyc = t / LIGHTNING_BLINK_PER_SEC;        // 사이클 진행
+    // 한 사이클 전반 = closed (frame 0), 후반 = open (frame 2)
+    const inCycle = cyc - Math.floor(cyc);
+    const frame = inCycle < 0.5 ? 0 : 2;
+    return { frame, alpha: 1.0 };
+  }
+  // 차지 중 — alpha 50%, 프레임은 차지 진행률에 따라 0→2
+  const frac = Math.min(1, (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC);
+  const frame = Math.min(2, Math.floor(frac * 3));
+  return { frame, alpha: 0.5 };
+}
+
+// 번개 origin = 눈 위치 (캐릭터 머리 위쪽 고정 오프셋). 발사 시점의 local 좌표 사용.
+const LIGHTNING_ORIGIN_OFFSET_Y = -60; // local.y(발) 에서 위쪽으로
+
 function spawnLightningStorm(
   state: WeaponsState, now: number, chargeFrac: number, wave: ZombieWave,
   camera: { x: number; y: number; viewW: number; viewH: number },
+  origin?: { x: number; y: number },
 ): void {
   const boltCount = Math.max(
     LIGHTNING_MIN_BOLTS,
@@ -268,16 +314,17 @@ function spawnLightningStorm(
   const candidates = wave.zombies.filter(
     (z) => z.x >= minX && z.x <= maxX && z.y >= minY && z.y <= maxY,
   );
-  // 셔플 후 N개 선택
   for (let i = candidates.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
   const picks = candidates.slice(0, boltCount);
 
+  const ox = origin?.x ?? camera.x + camera.viewW / 2;
+  const oy = origin?.y ?? camera.y + 28;
   const storm: LightningStorm = {
-    cloudWorldX: camera.x + camera.viewW / 2,
-    cloudWorldY: camera.y + 28,
+    cloudWorldX: ox,
+    cloudWorldY: oy,
     bornAt: now,
     bolts: [],
   };
@@ -289,7 +336,6 @@ function spawnLightningStorm(
       fired: false,
     });
   }
-  // 좀비가 후보보다 많아도 boltCount 만큼 충분히 못 채웠으면 남은 슬롯도 랜덤 위치(허공)에 떨어트림
   for (let i = picks.length; i < boltCount; i++) {
     storm.bolts.push({
       triggerAt: now + i * LIGHTNING_BOLT_STAGGER,
@@ -299,6 +345,11 @@ function spawnLightningStorm(
     });
   }
   state.storms.push(storm);
+}
+
+// origin offset 헬퍼 — 게임 루프가 spawn 직전 local 위치 기반으로 호출
+export function lightningOriginFor(localX: number, localY: number): { x: number; y: number } {
+  return { x: localX, y: localY + LIGHTNING_ORIGIN_OFFSET_Y };
 }
 
 // 매 프레임 storm 진행 — trigger 도달한 bolt 는 실제 좀비 죽이고 시각 효과 추가.
@@ -483,40 +534,8 @@ export function drawProjectiles(
   ctx: CanvasRenderingContext2D, camera: Camera, state: WeaponsState, now: number,
 ): void {
   ctx.save();
-  // 구름 (라이트닝 폭풍) — 절차적 구름. 추후 sprite 로 교체 가능.
-  for (const s of state.storms) {
-    const age = (now - s.bornAt) / LIGHTNING_CLOUD_LIFE;
-    if (age < 0 || age > 1) continue;
-    // 등장(0~0.15) / 유지 / 페이드(0.7~1)
-    let alpha = 1;
-    if (age < 0.15) alpha = age / 0.15;
-    else if (age > 0.7) alpha = 1 - (age - 0.7) / 0.3;
-    const cx = Math.round(s.cloudWorldX - camera.x);
-    const cy = Math.round(s.cloudWorldY - camera.y);
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, alpha);
-    // 어두운 적운 — 회색 ellipse 3~5 개 겹쳐서
-    const blobs: [number, number, number, number][] = [
-      [-22, 4, 20, 11],
-      [-8, -2, 22, 13],
-      [10, 2, 22, 12],
-      [26, 6, 16, 10],
-      [-12, 10, 18, 8],
-    ];
-    for (const [ox, oy, rx, ry] of blobs) {
-      ctx.fillStyle = '#3a3a44';
-      ctx.beginPath(); ctx.ellipse(cx + ox, cy + oy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-    }
-    for (const [ox, oy, rx, ry] of blobs) {
-      ctx.fillStyle = '#56565e';
-      ctx.beginPath(); ctx.ellipse(cx + ox, cy + oy - 2, rx * 0.85, ry * 0.7, 0, 0, Math.PI * 2); ctx.fill();
-    }
-    // 깜빡이는 가운데 코어 — 번개 모이는 느낌
-    const flick = (Math.sin(now * 20) + 1) / 2;
-    ctx.fillStyle = `rgba(255, 240, 140, ${0.25 + flick * 0.35})`;
-    ctx.beginPath(); ctx.arc(cx, cy + 4, 8 + flick * 2, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
+  // 절차적 구름 제거 — 라이트닝 원점은 차지 중 그려진 "눈" 위치. 구름 sprite 는 차지
+  // 페이즈가 시각화 담당 (drawLightningEyes). 발사 시점엔 bolt zigzag 만 그림.
   // 라이트닝
   for (const b of state.bolts) {
     const age = (now - b.bornAt) / LIGHTNING_LIFE;
@@ -578,6 +597,37 @@ const akImg = new Image();
 let akReady = false;
 akImg.src = '/sprites/items/ak47.png';
 akImg.onload = () => { akReady = true; };
+
+// ===== 라이트닝 차지 시각 — eyes 스프라이트 (96×32, 3프레임 32×32) =====
+const EYES_FRAME = 32;
+const EYES_SCALE = 1.5;   // 32 → 48 px 로 살짝 키워서 잘 보이게
+const eyesImg = new Image();
+let eyesReady = false;
+eyesImg.src = '/sprites/effects/eyes.png';
+eyesImg.onload = () => { eyesReady = true; };
+
+// 캐릭터 근처(머리 위쪽)에 차지 중인 눈을 그림.
+// renderer 가 game loop 에서 lightningEyesVisual() 결과 받아 호출.
+export function drawLightningEyes(
+  ctx: CanvasRenderingContext2D, camera: Camera,
+  ownerX: number, ownerY: number, charH: number,
+  visual: { frame: number; alpha: number },
+): void {
+  if (!eyesReady) return;
+  const dst = Math.round(EYES_FRAME * EYES_SCALE);
+  const sx = Math.round(ownerX - camera.x - dst / 2);
+  // 머리 위 (charH 만큼 올라가서 + 무기 아이콘 살짝 위)
+  const sy = Math.round(ownerY - camera.y - charH - 60);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, visual.alpha));
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(
+    eyesImg,
+    visual.frame * EYES_FRAME, 0, EYES_FRAME, EYES_FRAME,
+    sx, sy, dst, dst,
+  );
+  ctx.restore();
+}
 
 // ===== 캐릭터 머리 위 보유 무기 아이콘 =====
 // 황금 테두리 원 안에 무기 표시 — AK 는 실제 sprite, 나머지는 색점+심볼.
