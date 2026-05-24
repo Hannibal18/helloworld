@@ -542,6 +542,42 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   // 마일스톤: 50킬마다 풀힐 (보너스 무기는 제거됨)
   let lastHealKillThreshold = 0;
 
+  // ===== 사망 시 자유 카메라 (스와이프) =====
+  // 죽은 동안 카메라를 손가락 드래그로 자유롭게 움직임. 살아나면 자동 리셋.
+  let freeCamX = 0, freeCamY = 0;
+  let freeCamActive = false;
+  let dragLast: { x: number; y: number } | null = null;
+  if (isZombieMode) {
+    const canvasEl = ui.canvas;
+    const startDrag = (cx: number, cy: number) => {
+      if (!local.dead) return;
+      dragLast = { x: cx, y: cy };
+    };
+    const moveDrag = (cx: number, cy: number) => {
+      if (!local.dead || !dragLast) return;
+      const rect = canvasEl.getBoundingClientRect();
+      const scale = canvasEl.width / rect.width;   // CSS px → 백버퍼 px
+      const dx = (cx - dragLast.x) * scale;
+      const dy = (cy - dragLast.y) * scale;
+      freeCamX -= dx;
+      freeCamY -= dy;
+      dragLast = { x: cx, y: cy };
+    };
+    const endDrag = () => { dragLast = null; };
+    canvasEl.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY));
+    canvasEl.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
+    canvasEl.addEventListener('mouseup', endDrag);
+    canvasEl.addEventListener('mouseleave', endDrag);
+    canvasEl.addEventListener('touchstart', (e) => {
+      const t = e.touches[0]; if (t) startDrag(t.clientX, t.clientY);
+    }, { passive: true });
+    canvasEl.addEventListener('touchmove', (e) => {
+      const t = e.touches[0]; if (t) moveDrag(t.clientX, t.clientY);
+    }, { passive: true });
+    canvasEl.addEventListener('touchend', endDrag, { passive: true });
+    canvasEl.addEventListener('touchcancel', endDrag, { passive: true });
+  }
+
   // ===== 비석 부활 (zombie 모드) =====
   // 사망 시: 비석은 맵 어딘가 랜덤 (collision 제외) 에 생성. 동료가 그 옆에서
   // REVIVE_TIME_SEC 머무르면 부활.
@@ -630,11 +666,14 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     deathScreenShown = true;
   };
   void loadBest;
-  // 사망 = 게임 종료. 리스폰 불가. 버튼은 페이지 새로고침으로 새 게임.
+  // 사망 화면 = 파티 전멸 시 표시. 버튼은 대기실로 (매치메이킹 새 룸 필요).
   if (deathRetryEl) {
-    deathRetryEl.textContent = '🔄 새로고침으로 다시';
+    deathRetryEl.textContent = '🚪 대기실로';
     deathRetryEl.addEventListener('click', () => {
-      location.reload();
+      const u = new URL(window.location.href);
+      u.searchParams.delete('battle');
+      u.searchParams.delete('diff');
+      window.location.href = u.toString();
     });
   }
   const applyZombieWaveStart = (_p: ZombieWaveStartPayload) => {
@@ -1148,10 +1187,13 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     }
     prevLocalHp = local.hp;
 
-    // 좀비 모드 — 사망 화면 표시/숨김 토글
+    // 좀비 모드 — 파티 전멸 시에만 사망 화면 (혼자만 죽으면 비석 + 자유카메라 + 동료 부활 대기)
     if (isZombieMode) {
-      if (local.dead && !deathScreenShown) showDeathScreen(scoreState);
-      else if (!local.dead && deathScreenShown) hideDeathScreen();
+      let aliveCount = local.dead ? 0 : 1;
+      for (const r of remotes.values()) if (!r.dead) aliveCount++;
+      const wipe = aliveCount === 0;
+      if (wipe && !deathScreenShown) showDeathScreen(scoreState);
+      else if (!wipe && deathScreenShown) hideDeathScreen();
     }
     // 자기 몸통(BODY AABB + 여유 패딩) 에 들어온 총알(자기 자신이 쏜 것 제외) 처리.
     // BODY 만으론 너무 작아서 잘 안 맞는다는 피드백 → 사방으로 BULLET_HIT_PAD 만큼 확장.
@@ -1216,10 +1258,22 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     }
     lastPosMoving = movingNow;
 
-    // 카메라는 실제 dt 로 항상 갱신 (정지 중에도 흔들림 진행).
-    // 키보드가 화면 하단을 가리는 케이스는 더 이상 발생 안 함 (채팅 입력 UI 제거).
-    // 단순히 화면 정중앙에 캐릭터.
-    updateCamera(camera, local.x, local.y, map.pixelW, map.pixelH, realDt, 0.5);
+    // 카메라 — 살아있으면 캐릭터 따라가기, 죽었으면 자유 카메라 (드래그로 이동).
+    if (isZombieMode && local.dead) {
+      if (!freeCamActive) {
+        // 사망 직후 한 번만 — 비석 위치에서 시작
+        freeCamX = local.x;
+        freeCamY = local.y;
+        freeCamActive = true;
+      }
+      // 맵 경계 안에 클램프
+      freeCamX = Math.max(0, Math.min(map.pixelW, freeCamX));
+      freeCamY = Math.max(0, Math.min(map.pixelH, freeCamY));
+      updateCamera(camera, freeCamX, freeCamY, map.pixelW, map.pixelH, realDt, 0.5);
+    } else {
+      if (freeCamActive) freeCamActive = false;   // 부활 → 다음 사망 시 비석 위치에서 다시 시작
+      updateCamera(camera, local.x, local.y, map.pixelW, map.pixelH, realDt, 0.5);
+    }
     updateDebugInfo(debug, local.x, local.y, TILE);
 
     const renderables: RenderableRemote[] = [];
