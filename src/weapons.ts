@@ -440,34 +440,40 @@ export function drawOwnedIcons(
   if (items.length === 0) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.font = '700 10px "Apple SD Gothic Neo", system-ui, sans-serif';
+  ctx.font = '700 14px "Apple SD Gothic Neo", system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const ICON_R = 9;
-  const GAP = 3;
+  const ICON_R = 15;                       // 9 → 15 로 키움 (한 번에 한 무기라 시인성 우선)
+  const GAP = 4;
   const total = items.length * (ICON_R * 2) + (items.length - 1) * GAP;
   const startX = Math.round(ownerX - camera.x - total / 2 + ICON_R);
-  const y = Math.round(ownerY - camera.y - charH - 18);
+  const y = Math.round(ownerY - camera.y - charH - 22);
   for (let i = 0; i < items.length; i++) {
     const sx = startX + i * (ICON_R * 2 + GAP);
     // 황금 테두리 + 어둑한 안쪽
     ctx.strokeStyle = '#ffd84a';
-    ctx.lineWidth = 1.2;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.beginPath(); ctx.arc(sx, y, ICON_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     const it = items[i];
     if (it.kind === 'ak') {
       if (akReady) {
-        const w = ICON_R * 2 - 2, h = Math.round(w * (akImg.height / akImg.width));
+        // AK 비율 유지하면서 원 안에 꽉 차게 — 가로 우선 fit
+        const maxW = ICON_R * 2 - 4;
+        const maxH = ICON_R * 2 - 4;
+        const aspect = akImg.width / akImg.height;
+        let w = maxW;
+        let h = w / aspect;
+        if (h > maxH) { h = maxH; w = h * aspect; }
         ctx.drawImage(akImg, sx - w / 2, y - h / 2, w, h);
       } else {
         ctx.fillStyle = '#aaa';
-        ctx.beginPath(); ctx.arc(sx, y, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(sx, y, 5, 0, Math.PI * 2); ctx.fill();
       }
     } else {
       // 색점 + 이모지 심볼
       ctx.fillStyle = COLOR[it.type];
-      ctx.beginPath(); ctx.arc(sx, y, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx, y, 7, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#1a0e08';
       ctx.fillText(SYMBOL[it.type], sx, y + 1);
     }

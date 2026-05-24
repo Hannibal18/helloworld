@@ -498,6 +498,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       if (got) {
         gunState.drops.delete(got.id);
         local.gunUntil = now + GUN_HOLD_DURATION;
+        clearAllOwnedWeapons(weaponsState);   // 한 번에 한 무기 — 보조 무기 해제
         net.sendGunPickup({ id: got.id, by: local.id });
       }
     }
@@ -513,6 +514,7 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
       if (got) {
         weaponsState.drops.delete(got.id);
         grantOwnership(weaponsState, got.type, now);
+        local.gunUntil = 0;                    // 한 번에 한 무기 — AK 해제
         net.sendWeaponPickup({ id: got.id, by: local.id, type: got.type });
       }
     }
@@ -666,13 +668,8 @@ async function startGameAsync(name: string, charIdxArg?: number): Promise<void> 
     ctx2d.fillRect(0, 0, canvas.width, canvas.height);
     renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale });
 
-    // 총(AK) — 드랍 + 보유 중 캐릭터 옆 + 총알
-    const heldOwners: { x: number; y: number; dir: 'up'|'down'|'left'|'right' }[] = [];
-    if (now < local.gunUntil && !local.dead) heldOwners.push({ x: local.x, y: local.y, dir: local.dir });
-    for (const r of remotes.values()) {
-      if (now < r.gunUntil && !r.dead) heldOwners.push({ x: r.renderX, y: r.renderY, dir: r.dir });
-    }
-    drawGunOverlay(ctx2d, camera, gunState.drops.values(), gunState.bullets, heldOwners, now);
+    // 총(AK) — 드랍 + 총알. 보유 중 캐릭터 옆 그림은 제거 (머리 위 아이콘만 사용)
+    drawGunOverlay(ctx2d, camera, gunState.drops.values(), gunState.bullets, [], now);
 
     // 보조 무기 드랍 + 발사체 + 보유 아이콘
     drawWeaponDrops(ctx2d, camera, weaponsState.drops.values(), now);
