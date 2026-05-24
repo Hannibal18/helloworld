@@ -419,7 +419,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       // 원격 플레이어 공격도 내 클라이언트의 좀비를 죽일 수 있음
       tryHitZombiesFromAttack(zombieWave, a);
       const wasAlive = !local.dead;
-      onAttackBroadcast(local, a, updateCtx());
+      onAttackBroadcast(local, a, updateCtx(), mode);
       if (wasAlive && local.dead) {
         const killer = remotes.get(a.id);
         const killerName = killer ? killer.name : '???';
@@ -775,7 +775,8 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     }
     // 자기 몸통(BODY AABB + 여유 패딩) 에 들어온 총알(자기 자신이 쏜 것 제외) 처리.
     // BODY 만으론 너무 작아서 잘 안 맞는다는 피드백 → 사방으로 BULLET_HIT_PAD 만큼 확장.
-    if (!local.dead && now >= local.iFrameUntil) {
+    // 좀비 모드는 PvP 비활성 — 다른 플레이어 총알 무시 (협동).
+    if (!isZombieMode && !local.dead && now >= local.iFrameUntil) {
       const BULLET_HIT_PAD = 16;
       const me = {
         x0: local.x - BODY_HW - BULLET_HIT_PAD,

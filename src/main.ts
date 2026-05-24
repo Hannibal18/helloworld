@@ -92,9 +92,11 @@ ready(() => {
     let name = nick.value.trim();
     if (!name) name = `손님${Math.floor(Math.random() * 9000 + 1000)}`;
     name = name.slice(0, 12);
+    // 좀비 모드 단독 운영: 모든 접속자가 'default' 한 방에 모임.
+    // PK 모드 부활 시: input 값 우선, 빈 값이면 randomGameId() 로 새 방 생성.
     let gameId = (gameIdInput?.value ?? '').trim().toUpperCase().slice(0, 8);
     if (!gameId) {
-      gameId = randomGameId();
+      gameId = mode === 'zombie' ? 'DEFAULT' : randomGameId();
       if (gameIdInput) gameIdInput.value = gameId;
     }
     try {
