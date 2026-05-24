@@ -42,10 +42,15 @@
           <div id="bubbles" class="bubbles-layer"></div>
         </div>
 
-        <!-- 상단 HUD -->
+        <!-- 상단 HUD — 좌/우 그룹으로 분리해서 점수(중앙 canvas) 가 가려지지 않게 -->
         <div class="hud-top">
-          <div class="hud-pill" id="roster">접속자 1</div>
-          <div class="hud-pill" id="my-kills">킬 0</div>
+          <div class="hud-top-group">
+            <div class="hud-pill" id="roster">접속자 1</div>
+            <div class="hud-pill" id="my-kills">킬 0</div>
+          </div>
+          <div class="hud-top-group hud-top-right" id="hud-top-right">
+            <!-- 스테이지 pill 동적 삽입 -->
+          </div>
         </div>
 
         <!-- 좌상단 스택: 랭킹 → 채팅 로그 (flex column 으로 자동 정렬) -->

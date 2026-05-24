@@ -364,10 +364,18 @@ input[type="text"], textarea {
   right: calc(8px + env(safe-area-inset-right));
   display: flex;
   align-items: center;
+  justify-content: space-between;   /* 좌/우 그룹 분리 → 중앙 점수 가려짐 방지 */
   gap: 6px;
   z-index: 5;
   pointer-events: none;
 }
+.hud-top-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;          /* 좁은 화면에서 줄어들도록 */
+}
+.hud-top-right { justify-content: flex-end; }
 .hud-pill {
   font-size: 11px;
   padding: 4px 10px;

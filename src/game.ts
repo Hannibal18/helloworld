@@ -576,13 +576,14 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   // 우상단 HUD 에 작은 스테이지 표시 — 동적으로 삽입.
   let stagePillEl: HTMLDivElement | null = null;
   if (isZombieMode) {
-    const hudTop = document.querySelector('.hud-top');
-    if (hudTop) {
+    // 우측 그룹에 삽입 — 좌측(roster/kills) 와 분리되어 중앙 점수 보호.
+    const hudRight = document.getElementById('hud-top-right') ?? document.querySelector('.hud-top');
+    if (hudRight) {
       stagePillEl = document.createElement('div');
       stagePillEl.className = 'hud-pill';
       stagePillEl.id = 'stage-pill';
       stagePillEl.textContent = '🎯 대기';
-      hudTop.appendChild(stagePillEl);
+      hudRight.appendChild(stagePillEl);
     }
   }
 
@@ -630,7 +631,8 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       }
       if (stagePillEl) {
         const remain = Math.max(0, Math.floor(progress.remainingSec));
-        stagePillEl.textContent = `🎯 ${progress.rawStage.name} · ${remain}s`;
+        // 짧게 표기: "🎯 S1 · 293s" — 전체 스테이지 이름은 전환 시 배너로만.
+        stagePillEl.textContent = `🎯 S${progress.totalIdx + 1} · ${remain}s`;
       }
       // 보스 출현 감지 — boss 타입 좀비 카운트가 늘어난 순간 사이렌.
       let bossCount = 0;
