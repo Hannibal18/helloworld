@@ -17,6 +17,8 @@ import type {
   PartyLeavePayload,
   PosPayload,
   RevivePayload,
+  ZombieHitRequestPayload,
+  ZombieSnapshotPayload,
   PresenceMeta,
   WeaponDropPayload,
   WeaponPickupPayload,
@@ -62,6 +64,8 @@ export interface NetHandlers {
   onPartyDecline: (p: PartyDeclinePayload) => void;
   onPartyLeave: (p: PartyLeavePayload) => void;
   onRevive: (p: RevivePayload) => void;
+  onZombieSnapshot: (p: ZombieSnapshotPayload) => void;
+  onZombieHitRequest: (p: ZombieHitRequestPayload) => void;
   onPresenceSync: (members: PresenceMeta[]) => void;
   onPresenceJoin: (members: PresenceMeta[]) => void;
   onPresenceLeave: (members: PresenceMeta[]) => void;
@@ -88,6 +92,8 @@ export interface Net {
   sendPartyDecline: (p: PartyDeclinePayload) => void;
   sendPartyLeave: (p: PartyLeavePayload) => void;
   sendRevive: (p: RevivePayload) => void;
+  sendZombieSnapshot: (p: ZombieSnapshotPayload) => void;
+  sendZombieHitRequest: (p: ZombieHitRequestPayload) => void;
   unsubscribe: () => Promise<void>;
 }
 
@@ -129,6 +135,8 @@ export function connect(meta: PresenceMeta, gameId: string, mode: GameMode, hand
     .on('broadcast', { event: 'party_decline' }, ({ payload }) => handlers.onPartyDecline(payload as PartyDeclinePayload))
     .on('broadcast', { event: 'party_leave' },   ({ payload }) => handlers.onPartyLeave(payload as PartyLeavePayload))
     .on('broadcast', { event: 'revive' },        ({ payload }) => handlers.onRevive(payload as RevivePayload))
+    .on('broadcast', { event: 'zombie_snapshot' },    ({ payload }) => handlers.onZombieSnapshot(payload as ZombieSnapshotPayload))
+    .on('broadcast', { event: 'zombie_hit_request' }, ({ payload }) => handlers.onZombieHitRequest(payload as ZombieHitRequestPayload))
     .on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState() as Record<string, readonly unknown[]>;
       const all: PresenceMeta[] = [];
@@ -172,6 +180,8 @@ export function connect(meta: PresenceMeta, gameId: string, mode: GameMode, hand
     sendPartyDecline:   (p) => send('party_decline', p),
     sendPartyLeave:     (p) => send('party_leave', p),
     sendRevive:         (p) => send('revive', p),
+    sendZombieSnapshot: (p) => send('zombie_snapshot', p),
+    sendZombieHitRequest:(p) => send('zombie_hit_request', p),
     unsubscribe: async () => {
       try { await channel.untrack(); } catch { /* ignore */ }
       await channel.unsubscribe();

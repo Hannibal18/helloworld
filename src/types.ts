@@ -88,6 +88,32 @@ export interface ZombieWaveStartPayload {
   startedAt: number; // 호스트 기준 sec (참고용 — 실제 클라이언트는 자기 now 사용)
 }
 
+// ===== 호스트 권위 좀비 동기화 =====
+// 호스트가 매 SNAPSHOT_INTERVAL 마다 좀비 전체 상태 broadcast → 모든 클라이언트
+// 같은 좀비를 봄. 데미지는 비-호스트가 ZombieHitRequest 로 호스트에 요청.
+export interface ZombieSnapshotItem {
+  id: string;
+  type: 'normal' | 'fast' | 'tank' | 'gold' | 'boss';
+  x: number;
+  y: number;
+  dir: Dir;
+  hp: number;
+  maxHp: number;
+  attackingUntil?: number;  // 호스트 시각 기준 (수신측이 자기 now 로 보정)
+}
+export interface ZombieSnapshotPayload {
+  hostNow: number;          // 호스트 시각 (시각 보정용)
+  zombies: ZombieSnapshotItem[];
+  killCount: number;
+  newKillPoints: number[];  // 직전 snapshot 이후 새 처치 점수 (모두 추가)
+}
+// 비-호스트가 데미지 시도 → 호스트가 적용 → 다음 snapshot 에 반영.
+export interface ZombieHitRequestPayload {
+  zid: string;
+  dmg: number;
+  byId: string;
+}
+
 // 보조 무기 드랍 (Lightning/Ice/Curse — 모두 차지/방출 방식).
 export type WeaponTypePayload = 'lightning' | 'ice' | 'curse';
 export interface WeaponDropPayload {

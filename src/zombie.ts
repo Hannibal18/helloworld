@@ -20,7 +20,7 @@ import { spawnBloodBurst } from './particles';
 import { ATTACK_COOLDOWN as PLAYER_ATTACK_COOLDOWN, ATTACK_DAMAGE as PLAYER_ATTACK_DAMAGE, BODY_HH, BODY_HW, BODY_OFF_Y, SPEED as PLAYER_SPEED, attackerHitbox } from './player';
 import { currentCharScale } from './sprites';
 import { CFG_ZOMBIE_TYPES, getConfig, getStageProgress } from './config';
-import type { AttackPayload, Dir, RemotePlayer } from './types';
+import type { AttackPayload, Dir, RemotePlayer, ZombieSnapshotPayload } from './types';
 
 // 연속 스폰 모드 — 입장 후 끝없이 좀비 등장. 난이도는 config 의 스테이지가 결정.
 // 파티원 수 비례: spawn / max / boss 빈도 모두 √(playerCount) 곱 (cap 3.0).
@@ -100,6 +100,9 @@ export interface ZombieWave {
   nextBossAt: number;
   // 처치된 좀비의 점수 큐 — game.ts 가 매 프레임 drain 해서 score 에 반영.
   recentKillPoints: number[];
+  // 호스트 권위 시뮬 플래그 — game.ts 가 매 프레임 isLocalHost() 로 세팅.
+  // true = 풀 시뮬 (spawn/AI/damage 모두 자기 결정), false = snapshot 받아서 대체.
+  isHostSim: boolean;
 }
 
 const BOSS_FIRST_AT = 90;    // 첫 보스 = 시작 후 90s
@@ -115,7 +118,12 @@ export function makeZombieWave(now: number): ZombieWave {
     killCount: 0,
     nextBossAt: Infinity,
     recentKillPoints: [],
+    isHostSim: false,
   };
+}
+
+export function setHostSim(wave: ZombieWave, isHost: boolean): void {
+  wave.isHostSim = isHost;
 }
 
 // 현재 스테이지의 zombie 설정 — getStageProgress 로 elapsed → stage 매핑.
@@ -242,10 +250,77 @@ export function bulletHitsZombie(wave: ZombieWave, bx: number, by: number): stri
   }
   return null;
 }
+// ===== 데미지 라우팅 (호스트/비-호스트) =====
+// 모든 데미지 시도는 intentZombieHit 를 거침.
+//   호스트 → 직접 killZombieById 적용 + 다음 snapshot 에 반영.
+//   비-호스트 → 시각 효과(피)만 + game.ts 가 hit_request broadcast (intent 콜백).
+// game.ts 가 startup 에 setHitIntentHandler() 로 broadcast 함수 주입.
+let _onHitIntent: ((zid: string, dmg: number) => void) | null = null;
+export function setHitIntentHandler(fn: ((zid: string, dmg: number) => void) | null): void {
+  _onHitIntent = fn;
+}
+
+export function intentZombieHit(wave: ZombieWave, zid: string, damage: number = 1): void {
+  if (!wave.active) return;
+  if (wave.isHostSim) {
+    killZombieById(wave, zid, damage);
+    return;
+  }
+  // 비-호스트: 시각 피드백 (피) + broadcast 요청
+  const z = wave.zombies.find((x) => x.id === zid);
+  if (z) {
+    const now = performance.now() / 1000;
+    spawnBloodBurst(z.x, z.y - ZOMBIE_BODY_HH, now);
+  }
+  _onHitIntent?.(zid, damage);
+}
+
+// ===== 스냅샷 적용 (비-호스트 전용) =====
+// 호스트가 broadcast 한 좀비 전체 상태로 wave.zombies 교체.
+// 기존 attackingUntil 같은 클라이언트 측 상태 보존 가능하면 보존.
+export function applyZombieSnapshot(wave: ZombieWave, p: ZombieSnapshotPayload, localNow: number): void {
+  // 시각 보정: hostNow → localNow 변환 offset
+  const tOff = localNow - p.hostNow;
+  const oldById = new Map<string, Zombie>();
+  for (const z of wave.zombies) oldById.set(z.id, z);
+  const next: Zombie[] = [];
+  for (const item of p.zombies) {
+    const old = oldById.get(item.id);
+    next.push({
+      id: item.id,
+      type: item.type as ZombieType,
+      x: item.x, y: item.y,
+      dir: item.dir,
+      hp: item.hp,
+      maxHp: item.maxHp,
+      attackingUntil: typeof item.attackingUntil === 'number' ? item.attackingUntil + tOff : (old?.attackingUntil ?? 0),
+      lastAttackAt: old?.lastAttackAt ?? 0,
+    });
+  }
+  wave.zombies = next;
+  wave.killCount = p.killCount;
+  for (const pts of p.newKillPoints) wave.recentKillPoints.push(pts);
+}
+
+// ===== 스냅샷 생성 (호스트 전용) =====
+// 호스트가 매 SNAPSHOT_INTERVAL 마다 호출. recentKillPoints 는 비워서 다음 사이클에 누적.
+export function makeZombieSnapshot(wave: ZombieWave, hostNow: number): ZombieSnapshotPayload {
+  const payload: ZombieSnapshotPayload = {
+    hostNow,
+    zombies: wave.zombies.map((z) => ({
+      id: z.id, type: z.type, x: z.x, y: z.y, dir: z.dir,
+      hp: z.hp, maxHp: z.maxHp, attackingUntil: z.attackingUntil,
+    })),
+    killCount: wave.killCount,
+    newKillPoints: wave.recentKillPoints.slice(),
+  };
+  wave.recentKillPoints.length = 0;
+  return payload;
+}
+
 // damage 만큼 깎고, hp <= 0 이면 제거 + 점수 큐 push + killCount 증가.
-// damage 미지정 시 현재 스테이지의 weapons.damageMult (round) 자동 적용 —
-// 모든 무기(AK/권총/미사일/라이트닝/마늘/얼음/저주)가 별도 코드 없이 자동 반영.
-// 명시적으로 1 을 넘기면 멀티플라이어 무시.
+// 호스트에서만 호출 (비-호스트는 intentZombieHit → broadcast 경로 사용).
+// damage 미지정 시 현재 스테이지의 weapons.damageMult (round) 자동 적용.
 export function killZombieById(wave: ZombieWave, id: string, damage?: number): boolean {
   const z = wave.zombies.find((x) => x.id === id);
   if (!z) return false;
@@ -314,6 +389,25 @@ export function updateWave(
   cb: ZombieHitCallbacks,
 ): void {
   if (!wave.active) return;
+  // ===== 비-호스트: 좀비 위치/HP 는 snapshot 으로 받음. 여기선 로컬 플레이어
+  //       접촉 데미지만 처리 (자기 HP 깎임 + 좀비 attack 애니메이션 트리거).
+  if (!wave.isHostSim) {
+    for (const z of wave.zombies) {
+      if (now < z.attackingUntil) continue;
+      if (local.dead) continue;
+      const dx = local.x - z.x;
+      const dy = local.y - z.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= ATTACK_RANGE_PX && now - z.lastAttackAt >= ATTACK_COOLDOWN_SEC) {
+        z.lastAttackAt = now;
+        z.attackingUntil = now + ATTACK_MOTION_SEC;
+        z.dir = dirFromVec(dx, dy);
+        cb.onLocalHit(ATTACK_DAMAGE, z.id);
+      }
+    }
+    return;
+  }
+  // ===== 호스트: 풀 시뮬 (spawn/AI/contact) =====
   // 연속 스폰 — 종료 없음. spawn 주기는 시간 따라 가속.
   if (now >= wave.nextSpawnAt) {
     wave.nextSpawnAt = now + currentSpawnInterval(wave, now);

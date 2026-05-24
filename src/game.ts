@@ -42,12 +42,17 @@ import {
 } from './gun';
 import { ensureGunSprite, drawGunOverlay, drawDamageFlash } from './render';
 import {
+  applyZombieSnapshot,
   bulletHitsZombie,
   drawWaveAmbient,
   drawZombies,
+  intentZombieHit,
   killZombieById,
+  makeZombieSnapshot,
   makeZombieWave,
   maybeTriggerWave,
+  setHitIntentHandler,
+  setHostSim,
   setRoomPlayerCount,
   startWave,
   tryHitFromAttack as tryHitZombiesFromAttack,
@@ -86,7 +91,8 @@ import type {
   HpPayload, LobbyReadyPayload, MatchStartPayload,
   PartyAcceptPayload, PartyDeclinePayload, PartyInvitePayload, PartyLeavePayload,
   PosPayload, PresenceMeta, RemotePlayer, RevivePayload,
-  WeaponDropPayload, WeaponPickupPayload, ZombieWaveStartPayload,
+  WeaponDropPayload, WeaponPickupPayload,
+  ZombieHitRequestPayload, ZombieSnapshotPayload, ZombieWaveStartPayload,
 } from './types';
 
 const POS_SEND_INTERVAL = 1 / 10;
@@ -538,6 +544,14 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
 
   // ===== 좀비 웨이브 =====
   const zombieWave: ZombieWave = makeZombieWave(nowSec());
+  // 호스트 권위 동기화 — 비-호스트의 모든 데미지 시도는 hit_request 로 broadcast.
+  // 호스트가 받아서 실제 적용.
+  setHitIntentHandler((zid, dmg) => {
+    net.sendZombieHitRequest({ zid, dmg, byId: local.id });
+  });
+  // 호스트 → 다른 모든 클라에 좀비 상태 snapshot. 5 Hz (200ms 주기).
+  let lastSnapshotAt = 0;
+  const SNAPSHOT_INTERVAL = 0.2;
   // ===== 좀비 모드 점수/콤보 (로컬 전용) =====
   let scoreState: ScoreState | null = null;
   // 마일스톤: 50킬마다 풀힐 (보너스 무기는 제거됨)
@@ -796,6 +810,14 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     onPartyDecline: (p: PartyDeclinePayload) => { applyPartyDecline(p); },
     onPartyLeave: (p: PartyLeavePayload) => { applyPartyLeave(p); },
     onRevive: (p: RevivePayload) => { applyRevive(p); },
+    onZombieSnapshot: (p: ZombieSnapshotPayload) => {
+      // 호스트는 자기 시뮬레이션이 권위 — 스냅샷 무시.
+      if (!isLocalHost()) applyZombieSnapshot(zombieWave, p, nowSec());
+    },
+    onZombieHitRequest: (p: ZombieHitRequestPayload) => {
+      // 호스트만 적용. 비-호스트는 자기 hit 도 broadcast 되지만 자기 클라엔 영향 X.
+      if (isLocalHost()) killZombieById(zombieWave, p.zid, p.dmg);
+    },
     onDeath: (d: DeathPayload) => {
       const now = nowSec();
       const r = remotes.get(d.id);
@@ -1086,12 +1108,12 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       stepProjectiles(weaponsState, dt, now, zombieWave);
     }
 
-    // 총알 vs 좀비 — killZombieById 가 스테이지 damageMult 자동 적용.
+    // 총알 vs 좀비 — intentZombieHit 가 호스트면 적용 / 비-호스트면 broadcast.
     if (zombieWave.active && gunState.bullets.length > 0) {
       gunState.bullets = gunState.bullets.filter((b) => {
         const zid = bulletHitsZombie(zombieWave, b.x, b.y);
         if (zid) {
-          killZombieById(zombieWave, zid);
+          intentZombieHit(zombieWave, zid);
           return false; // 총알 제거
         }
         return true;
@@ -1102,6 +1124,8 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     if (isZombieMode) {
       // 파티원 수 갱신 → 좀비 스폰/cap/보스주기 √N 비례 (zombie.ts 내부 사용)
       setRoomPlayerCount(remotes.size + 1);
+      // 매 프레임 호스트 여부 갱신 — 호스트 변경 시 자동으로 시뮬 권한 이동
+      setHostSim(zombieWave, isLocalHost());
       maybeTriggerWave(zombieWave, now, isLocalHost(), () => {
         // 호스트가 트리거 → 자기도 즉시 시작 + broadcast
         applyZombieWaveStart({ startedAt: now });
@@ -1131,6 +1155,11 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         }
       },
     });
+      // ===== 호스트 좀비 snapshot broadcast (5 Hz) =====
+      if (isLocalHost() && zombieWave.active && now - lastSnapshotAt >= SNAPSHOT_INTERVAL) {
+        lastSnapshotAt = now;
+        net.sendZombieSnapshot(makeZombieSnapshot(zombieWave, now));
+      }
     } // /isZombieMode
 
     // ===== 점수 / 콤보 / 마일스톤 (좀비 모드만) =====
