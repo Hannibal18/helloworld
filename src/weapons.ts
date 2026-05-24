@@ -78,8 +78,6 @@ const MISSILE_HOMING_TURN_RATE = 6;  // radians/sec — 회전 한계
 // 라이트닝 — 차지/방출 시스템 (특수 메커니즘).
 const LIGHTNING_LIFE = 0.18;           // 단일 zigzag 라이트닝 비주얼 지속
 const LIGHTNING_MAX_CHARGE_SEC = 3.0;  // 풀차지까지 시간
-const LIGHTNING_MAX_BOLTS = 10;        // 풀차지 시 최대 번개 개수
-const LIGHTNING_MIN_BOLTS = 1;
 const LIGHTNING_BOLT_STAGGER = 0.08;   // 번개간 간격
 const LIGHTNING_CLOUD_LIFE = 1.2;      // 구름 표시 시간
 const LIGHTNING_RANGE_VIEW_PAD = 64;   // 카메라 viewport 밖 좀비도 약간 잡음
@@ -121,11 +119,11 @@ const IMPACT_LIFE = 0.25;
 const ORIGIN_FLASH_LIFE = 0.12;
 // 차지 발사 시 만들어지는 폭풍 — 구름 + 다발 번개.
 interface LightningStorm {
-  cloudWorldX: number;       // 카메라 fire 시점 기준 화면 가운데 위쪽
-  cloudWorldY: number;
   bornAt: number;
   bolts: {
     triggerAt: number;       // 이 시각 되면 실제 zombie kill + visual 추가
+    originX: number;         // 발사 origin (구름 위치) — 슬롯마다 다름
+    originY: number;
     targetX: number;
     targetY: number;
     fired: boolean;
@@ -269,20 +267,19 @@ export function handleLightningInput(
     const frac = (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC;
     if (frac >= 1) state.lightningFullChargedAt = now;
   }
-  const origin = lightningOriginFor(local.x, local.y);
-  // 풀차지 후 깜빡임 시퀀스 끝 → 자동 발사
+  // 풀차지 후 깜빡임 시퀀스 끝 → 자동 발사 (모든 7 구름)
   if (state.lightningFullChargedAt !== null && (now - state.lightningFullChargedAt) >= LIGHTNING_BLINK_TOTAL) {
     state.lightningChargeStartedAt = null;
     state.lightningFullChargedAt = null;
-    spawnLightningStorm(state, now, 1.0, wave, camera, origin);
+    spawnLightningStorm(state, now, 1.0, wave, camera, local.x, local.y);
     return;
   }
-  // release before 풀차지 — 현재 차지량 비례로 발사 (풀차지 직후 release 도 1.0)
+  // release before 풀차지 — 현재 차지량 비례 (구름 개수 = chargeToCloudCount)
   if (!attackHeldNow && attackHeldPrev && state.lightningChargeStartedAt !== null) {
     const chargeFrac = Math.min(1, (now - state.lightningChargeStartedAt) / LIGHTNING_MAX_CHARGE_SEC);
     state.lightningChargeStartedAt = null;
     state.lightningFullChargedAt = null;
-    spawnLightningStorm(state, now, chargeFrac, wave, camera, origin);
+    spawnLightningStorm(state, now, chargeFrac, wave, camera, local.x, local.y);
   }
 }
 
@@ -313,19 +310,14 @@ export function lightningEyesVisual(state: WeaponsState, now: number): { frame: 
   return { frame, alpha: 0.5 * fadeIn };
 }
 
-// 번개 origin = 눈 위치 (캐릭터 머리 위쪽 고정 오프셋). 발사 시점의 local 좌표 사용.
-const LIGHTNING_ORIGIN_OFFSET_Y = -60; // local.y(발) 에서 위쪽으로
-
+// 구름 N개 위치에서 각각 1발씩 번개 발사. N = chargeToCloudCount(chargeFrac).
 function spawnLightningStorm(
   state: WeaponsState, now: number, chargeFrac: number, wave: ZombieWave,
   camera: { x: number; y: number; viewW: number; viewH: number },
-  origin?: { x: number; y: number },
+  localX: number, localY: number,
 ): void {
-  const boltCount = Math.max(
-    LIGHTNING_MIN_BOLTS,
-    Math.round(LIGHTNING_MIN_BOLTS + chargeFrac * (LIGHTNING_MAX_BOLTS - LIGHTNING_MIN_BOLTS)),
-  );
-  // viewport 안 좀비 후보 — 카메라 박스 + pad
+  const cloudCount = chargeToCloudCount(chargeFrac);
+  // viewport 안 좀비 후보
   const minX = camera.x - LIGHTNING_RANGE_VIEW_PAD;
   const maxX = camera.x + camera.viewW + LIGHTNING_RANGE_VIEW_PAD;
   const minY = camera.y - LIGHTNING_RANGE_VIEW_PAD;
@@ -337,38 +329,21 @@ function spawnLightningStorm(
     const j = Math.floor(Math.random() * (i + 1));
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
-  const picks = candidates.slice(0, boltCount);
-
-  const ox = origin?.x ?? camera.x + camera.viewW / 2;
-  const oy = origin?.y ?? camera.y + 28;
-  const storm: LightningStorm = {
-    cloudWorldX: ox,
-    cloudWorldY: oy,
-    bornAt: now,
-    bolts: [],
-  };
-  for (let i = 0; i < picks.length; i++) {
+  const storm: LightningStorm = { bornAt: now, bolts: [] };
+  for (let i = 0; i < cloudCount; i++) {
+    const origin = cloudSlotPos(localX, localY, i);
+    const target = candidates[i] ?? {
+      x: camera.x + Math.random() * camera.viewW,
+      y: camera.y + Math.random() * camera.viewH,
+    };
     storm.bolts.push({
       triggerAt: now + i * LIGHTNING_BOLT_STAGGER,
-      targetX: picks[i].x,
-      targetY: picks[i].y,
-      fired: false,
-    });
-  }
-  for (let i = picks.length; i < boltCount; i++) {
-    storm.bolts.push({
-      triggerAt: now + i * LIGHTNING_BOLT_STAGGER,
-      targetX: camera.x + Math.random() * camera.viewW,
-      targetY: camera.y + Math.random() * camera.viewH,
+      originX: origin.x, originY: origin.y,
+      targetX: target.x, targetY: target.y,
       fired: false,
     });
   }
   state.storms.push(storm);
-}
-
-// origin offset 헬퍼 — 게임 루프가 spawn 직전 local 위치 기반으로 호출
-export function lightningOriginFor(localX: number, localY: number): { x: number; y: number } {
-  return { x: localX, y: localY + LIGHTNING_ORIGIN_OFFSET_Y };
 }
 
 // 매 프레임 storm 진행 — trigger 도달한 bolt 는 실제 좀비 죽이고 시각 효과 추가.
@@ -383,8 +358,8 @@ function stepStorms(state: WeaponsState, now: number, wave: ZombieWave): void {
       // 가장 가까운 좀비 죽임 (target 위치 기준 반경 22)
       const zid = bulletHitsZombie(wave, b.targetX, b.targetY);
       if (zid) killZombieById(wave, zid);
-      // 시각 — 구름→타깃 zigzag (가지치기 + 임팩트 섬광 동반)
-      const pts = buildZigzag(s.cloudWorldX, s.cloudWorldY, b.targetX, b.targetY, 5, 22);
+      // 시각 — 구름(bolt 자체 origin)→타깃 zigzag (가지치기 + 임팩트 섬광 동반)
+      const pts = buildZigzag(b.originX, b.originY, b.targetX, b.targetY, 5, 22);
       const branches = generateBranches(pts);
       state.bolts.push({ pts, branches, bornAt: now });
       state.impacts.push({ x: b.targetX, y: b.targetY, bornAt: now });
@@ -711,44 +686,89 @@ akImg.onload = () => { akReady = true; };
 
 // ===== 라이트닝 차지 시각 — eyes 스프라이트 (96×32, 3프레임 32×32) =====
 const EYES_FRAME = 32;
-const EYES_SCALE = 1.5;   // 32 → 48 px 로 살짝 키워서 잘 보이게
+const EYES_SCALE = 1.3;
 const eyesImg = new Image();
 let eyesReady = false;
 eyesImg.src = '/sprites/effects/eyes.png';
-eyesImg.onload = () => { eyesReady = true; console.info('[weapons] eyes.png loaded', eyesImg.width, eyesImg.height); };
+eyesImg.onload = () => { eyesReady = true; };
 eyesImg.onerror = (e) => { console.error('[weapons] eyes.png load failed', e); };
 
-// 캐릭터 근처(머리 위쪽)에 차지 중인 눈을 그림.
-// renderer 가 game loop 에서 lightningEyesVisual() 결과 받아 호출.
-export function drawLightningEyes(
+// ===== 멀티 구름 — 차지 진행도에 따라 1~7개 구름이 플레이어 링 주변에 차례로 등장 =====
+const LIGHTNING_MAX_CLOUDS = 7;
+const CLOUD_RING_RX = 56;        // 가로 반경
+const CLOUD_RING_RY = 24;        // 세로 반경 (납작한 타원)
+const CLOUD_RING_OFFSET_Y = -22; // 플레이어 발 기준 위쪽
+
+// 차지 비율 → 보이는 구름 개수 (1..MAX)
+function chargeToCloudCount(chargeFrac: number): number {
+  return Math.max(1, Math.min(LIGHTNING_MAX_CLOUDS, Math.ceil(chargeFrac * LIGHTNING_MAX_CLOUDS)));
+}
+
+// 슬롯 i 의 월드 좌표 (플레이어 기준). 슬롯은 항상 같은 각도.
+function cloudSlotPos(localX: number, localY: number, i: number): { x: number; y: number } {
+  // 위에서 시작해 시계 방향으로 분포
+  const angle = -Math.PI / 2 + (i / LIGHTNING_MAX_CLOUDS) * Math.PI * 2;
+  return {
+    x: localX + Math.cos(angle) * CLOUD_RING_RX,
+    y: localY + CLOUD_RING_OFFSET_Y + Math.sin(angle) * CLOUD_RING_RY,
+  };
+}
+
+// 슬롯 i 의 현재 시각 상태 (보일지/투명도/프레임). null = 아직 등장 안 함.
+function cloudSlotVisual(
+  state: WeaponsState, now: number, i: number,
+): { frame: number; alpha: number } | null {
+  if (state.lightningChargeStartedAt === null) return null;
+  // 슬롯 i 는 chargeFrac = i / MAX 에 도달했을 때 등장
+  const appearChargeFrac = i / LIGHTNING_MAX_CLOUDS;
+  const appearAt = state.lightningChargeStartedAt + appearChargeFrac * LIGHTNING_MAX_CHARGE_SEC;
+  if (now < appearAt) return null;
+  // 풀차지 → 동기 깜빡임 (모든 슬롯 동일 프레임)
+  if (state.lightningFullChargedAt !== null) {
+    const t = now - state.lightningFullChargedAt;
+    const cyc = t / LIGHTNING_BLINK_PER_SEC;
+    const inCycle = cyc - Math.floor(cyc);
+    const frame = inCycle < 0.5 ? 0 : 2;
+    return { frame, alpha: 1.0 };
+  }
+  // 차지 중 — alpha 0→0.5 fade in (0.3s), frame 2 고정
+  const localElapsed = now - appearAt;
+  const fadeIn = Math.min(1, localElapsed / 0.3);
+  return { frame: 2, alpha: 0.5 * fadeIn };
+}
+
+// 게임 루프가 호출 — 현재 보이는 모든 구름 렌더.
+export function drawLightningClouds(
   ctx: CanvasRenderingContext2D, camera: Camera,
-  ownerX: number, ownerY: number, charH: number,
-  visual: { frame: number; alpha: number },
+  state: WeaponsState, now: number,
+  localX: number, localY: number,
 ): void {
+  if (state.lightningChargeStartedAt === null) return;
   const dst = Math.round(EYES_FRAME * EYES_SCALE);
-  const sx = Math.round(ownerX - camera.x - dst / 2);
-  // 머리 위 (charH 만큼 올라가서 + 무기 아이콘 살짝 위)
-  const sy = Math.round(ownerY - camera.y - charH - 60);
   ctx.save();
-  ctx.globalAlpha = Math.max(0, Math.min(1, visual.alpha));
-  if (eyesReady) {
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(
-      eyesImg,
-      visual.frame * EYES_FRAME, 0, EYES_FRAME, EYES_FRAME,
-      sx, sy, dst, dst,
-    );
-  } else {
-    // 폴백 — 이미지 로딩 안됐을 때라도 눈에 띄게 보라 원
-    ctx.fillStyle = '#c060ff';
-    ctx.beginPath();
-    ctx.arc(sx + dst / 2, sy + dst / 2, dst / 2 - 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = '12px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('?', sx + dst / 2, sy + dst / 2);
+  ctx.imageSmoothingEnabled = false;
+  for (let i = 0; i < LIGHTNING_MAX_CLOUDS; i++) {
+    const vis = cloudSlotVisual(state, now, i);
+    if (!vis) continue;
+    const pos = cloudSlotPos(localX, localY, i);
+    const sx = Math.round(pos.x - camera.x - dst / 2);
+    const sy = Math.round(pos.y - camera.y - dst / 2);
+    ctx.globalAlpha = Math.max(0, Math.min(1, vis.alpha));
+    if (eyesReady) {
+      ctx.drawImage(
+        eyesImg,
+        vis.frame * EYES_FRAME, 0, EYES_FRAME, EYES_FRAME,
+        sx, sy, dst, dst,
+      );
+    } else {
+      // 폴백 — 보라 원 + 흰 글자 (이미지 미로딩 즉시 진단)
+      ctx.fillStyle = '#c060ff';
+      ctx.beginPath(); ctx.arc(sx + dst / 2, sy + dst / 2, dst / 2 - 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '11px monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('?', sx + dst / 2, sy + dst / 2);
+    }
   }
   ctx.restore();
 }
