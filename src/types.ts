@@ -99,6 +99,22 @@ export interface WeaponPickupPayload {
   type: WeaponTypePayload;
 }
 
+// ===== 대기 광장 매치메이킹 =====
+export type LobbyDifficulty = 'easy' | 'normal' | 'hell';
+
+// 누군가 ready 토글 — zone = ready 가 적용된 구역, null = ready 취소.
+export interface LobbyReadyPayload {
+  id: string;
+  zone: LobbyDifficulty | null;
+}
+
+// 호스트가 카운트다운 끝났을 때 broadcast — 멤버들은 새 roomId 로 이동.
+export interface MatchStartPayload {
+  zone: LobbyDifficulty;
+  roomId: string;        // 새 배틀룸 id (DEFAULT 와 다름)
+  members: string[];     // ready 였던 플레이어 id 목록
+}
+
 // 원격 플레이어의 시각용 상태 (수신 측에서 유지)
 export interface RemotePlayer {
   id: string;

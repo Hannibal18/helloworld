@@ -56,7 +56,8 @@ export interface GameConfig {
     comboMax: number;
     timePointsPerSec: number;
   };
-  stages: StageConfig[];
+  stages: StageConfig[];                                  // 기본/단독 진입용
+  presets?: Record<'easy' | 'normal' | 'hell', StageConfig[]>;  // 매치메이킹 난이도별
   loopLastStage: boolean;
   loopDifficultyStep: number;
 }
@@ -122,6 +123,56 @@ export const DEFAULT_CONFIG: GameConfig = {
   ],
   loopLastStage: true,
   loopDifficultyStep: 0.15,
+  // ===== 매치메이킹 난이도 프리셋 =====
+  presets: {
+    easy: [
+      mkStage('🟢 EASY 1', 90,
+        { typeWeights: { normal: 100, fast: 0, tank: 0, gold: 0 }, spawnIntervalMult: 1.5, speedMult: 0.9 },
+        { dropIntervalSec: 25, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 0.8, chargedReleaseCount: 3 },
+      ),
+      mkStage('🟢 EASY 2', 120,
+        { typeWeights: { normal: 80, fast: 20, tank: 0, gold: 0 }, spawnIntervalMult: 1.2, speedMult: 0.95 },
+        { dropIntervalSec: 22, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 1.0, chargedReleaseCount: 4 },
+      ),
+      mkStage('🟢 EASY 3', 999,
+        { typeWeights: { normal: 70, fast: 25, tank: 5, gold: 0 }, spawnIntervalMult: 1.0, speedMult: 1.0, hpMult: 1.0 },
+        { dropIntervalSec: 20, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.2, chargedReleaseCount: 5 },
+      ),
+    ],
+    normal: [
+      // NORMAL = 위의 기본 stages 와 동일한 패턴 (테스트 모드 제외).
+      mkStage('🟡 NORMAL 1', 60,
+        { typeWeights: { normal: 80, fast: 20, tank: 0, gold: 0 }, spawnIntervalMult: 1.0, speedMult: 1.0 },
+        { dropIntervalSec: 22, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 0.5, chargedReleaseCount: 2 },
+      ),
+      mkStage('🟡 NORMAL 2', 90,
+        { typeWeights: { normal: 60, fast: 30, tank: 10, gold: 0 }, spawnIntervalMult: 0.8, speedMult: 1.1, hpMult: 1.1, bossEnabled: true },
+        { dropIntervalSec: 18, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 1.0, chargedReleaseCount: 3 },
+      ),
+      mkStage('🟡 NORMAL 3', 999,
+        { typeWeights: { normal: 40, fast: 35, tank: 20, gold: 5 }, spawnIntervalMult: 0.6, speedMult: 1.2, hpMult: 1.2, bossEnabled: true },
+        { dropIntervalSec: 15, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.5, chargedReleaseCount: 5 },
+      ),
+    ],
+    hell: [
+      mkStage('🔴 HELL 1', 60,
+        { typeWeights: { normal: 60, fast: 30, tank: 10, gold: 0 }, spawnIntervalMult: 0.7, speedMult: 1.15, hpMult: 1.1 },
+        { dropIntervalSec: 18, allowed: { lightning: true, ice: false, curse: false }, akFireRateMult: 0.5, chargedReleaseCount: 2 },
+      ),
+      mkStage('🔴 HELL 2', 60,
+        { typeWeights: { normal: 40, fast: 35, tank: 20, gold: 5 }, spawnIntervalMult: 0.5, speedMult: 1.25, hpMult: 1.2, bossEnabled: true },
+        { dropIntervalSec: 15, allowed: { lightning: true, ice: true, curse: false }, akFireRateMult: 1.0, chargedReleaseCount: 3 },
+      ),
+      mkStage('🔴 HELL 3', 90,
+        { typeWeights: { normal: 25, fast: 35, tank: 30, gold: 10 }, spawnIntervalMult: 0.4, speedMult: 1.35, hpMult: 1.35, bossEnabled: true },
+        { dropIntervalSec: 12, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 1.5, chargedReleaseCount: 5 },
+      ),
+      mkStage('🔴 HELL 4 — 죽음의 행진', 999,
+        { typeWeights: { normal: 15, fast: 30, tank: 40, gold: 15 }, spawnIntervalMult: 0.3, speedMult: 1.5, hpMult: 1.6, bossEnabled: true },
+        { dropIntervalSec: 10, allowed: { lightning: true, ice: true, curse: true }, akFireRateMult: 2.0, chargedReleaseCount: 8 },
+      ),
+    ],
+  },
 };
 
 // ===== 저장/로드 =====
@@ -241,7 +292,7 @@ export interface StageProgress {
 }
 
 export function getStageProgress(cfg: GameConfig, elapsed: number): StageProgress {
-  const stages = cfg.stages;
+  const stages = getActiveStages(cfg);
   if (stages.length === 0) {
     const f = DEFAULT_CONFIG.stages[0];
     return { stage: f, rawStage: f, index: 0, loopIdx: 0, totalIdx: 0, remainingSec: Infinity, stageElapsed: 0 };
@@ -299,6 +350,17 @@ function applyLoopMult(s: StageConfig, loopIdx: number, step: number): StageConf
 // 빈 스테이지 한 칸 — 대시보드 "추가" 버튼에서 사용
 export function emptyStage(name: string): StageConfig {
   return mergeStage({ name, durationSec: 60 });
+}
+
+// ===== 활성 stages 오버라이드 (매치메이킹 난이도 적용용) =====
+// game.ts 가 배틀 시작 시 setActiveStagesOverride(preset) 호출 →
+// getStageProgress 가 cfg.stages 대신 이걸 사용. null 이면 cfg.stages.
+let _stagesOverride: StageConfig[] | null = null;
+export function setActiveStagesOverride(s: StageConfig[] | null): void {
+  _stagesOverride = s;
+}
+export function getActiveStages(cfg: GameConfig): StageConfig[] {
+  return _stagesOverride ?? cfg.stages;
 }
 
 // ===== 현재 스테이지 weapons 캐시 =====

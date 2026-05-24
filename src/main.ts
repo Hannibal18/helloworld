@@ -79,9 +79,21 @@ ready(() => {
   setupViewport();
 
   // ===== 모드 토글 =====
-  // 현재: 입장 = 대기광장 'lobby'. 거기서 매치메이킹으로 'zombie' 룸 이동.
+  // URL 에 ?battle=ROOM 이 있으면 매치메이킹 결과 — 그 zombie 룸으로 바로 진입.
+  // 없으면 대기 광장 'lobby' 진입.
   // PK 토글/방코드 UI 는 hidden — 추후 부활 시 mode 가 'pk' 가 될 수 있음.
-  let mode: GameMode = 'lobby';
+  const urlParams = new URLSearchParams(window.location.search);
+  const battleRoom = urlParams.get('battle')?.toUpperCase().slice(0, 8) || '';
+  const battleDiff = urlParams.get('diff') || '';
+  let mode: GameMode = battleRoom ? 'zombie' : 'lobby';
+  // 매치 진입 시 닉네임 자동 복원 (lobby 에서 입력한 값)
+  try {
+    const savedNick = sessionStorage.getItem('helloworld:lastNick');
+    if (battleRoom && savedNick && nick) nick.value = savedNick;
+  } catch { /* noop */ }
+  if (battleDiff) {
+    try { sessionStorage.setItem('helloworld:battleDiff', battleDiff); } catch { /* noop */ }
+  }
   const modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.mode-btn'));
   for (const b of modeButtons) {
     b.addEventListener('click', () => {
@@ -146,10 +158,15 @@ ready(() => {
       let name = nick.value.trim();
       if (!name) name = `손님${Math.floor(Math.random() * 9000 + 1000)}`;
       name = name.slice(0, 12);
-      // 모드별 룸 결정. lobby=LOBBY, zombie=DEFAULT, pk=input/random.
+      // 모드별 룸 결정.
+      //  battle URL 파라미터 → zombie, 그 룸 ID.
+      //  lobby → 'LOBBY'.
+      //  zombie 단독(파라미터 없음) → 'DEFAULT'.
+      //  pk → input 또는 random.
       let gameId = (gameIdInput?.value ?? '').trim().toUpperCase().slice(0, 8);
       if (!gameId) {
-        if (mode === 'lobby') gameId = 'LOBBY';
+        if (battleRoom) gameId = battleRoom;
+        else if (mode === 'lobby') gameId = 'LOBBY';
         else if (mode === 'zombie') gameId = 'DEFAULT';
         else gameId = randomGameId();
         if (gameIdInput) gameIdInput.value = gameId;

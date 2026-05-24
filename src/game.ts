@@ -20,7 +20,11 @@ import {
 } from './player';
 import { attackPhaseFor, renderFrame, type RenderableRemote } from './render';
 import { setBubble, syncBubbles } from './bubbles';
-import { drawLobbyZones, setupLobbyChat, setupLobbyTitle, type LobbyChatHandle } from './lobby';
+import {
+  drawLobbyZones, getZoneAt, LOBBY_ZONES,
+  setupCountdownOverlay, setupLobbyChat, setupLobbyTitle, setupReadyButton,
+  type CountdownOverlayHandle, type Difficulty, type LobbyChatHandle, type ReadyButtonHandle,
+} from './lobby';
 import { spawnHitBurst, updateAndRenderParticles } from './particles';
 import { loadMap, type TileMap } from './map';
 import { setupDebugPanel, updateDebugInfo, type DebugState } from './debug';
@@ -49,7 +53,7 @@ import {
   type ZombieWave,
 } from './zombie';
 import { addKill, commitBest, drawScoreHud, loadBest, makeScore, updateScore, type ScoreState, gradeFor } from './score';
-import { getConfig, getStageProgress, setStageWeapons } from './config';
+import { getConfig, getStageProgress, setActiveStagesOverride, setStageWeapons } from './config';
 import { play as playSfx, playStageTransition, playBossAlert } from './sfx';
 import {
   clearAllOwned as clearAllOwnedWeapons,
@@ -77,7 +81,8 @@ import {
 import { input } from './input';
 import type {
   AttackPayload, BulletPayload, ChatPayload, DeathPayload, GameMode, GunDropPayload, GunPickupPayload,
-  HpPayload, PosPayload, PresenceMeta, RemotePlayer, WeaponDropPayload, WeaponPickupPayload, ZombieWaveStartPayload,
+  HpPayload, LobbyReadyPayload, MatchStartPayload, PosPayload, PresenceMeta, RemotePlayer,
+  WeaponDropPayload, WeaponPickupPayload, ZombieWaveStartPayload,
 } from './types';
 
 const POS_SEND_INTERVAL = 1 / 10;
@@ -110,6 +115,25 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   const isLobbyMode = mode === 'lobby';
   const ui = uiHandles();
   showGame(ui);
+
+  // ===== 매치메이킹 난이도 적용 =====
+  // sessionStorage 의 battleDiff 가 있으면 그 프리셋으로 stages 오버라이드.
+  // (lobby → 배틀 자동 이동 시 main.ts 가 저장. 단독 zombie 진입은 null → 기본 stages 사용.)
+  if (isZombieMode) {
+    try {
+      const diff = sessionStorage.getItem('helloworld:battleDiff');
+      const presets = getConfig().presets;
+      if (diff && (diff === 'easy' || diff === 'normal' || diff === 'hell') && presets) {
+        setActiveStagesOverride(presets[diff]);
+      } else {
+        setActiveStagesOverride(null);
+      }
+    } catch {
+      setActiveStagesOverride(null);
+    }
+  } else {
+    setActiveStagesOverride(null);
+  }
 
   // ===== 맵 로드 =====
   let map: TileMap;
@@ -202,26 +226,65 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   setupInput({ isChatActive: () => lobbyChatFocused });
   setupTouchControls();
 
-  // ===== 광장 채팅 UI + 타이틀 (lobby 모드 전용) =====
+  // ===== 광장 채팅 UI + 타이틀 + Ready + 카운트다운 (lobby 모드 전용) =====
   let lobbyChat: LobbyChatHandle | null = null;
+  let readyBtn: ReadyButtonHandle | null = null;
+  let countdownOverlay: CountdownOverlayHandle | null = null;
+  // ready 상태 (모든 클라가 추적). key = player id, value = ready 한 zone.
+  const lobbyReady = new Map<string, Difficulty>();
+  // 호스트 카운트다운 — 활성 중일 때 zone + 종료 시각.
+  let countdownZone: Difficulty | null = null;
+  let countdownEndsAt = 0;
+  const COUNTDOWN_SEC = 7;
+  let myReady: Difficulty | null = null;     // 내 현재 ready 구역
+  let myZone: Difficulty | null = null;      // 매 프레임 갱신 — 내가 어느 구역 안에 있는지
+
+  const applyLobbyReady = (p: LobbyReadyPayload): void => {
+    if (p.zone) lobbyReady.set(p.id, p.zone);
+    else lobbyReady.delete(p.id);
+  };
+
+  // 호스트가 새 룸 ID 결정 + broadcast. 받는 측은 자기가 멤버면 페이지 리로드.
+  const applyMatchStart = (p: MatchStartPayload): void => {
+    if (!p.members.includes(local.id)) {
+      // 나는 그 매치 멤버 아님 — 광장 유지. 다른 매치 정보만 클리어.
+      for (const mid of p.members) lobbyReady.delete(mid);
+      return;
+    }
+    // 나는 멤버 — URL 파라미터로 룸 ID + 난이도 실어 페이지 리로드.
+    const url = new URL(window.location.href);
+    url.searchParams.set('battle', p.roomId);
+    url.searchParams.set('diff', p.zone);
+    url.searchParams.delete('lobby');
+    // 닉네임 보존 (다음 로드에서 nick input 복원)
+    try { sessionStorage.setItem('helloworld:lastNick', local.name); } catch { /* noop */ }
+    window.location.href = url.toString();
+  };
+
   if (isLobbyMode) {
     setupLobbyTitle();
     lobbyChat = setupLobbyChat((text) => {
-      // 광장에서 보낸 메시지 — 머리 위 말풍선 + 채팅 로그 + broadcast
       const n = nowSec();
       local.chatText = text;
       local.chatUntil = n + 4;
       broadcastLocalChat(text);
     });
-    // input focus 추적 — 입력 중 게임 키 무시
     const inputEl = lobbyChat ? (document.querySelector('#lobby-chat input') as HTMLInputElement | null) : null;
     if (inputEl) {
       inputEl.addEventListener('focus', () => { lobbyChatFocused = true; });
       inputEl.addEventListener('blur', () => { lobbyChatFocused = false; });
     }
+    countdownOverlay = setupCountdownOverlay();
+    readyBtn = setupReadyButton((ready) => {
+      // 토글 — 활성 구역에서만 호출됨 (버튼이 비활성이면 click 무시)
+      myReady = ready ? myZone : null;
+      lobbyReady.set(local.id, myReady ?? 'easy');   // 자기 상태도 lobbyReady 에 (호스트 카운팅용)
+      if (!ready) lobbyReady.delete(local.id);
+      net.sendLobbyReady({ id: local.id, zone: myReady });
+    });
   }
-  // 미사용 변수 경고 방지 — Phase 2 에서 destroy 사용 예정
   void lobbyChat;
+  void LOBBY_ZONES;   // 미사용 경고 차단 — 시각화 + getZoneAt 이 내부적으로 사용
 
   // ===== 원격 플레이어 맵 =====
   const remotes = new Map<string, RemotePlayer>();
@@ -284,6 +347,8 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   };
   const applyBullet = (p: BulletPayload) => {
     addBullet(gunState, p.bid, p.ownerId, p.ownerName, p.x, p.y, p.vx, p.vy, nowSec());
+    // 원격 플레이어 AK 발사음 — 자기 발사 소리는 fireBullet 콜백에서 따로 재생.
+    playSfx('ak_shot');
   };
 
   // ===== 보조 자동 무기 (Garlic / Knives / Missile / Lightning) =====
@@ -441,6 +506,8 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         r.attackUntil = nowSec() + ATTACK_SWING_DUR;
         r.dir = a.dir;
       }
+      // 원격 플레이어 펀치/하프슬래시 사운드 (멀티플레이 임팩트)
+      playSfx('punch');
       // 원격 플레이어 공격도 내 클라이언트의 좀비를 죽일 수 있음
       tryHitZombiesFromAttack(zombieWave, a);
       const wasAlive = !local.dead;
@@ -468,6 +535,8 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     onZombieWaveStart: (p: ZombieWaveStartPayload) => applyZombieWaveStart(p),
     onWeaponDrop: (p: WeaponDropPayload) => applyWeaponDrop(p, nowSec()),
     onWeaponPickup: (p: WeaponPickupPayload) => applyWeaponPickup(p),
+    onLobbyReady: (p: LobbyReadyPayload) => { applyLobbyReady(p); },
+    onMatchStart: (p: MatchStartPayload) => { applyMatchStart(p); },
     onDeath: (d: DeathPayload) => {
       const now = nowSec();
       const r = remotes.get(d.id);
@@ -637,6 +706,76 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
 
     // 멘탈 공격(욕 채팅) — X 키 또는 멘탈공격 버튼.
     if (consumeMentalAttack()) fireMentalAttack(now);
+
+    // ===== 대기 광장 — 구역/Ready/카운트다운 매니징 (lobby 모드 전용) =====
+    if (isLobbyMode && readyBtn && countdownOverlay) {
+      const z = getZoneAt(local.x, local.y);
+      myZone = z;
+      // 구역 안의 ready 사람 수 (자기 포함)
+      let waitingInZone = 0;
+      if (z) {
+        for (const rz of lobbyReady.values()) if (rz === z) waitingInZone++;
+      }
+      readyBtn.setActive(z !== null, z, waitingInZone);
+      // 구역 떠나면 자동 ready 해제 (broadcast)
+      if (myReady && (!z || z !== myReady)) {
+        const prev = myReady;
+        myReady = null;
+        lobbyReady.delete(local.id);
+        net.sendLobbyReady({ id: local.id, zone: null });
+        readyBtn.setMyReady(false);
+        void prev;
+      }
+
+      // 호스트 카운트다운 매니징 — id 사전순 최소 클라가 호스트.
+      // 호스트만 lobby_ready 변화를 보고 카운트다운 시작/취소 결정 + match_start broadcast.
+      if (isLocalHost()) {
+        // zone 별 ready 인원 카운트
+        const byZone = new Map<Difficulty, string[]>();
+        for (const [pid, rz] of lobbyReady) {
+          if (!byZone.has(rz)) byZone.set(rz, []);
+          byZone.get(rz)!.push(pid);
+        }
+        if (countdownZone === null) {
+          // 가장 많은 zone 부터 우선 (동률이면 hell > normal > easy)
+          const order: Difficulty[] = ['hell', 'normal', 'easy'];
+          for (const z2 of order) {
+            const list = byZone.get(z2);
+            if (list && list.length >= 1) {
+              countdownZone = z2;
+              countdownEndsAt = now + COUNTDOWN_SEC;
+              break;
+            }
+          }
+        } else {
+          const list = byZone.get(countdownZone);
+          if (!list || list.length === 0) {
+            // 모두 취소 → 카운트다운 중단
+            countdownZone = null;
+            countdownEndsAt = 0;
+          } else if (now >= countdownEndsAt) {
+            // 출발 — 새 룸 ID 생성 + broadcast
+            const roomId = 'B' + Math.random().toString(36).slice(2, 8).toUpperCase();
+            const members = list.slice();
+            net.sendMatchStart({ zone: countdownZone, roomId, members });
+            applyMatchStart({ zone: countdownZone, roomId, members });   // self 도 처리
+            countdownZone = null;
+            countdownEndsAt = 0;
+          }
+        }
+      }
+
+      // 카운트다운 오버레이 — 호스트가 산정한 값으로 그림 (호스트 X 면 안 보임).
+      // 호스트가 아닌 사람은 lobby_ready broadcast 만으로 카운트다운 시점을 알 수 없으므로
+      // v1 은 호스트 클라이언트에서만 시각화. (개선: 호스트가 cd_tick broadcast 도 보내기)
+      if (countdownZone !== null) {
+        const sec = Math.max(0, Math.ceil(countdownEndsAt - now));
+        const members = Array.from(lobbyReady.values()).filter((v) => v === countdownZone).length;
+        countdownOverlay.show(countdownZone, sec, members);
+      } else {
+        countdownOverlay.hide();
+      }
+    }
 
     // ===== 스테이지 진행 — 시간 기반. config 의 stages 순서대로. =====
     if (isZombieMode && zombieWave.active) {

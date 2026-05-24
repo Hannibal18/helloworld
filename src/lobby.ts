@@ -72,6 +72,141 @@ export interface LobbyChatHandle {
   destroy(): void;
 }
 
+// ===== Ready 버튼 + 카운트다운 오버레이 =====
+
+export interface ReadyButtonHandle {
+  setActive(active: boolean, zone: Difficulty | null, waitingCount: number): void;
+  setMyReady(ready: boolean): void;
+  destroy(): void;
+}
+
+// 우하단(공격 버튼 위쪽) 에 띄우는 큰 "준비" 버튼.
+// 활성 = 내가 구역 안 → 누르면 onPress(true), 다시 누르면 onPress(false).
+// 비활성 = 회색 표시 + 클릭 무시.
+export function setupReadyButton(onPress: (ready: boolean) => void): ReadyButtonHandle {
+  const btn = document.createElement('button');
+  btn.id = 'lobby-ready-btn';
+  btn.type = 'button';
+  btn.textContent = '구역에 들어가세요';
+  let active = false;
+  let myReady = false;
+  let zoneId: Difficulty | null = null;
+  let waitingCount = 0;
+
+  const updateStyle = () => {
+    const base = [
+      'position:fixed',
+      'right:calc(env(safe-area-inset-right) + 18px)',
+      'bottom:calc(env(safe-area-inset-bottom) + var(--vp-bottom, 0px) + 220px)',
+      'z-index:7',
+      'width:120px',
+      'padding:14px 8px',
+      'border-radius:60px',
+      'font:900 14px "Galmuri11", system-ui, sans-serif',
+      'letter-spacing:2px',
+      'cursor:pointer',
+      'text-align:center',
+      'line-height:1.3',
+      'pointer-events:auto',
+    ];
+    if (!active) {
+      base.push('background:rgba(40,28,18,0.7)');
+      base.push('color:#7a6a52');
+      base.push('border:2px solid #4a3422');
+      base.push('cursor:default');
+    } else if (myReady) {
+      base.push('background:linear-gradient(180deg,#5fd06a,#3a8a40)');
+      base.push('color:#0a1f0a');
+      base.push('border:2px solid #1a0e08');
+    } else {
+      base.push('background:linear-gradient(180deg,#ffd84a,#c08a20)');
+      base.push('color:#1a0e08');
+      base.push('border:2px solid #1a0e08');
+    }
+    btn.style.cssText = base.join(';');
+  };
+
+  const updateLabel = () => {
+    if (!active) { btn.textContent = '구역에\n들어가세요'; return; }
+    const zoneName = zoneId === 'easy' ? '🟢 EASY' : zoneId === 'normal' ? '🟡 NORMAL' : '🔴 HELL';
+    btn.textContent = myReady
+      ? `${zoneName}\n대기 ${waitingCount}명\n(취소)`
+      : `${zoneName}\n대기 ${waitingCount}명\n준비!`;
+  };
+
+  btn.style.whiteSpace = 'pre-line';
+
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!active) return;
+    myReady = !myReady;
+    onPress(myReady);
+    updateStyle(); updateLabel();
+  });
+
+  document.body.appendChild(btn);
+  updateStyle(); updateLabel();
+
+  return {
+    setActive: (a, zone, count) => {
+      const changed = a !== active || zone !== zoneId || count !== waitingCount;
+      active = a; zoneId = zone; waitingCount = count;
+      if (!a && myReady) {
+        myReady = false;
+        onPress(false);
+      }
+      if (changed) { updateStyle(); updateLabel(); }
+    },
+    setMyReady: (r) => {
+      if (r !== myReady) {
+        myReady = r;
+        updateStyle(); updateLabel();
+      }
+    },
+    destroy: () => { btn.remove(); },
+  };
+}
+
+// 매치 시작 카운트다운 — 화면 중앙에 큰 숫자.
+export interface CountdownOverlayHandle {
+  show(zone: Difficulty, secondsLeft: number, members: number): void;
+  hide(): void;
+  destroy(): void;
+}
+
+export function setupCountdownOverlay(): CountdownOverlayHandle {
+  const el = document.createElement('div');
+  el.id = 'lobby-countdown';
+  el.style.cssText = [
+    'position:fixed',
+    'top:50%',
+    'left:50%',
+    'transform:translate(-50%,-50%)',
+    'z-index:9',
+    'padding:18px 28px',
+    'background:rgba(20,14,8,0.85)',
+    'border:3px solid #ffd84a',
+    'border-radius:12px',
+    'text-align:center',
+    'font:900 32px "Galmuri11", system-ui, sans-serif',
+    'color:#ffd84a',
+    'letter-spacing:4px',
+    'text-shadow:2px 2px 0 #1a0e08',
+    'pointer-events:none',
+    'display:none',
+  ].join(';');
+  document.body.appendChild(el);
+  return {
+    show: (zone, sec, members) => {
+      const zoneName = zone === 'easy' ? '🟢 EASY' : zone === 'normal' ? '🟡 NORMAL' : '🔴 HELL';
+      el.style.display = 'block';
+      el.innerHTML = `<div style="font-size:14px;letter-spacing:2px;margin-bottom:6px;color:#fff7a8">${zoneName} · ${members}명</div>${sec}<div style="font-size:11px;letter-spacing:1px;margin-top:4px;color:#c9b58d">초 후 출발…</div>`;
+    },
+    hide: () => { el.style.display = 'none'; },
+    destroy: () => { el.remove(); },
+  };
+}
+
 // 화면 정중앙 상단의 "대기실" 라벨 — 광장 진입 시 한 번 띄움.
 export interface LobbyTitleHandle { destroy(): void; }
 export function setupLobbyTitle(): LobbyTitleHandle {

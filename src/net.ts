@@ -9,6 +9,8 @@ import type {
   GunDropPayload,
   GunPickupPayload,
   HpPayload,
+  LobbyReadyPayload,
+  MatchStartPayload,
   PosPayload,
   PresenceMeta,
   WeaponDropPayload,
@@ -48,6 +50,8 @@ export interface NetHandlers {
   onZombieWaveStart: (p: ZombieWaveStartPayload) => void;
   onWeaponDrop: (p: WeaponDropPayload) => void;
   onWeaponPickup: (p: WeaponPickupPayload) => void;
+  onLobbyReady: (p: LobbyReadyPayload) => void;
+  onMatchStart: (p: MatchStartPayload) => void;
   onPresenceSync: (members: PresenceMeta[]) => void;
   onPresenceJoin: (members: PresenceMeta[]) => void;
   onPresenceLeave: (members: PresenceMeta[]) => void;
@@ -67,6 +71,8 @@ export interface Net {
   sendZombieWaveStart: (p: ZombieWaveStartPayload) => void;
   sendWeaponDrop: (p: WeaponDropPayload) => void;
   sendWeaponPickup: (p: WeaponPickupPayload) => void;
+  sendLobbyReady: (p: LobbyReadyPayload) => void;
+  sendMatchStart: (p: MatchStartPayload) => void;
   unsubscribe: () => Promise<void>;
 }
 
@@ -101,6 +107,8 @@ export function connect(meta: PresenceMeta, gameId: string, mode: GameMode, hand
     .on('broadcast', { event: 'zombie_wave_start' }, ({ payload }) => handlers.onZombieWaveStart(payload as ZombieWaveStartPayload))
     .on('broadcast', { event: 'weapon_drop' },   ({ payload }) => handlers.onWeaponDrop(payload as WeaponDropPayload))
     .on('broadcast', { event: 'weapon_pickup' }, ({ payload }) => handlers.onWeaponPickup(payload as WeaponPickupPayload))
+    .on('broadcast', { event: 'lobby_ready' },   ({ payload }) => handlers.onLobbyReady(payload as LobbyReadyPayload))
+    .on('broadcast', { event: 'match_start' },   ({ payload }) => handlers.onMatchStart(payload as MatchStartPayload))
     .on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState() as Record<string, readonly unknown[]>;
       const all: PresenceMeta[] = [];
@@ -137,6 +145,8 @@ export function connect(meta: PresenceMeta, gameId: string, mode: GameMode, hand
     sendZombieWaveStart:(p) => send('zombie_wave_start', p),
     sendWeaponDrop:     (p) => send('weapon_drop', p),
     sendWeaponPickup:   (p) => send('weapon_pickup', p),
+    sendLobbyReady:     (p) => send('lobby_ready', p),
+    sendMatchStart:     (p) => send('match_start', p),
     unsubscribe: async () => {
       try { await channel.untrack(); } catch { /* ignore */ }
       await channel.unsubscribe();
