@@ -100,10 +100,20 @@ interface Projectile {
   angle: number;            // 현재 진행 각도 (homing 갱신용)
 }
 interface LightningBolt {
-  // 폴리라인 좌표들 (시작 → 첫 적 → 체인 1 → 체인 2)
+  // 메인 폴리라인 (시작 → 끝)
   pts: { x: number; y: number }[];
+  // 메인 라인에서 갈라져 나간 가지들 (각 가지도 폴리라인)
+  branches: { x: number; y: number }[][];
   bornAt: number;
 }
+// 번개 타격 위치 임팩트 섬광 — 짧게 확장되는 원
+interface LightningImpact {
+  x: number;
+  y: number;
+  bornAt: number;
+}
+const IMPACT_LIFE = 0.25;
+const ORIGIN_FLASH_LIFE = 0.12;
 // 차지 발사 시 만들어지는 폭풍 — 구름 + 다발 번개.
 interface LightningStorm {
   cloudWorldX: number;       // 카메라 fire 시점 기준 화면 가운데 위쪽
@@ -121,6 +131,7 @@ export interface WeaponsState {
   drops: Map<string, WeaponDrop>;
   projectiles: Projectile[];
   bolts: LightningBolt[];
+  impacts: LightningImpact[];
   storms: LightningStorm[];
   // 보유 무기: 타입 → 만료 시각(sec). now < 만료 면 보유 중.
   owned: Map<WeaponType, number>;
@@ -138,6 +149,7 @@ export function makeWeaponsState(now: number): WeaponsState {
     drops: new Map(),
     projectiles: [],
     bolts: [],
+    impacts: [],
     storms: [],
     owned: new Map(),
     lastFire: new Map(),
@@ -364,19 +376,11 @@ function stepStorms(state: WeaponsState, now: number, wave: ZombieWave): void {
       // 가장 가까운 좀비 죽임 (target 위치 기준 반경 22)
       const zid = bulletHitsZombie(wave, b.targetX, b.targetY);
       if (zid) killZombieById(wave, zid);
-      // 시각 — 구름→타깃 zigzag
-      const pts: { x: number; y: number }[] = [];
-      pts.push({ x: s.cloudWorldX, y: s.cloudWorldY });
-      // 중간 1~2 단 zigzag (가로 흔들림)
-      const segs = 3;
-      for (let k = 1; k < segs; k++) {
-        const t = k / segs;
-        const ix = s.cloudWorldX + (b.targetX - s.cloudWorldX) * t + (Math.random() - 0.5) * 18;
-        const iy = s.cloudWorldY + (b.targetY - s.cloudWorldY) * t;
-        pts.push({ x: ix, y: iy });
-      }
-      pts.push({ x: b.targetX, y: b.targetY });
-      state.bolts.push({ pts, bornAt: now });
+      // 시각 — 구름→타깃 zigzag (가지치기 + 임팩트 섬광 동반)
+      const pts = buildZigzag(s.cloudWorldX, s.cloudWorldY, b.targetX, b.targetY, 5, 22);
+      const branches = generateBranches(pts);
+      state.bolts.push({ pts, branches, bornAt: now });
+      state.impacts.push({ x: b.targetX, y: b.targetY, bornAt: now });
     }
   }
 }
@@ -453,10 +457,57 @@ function nearestZombie(
   return best;
 }
 
+// ===== 헬퍼: 지그재그 폴리라인 + 가지치기 =====
+type Pt = { x: number; y: number };
+function buildZigzag(ax: number, ay: number, bx: number, by: number, segs: number, jitter: number): Pt[] {
+  const pts: Pt[] = [{ x: ax, y: ay }];
+  const dx = bx - ax;
+  const dy = by - ay;
+  // 진행 방향 수직 단위 (jitter 적용 축)
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  for (let i = 1; i < segs; i++) {
+    const t = i / segs;
+    const j = (Math.random() - 0.5) * 2 * jitter;
+    pts.push({ x: ax + dx * t + nx * j, y: ay + dy * t + ny * j });
+  }
+  pts.push({ x: bx, y: by });
+  return pts;
+}
+function generateBranches(mainPts: Pt[]): Pt[][] {
+  const branches: Pt[][] = [];
+  // 각 중간 노드에서 40% 확률로 가지 1개 분기
+  for (let i = 1; i < mainPts.length - 1; i++) {
+    if (Math.random() > 0.4) continue;
+    const start = mainPts[i];
+    const prev = mainPts[i - 1];
+    const dx = start.x - prev.x;
+    const dy = start.y - prev.y;
+    const len = Math.hypot(dx, dy) || 1;
+    // 수직 방향 ± 랜덤
+    const sign = Math.random() < 0.5 ? -1 : 1;
+    const px = (-dy / len) * sign;
+    const py = (dx / len) * sign;
+    const branchLen = 14 + Math.random() * 22;
+    const subSegs = 2 + Math.floor(Math.random() * 2); // 2~3
+    const branch: Pt[] = [{ x: start.x, y: start.y }];
+    let cx = start.x, cy = start.y;
+    for (let k = 1; k <= subSegs; k++) {
+      cx += (px * branchLen / subSegs) + (Math.random() - 0.5) * 6;
+      cy += (py * branchLen / subSegs) + (Math.random() - 0.5) * 6;
+      branch.push({ x: cx, y: cy });
+    }
+    branches.push(branch);
+  }
+  return branches;
+}
+
 // ===== 매 프레임 — 발사체 위치 갱신 + 좀비 충돌 + 만료 =====
 export function stepProjectiles(state: WeaponsState, dt: number, now: number, wave: ZombieWave): void {
   // 라이트닝 비주얼 만료
   state.bolts = state.bolts.filter((b) => now - b.bornAt <= LIGHTNING_LIFE);
+  state.impacts = state.impacts.filter((i) => now - i.bornAt <= IMPACT_LIFE);
   // 라이트닝 폭풍 — 구름 + 다발 번개
   stepStorms(state, now, wave);
   // 발사체
@@ -534,33 +585,86 @@ export function drawProjectiles(
   ctx: CanvasRenderingContext2D, camera: Camera, state: WeaponsState, now: number,
 ): void {
   ctx.save();
-  // 절차적 구름 제거 — 라이트닝 원점은 차지 중 그려진 "눈" 위치. 구름 sprite 는 차지
-  // 페이즈가 시각화 담당 (drawLightningEyes). 발사 시점엔 bolt zigzag 만 그림.
-  // 라이트닝
+  // 절차적 구름 제거 — 라이트닝 원점은 차지 중 그려진 "눈" 위치.
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // 폴리라인을 현재 alpha 로 한 번 그리는 헬퍼 (반복 호출 위해 분리)
+  const strokePoly = (pts: Pt[], color: string, width: number) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const sx = Math.round(p.x - camera.x);
+      const sy = Math.round(p.y - camera.y);
+      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+  };
+
+  // ----- 라이트닝 bolt (메인 + 가지) -----
   for (const b of state.bolts) {
     const age = (now - b.bornAt) / LIGHTNING_LIFE;
-    const alpha = 1 - age;
-    ctx.strokeStyle = `rgba(255, 240, 120, ${alpha})`;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    for (let i = 0; i < b.pts.length; i++) {
-      const p = b.pts[i];
-      const sx = Math.round(p.x - camera.x);
-      const sy = Math.round(p.y - camera.y);
-      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    const alpha = Math.max(0, 1 - age);
+    // 4-layer: outer glow (very wide, faint) → soft mid → bright yellow → white core
+    strokePoly(b.pts, `rgba(180, 120, 255, ${alpha * 0.18})`, 12);   // 보라 글로우
+    strokePoly(b.pts, `rgba(255, 230, 140, ${alpha * 0.35})`, 7);    // 노란 글로우
+    strokePoly(b.pts, `rgba(255, 240, 120, ${alpha})`, 3.5);          // 옐로 본체
+    strokePoly(b.pts, `rgba(255, 255, 255, ${alpha})`, 1.4);          // 흰 코어
+    // 가지 — 얇고 빠르게 페이드
+    const branchAlpha = alpha * 0.7;
+    for (const br of b.branches) {
+      strokePoly(br, `rgba(255, 230, 140, ${branchAlpha * 0.35})`, 5);
+      strokePoly(br, `rgba(255, 240, 120, ${branchAlpha})`, 2);
+      strokePoly(br, `rgba(255, 255, 255, ${branchAlpha})`, 0.9);
     }
-    ctx.stroke();
-    // 안쪽 더 밝은 코어
-    ctx.strokeStyle = `rgba(255, 255, 220, ${alpha})`;
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    for (let i = 0; i < b.pts.length; i++) {
-      const p = b.pts[i];
-      const sx = Math.round(p.x - camera.x);
-      const sy = Math.round(p.y - camera.y);
-      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    // 원점 섬광 — bolt 첫 점에서 짧게 (눈 위치 근처)
+    if (b.pts.length > 0 && age < ORIGIN_FLASH_LIFE / LIGHTNING_LIFE) {
+      const flashAlpha = 1 - (age * LIGHTNING_LIFE / ORIGIN_FLASH_LIFE);
+      const o = b.pts[0];
+      const ox = Math.round(o.x - camera.x);
+      const oy = Math.round(o.y - camera.y);
+      ctx.fillStyle = `rgba(255, 255, 220, ${flashAlpha * 0.85})`;
+      ctx.beginPath(); ctx.arc(ox, oy, 8 + flashAlpha * 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+      ctx.beginPath(); ctx.arc(ox, oy, 3 + flashAlpha * 2, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.stroke();
+  }
+
+  // ----- 임팩트 섬광 (타격 위치에서 확장되는 원) -----
+  for (const im of state.impacts) {
+    const age = (now - im.bornAt) / IMPACT_LIFE;
+    if (age < 0 || age > 1) continue;
+    const sx = Math.round(im.x - camera.x);
+    const sy = Math.round(im.y - camera.y);
+    const fade = 1 - age;
+    // 확장 ring
+    const r1 = 6 + age * 30;
+    ctx.strokeStyle = `rgba(255, 230, 120, ${fade * 0.7})`;
+    ctx.lineWidth = 2.5 * fade + 0.5;
+    ctx.beginPath(); ctx.arc(sx, sy, r1, 0, Math.PI * 2); ctx.stroke();
+    // 내부 white burst (작아짐)
+    const r2 = 12 * fade;
+    ctx.fillStyle = `rgba(255, 255, 220, ${fade * 0.55})`;
+    ctx.beginPath(); ctx.arc(sx, sy, r2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(255, 255, 255, ${fade})`;
+    ctx.beginPath(); ctx.arc(sx, sy, r2 * 0.45, 0, Math.PI * 2); ctx.fill();
+    // 짧은 파편 8방향 라인
+    if (age < 0.45) {
+      const spokeAlpha = 1 - age / 0.45;
+      ctx.strokeStyle = `rgba(255, 240, 160, ${spokeAlpha * 0.8})`;
+      ctx.lineWidth = 1.2;
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        const r0 = 4 + age * 18;
+        const r3 = 10 + age * 26;
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(a) * r0, sy + Math.sin(a) * r0);
+        ctx.lineTo(sx + Math.cos(a) * r3, sy + Math.sin(a) * r3);
+        ctx.stroke();
+      }
+    }
   }
   // 발사체
   for (const p of state.projectiles) {
