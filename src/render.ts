@@ -39,6 +39,17 @@ export interface HudLayer {
   displayScale: number;
 }
 
+/** 시야 비네트 — 캐릭터 주변만 보이고 나머지는 어두움. */
+export interface VisionConfig {
+  /** 비네트 중심 (월드 좌표) — 보통 캐릭터 몸통 중심. */
+  worldX: number;
+  worldY: number;
+  /** 완전 투명 (정상 밝기) 반경. 백버퍼 픽셀. */
+  radius: number;
+  /** 가장자리 페이드 폭 — radius..radius+fadeWidth 사이에서 점차 어두워짐. */
+  fadeWidth: number;
+}
+
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   map: TileMap,
@@ -48,6 +59,7 @@ export function renderFrame(
   now: number,
   debug: DebugState,
   hud: HudLayer,
+  vision?: VisionConfig | null,
 ): void {
   ctx.imageSmoothingEnabled = false;
 
@@ -315,6 +327,30 @@ export function renderFrame(
   if (debug.showGrid) drawGridDebug(ctx, map, camera.x, camera.y, camera.viewW, camera.viewH);
   if (debug.showCollision) drawCollisionDebug(ctx, map, camera.x, camera.y);
   if (debug.showHitbox) drawHitboxes(ctx, camera, local, remotes);
+
+  // 7. 시야 비네트 — 캐릭터 주변만 보이고 나머지 검정.
+  //    game 캔버스 + HUD 캔버스 둘 다 동일하게 덮어서 이름/HP 도 시야 밖이면 안 보이게.
+  if (vision) {
+    const sx = vision.worldX - camera.x;
+    const sy = vision.worldY - camera.y;
+    // game 캔버스 (백버퍼 px)
+    const g = ctx.createRadialGradient(sx, sy, Math.max(0, vision.radius), sx, sy, vision.radius + vision.fadeWidth);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, camera.viewW, camera.viewH);
+    // HUD 캔버스 (CSS px = 백버퍼 px × displayScale)
+    const hsx = sx * hud.displayScale;
+    const hsy = sy * hud.displayScale;
+    const hrIn = Math.max(0, vision.radius) * hud.displayScale;
+    const hrOut = (vision.radius + vision.fadeWidth) * hud.displayScale;
+    const hg = hud.ctx.createRadialGradient(hsx, hsy, hrIn, hsx, hsy, hrOut);
+    hg.addColorStop(0, 'rgba(0,0,0,0)');
+    hg.addColorStop(1, 'rgba(0,0,0,1)');
+    hud.ctx.fillStyle = hg;
+    const dpr = window.devicePixelRatio || 1;
+    hud.ctx.fillRect(0, 0, hud.ctx.canvas.width / dpr, hud.ctx.canvas.height / dpr);
+  }
 }
 
 // 댄스 중인 캐릭터 발 밑에 옅은 분홍 그림자.

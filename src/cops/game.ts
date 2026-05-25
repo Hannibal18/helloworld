@@ -68,8 +68,10 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
 
   // ===== 맵 로드 =====
   // 기본 대기실: cops_lobby (waitingroom.tmx 임포트). ?map=lost_temple 로 게임장 맵 테스트.
-  // 실제 술래잡기 게임 로직 만들 때 출발 버튼 → 게임장 맵 전환 예정.
-  const mapParam = new URLSearchParams(window.location.search).get('map');
+  // ?vision=120 으로 시야 반경(px) 조절. 0 또는 미지정이면 시야 제한 없음.
+  const urlParams = new URLSearchParams(window.location.search);
+  const mapParam = urlParams.get('map');
+  const visionParam = parseInt(urlParams.get('vision') ?? '0', 10);
   const mapPath = mapParam === 'lost_temple'
     ? '/maps/lost_temple/lost_temple.json'
     : '/maps/cops_lobby/cops_lobby.json';
@@ -770,7 +772,14 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
         danceStart: r.danceStart,
       });
     }
-    renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale });
+    // 시야 비네트 — ?vision=N (반경 px) 으로 활성. 캐릭터 몸통 중심에서 그라데이션.
+    const vision = visionParam > 0 ? {
+      worldX: local.x,
+      worldY: local.y + BODY_OFF_Y,
+      radius: visionParam,
+      fadeWidth: Math.max(20, visionParam * 0.4),
+    } : null;
+    renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale }, vision);
 
     // ===== 채팅 말풍선 — DOM 으로 띄움 (bubbles.ts) =====
     // 좌표는 viewport 박스 안쪽 CSS px (백버퍼 px * displayScale).
