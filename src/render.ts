@@ -57,10 +57,13 @@ export function renderFrame(
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, camera.viewW, camera.viewH);
 
-  // 1. 바닥 / 장식 — 항상 캐릭터 아래. now 전달 시 애니메이션 타일이 시간에 따라 전환.
-  for (const name of ['ground', 'decor']) {
-    const layer = map.layerByName.get(name);
-    if (layer) drawTileLayer(ctx, map, layer, camera.x, camera.y, camera.viewW, camera.viewH, now);
+  // 1. 캐릭터 아래 — 모든 tile 레이어를 문서 순서로 그림.
+  //    예외: objects_below (Y-sort) / objects_above (캐릭터 위) 는 따로.
+  //    그 외 이름(ground, decor, decor2, "Tile Layer 3", 등) 은 모두 배경.
+  for (const layer of map.layers) {
+    if (layer.kind !== 'tile' || !layer.visible) continue;
+    if (layer.name === 'objects_below' || layer.name === 'objects_above') continue;
+    drawTileLayer(ctx, map, layer, camera.x, camera.y, camera.viewW, camera.viewH, now);
   }
 
   // 2. Y-소트 — objects_below 의 각 타일 + object layer 의 tile-objects + 캐릭터를
