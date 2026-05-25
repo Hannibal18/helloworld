@@ -465,8 +465,15 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   // ===== 원격 플레이어 맵 =====
   const remotes = new Map<string, RemotePlayer>();
 
+  // 서버 봇 ID — 사전순 최소 UUID. cloudflare/src/room.ts 와 동기.
+  // 봇은 캐릭터로 렌더 X, 로스터/랭킹/탭 메뉴에서도 제외. 하지만 isLocalHost 는
+  // 봇 존재 인지해야 (봇 있으면 봇이 호스트).
+  const BOT_ID = '00000000-0000-0000-0000-000000000000';
+  let botPresent = false;
+
   const upsertRemote = (m: PresenceMeta) => {
     if (m.id === local.id) return;
+    if (m.id === BOT_ID) { botPresent = true; return; }
     let r = remotes.get(m.id);
     if (!r) {
       r = {
@@ -499,9 +506,9 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   // ===== 총(AK) =====
   const gunState: GunState = makeGunState(nowSec());
   void ensureGunSprite();
-  // 호스트 판정: presence 멤버 중 id 가 사전순으로 가장 작은 클라이언트가 호스트.
-  // 호스트만 새 드랍 spawn 을 결정하고 broadcast.
+  // 호스트 판정: 서버 봇이 있으면 봇이 호스트. 없으면 P2P 폴백 (id 최소).
   const isLocalHost = (): boolean => {
+    if (botPresent) return false;
     let minId = local.id;
     for (const id of remotes.keys()) if (id < minId) minId = id;
     return local.id === minId;
@@ -865,6 +872,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     },
     onPresenceLeave: (members) => {
       for (const m of members) {
+        if (m.id === BOT_ID) { botPresent = false; continue; }
         remotes.delete(m.id);
         // 파티에 있던 멤버가 룸 떠나면 자동 정리. leader 였으면 파티 해산.
         if (partyMembers.has(m.id) && m.id !== local.id) {
