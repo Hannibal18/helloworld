@@ -55,6 +55,8 @@ export interface VisionConfig {
   forwardStretch?: number;
   /** 앞쪽 시프트 — transformed 좌표에서 그라데이션 중심을 +X 로 이동. 0 = 캐릭터 중심. */
   forwardOffset?: number;
+  /** FWD 원 반경 배율. 1.0 = vision.radius 그대로, 1.3 = FWD 가 OMNI 보다 30% 큼 (앞쪽 + 두꼐 동시 증가). */
+  forwardScale?: number;
 }
 
 export function renderFrame(
@@ -376,7 +378,7 @@ export function renderFrame(
       if (dx !== 0 || dy !== 0) {
         const fx = (sx + dx * fwdShift) * scale;
         const fy = (sy + dy * fwdShift) * scale;
-        const fwdR = Math.max(8, r * scale);
+        const fwdR = Math.max(8, r * (vision.forwardScale ?? 1) * scale);
         fctx.save();
         fctx.translate(fx, fy);
         fctx.rotate(Math.atan2(dy, dx));

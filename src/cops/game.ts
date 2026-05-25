@@ -795,8 +795,9 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
       facingDx,
       facingDy,
       radius: visionParam,
-      forwardStretch: 1.4,        // 앞뒤 1.4x (콘 모양 타원)
-      forwardOffset: visionParam * 0.25,  // 그라데이션 중심 앞으로 약간 → 뒤 좀 더 좁게
+      forwardStretch: 1.45,                // X 늘림 (앞뒤 길쭉)
+      forwardOffset: visionParam * 0.35,   // 그라데이션 중심 앞쪽 시프트 — ↑ 앞쪽 끝 더 멀리
+      forwardScale: 1.3,                   // FWD 원 전체 크기 — ↑ 앞쪽 더 멀리 + 두께 ↑
     } : null;
     renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale }, vision);
 
