@@ -1,34 +1,38 @@
-// 게임 룸 Durable Object — 좀비 모드 봇 (Phase 1: 봇 가입만).
+// 게임 룸 Durable Object — 좀비 모드 봇 (Phase 2: 전체 시뮬).
 //
-// Phase 1 범위:
-//   - HTTP /start 받으면 Supabase 채널에 가입 (presence track).
-//   - presence 받아서 알람으로 5분 idle 시 잠 (자기 종료).
-//   - 좀비 시뮬은 Phase 2 에서.
-//
-// Phase 2~3 에서 추가될 것:
-//   - 좀비 spawn/AI/snapshot broadcast
-//   - hit_request 처리
-//   - 클라이언트가 봇 존재 감지해서 자기 호스트 안 함
+// 흐름:
+//   1) 클라이언트 매치 시작 시 POST /room/:id/start → DO 깨우기.
+//   2) DO 가 Supabase 채널에 가입 (presence + 이벤트 구독).
+//   3) zombie_wave_start 받으면 좀비 시뮬 시작.
+//   4) 100ms 알람 마다 stepWave + (5Hz 마다) snapshot broadcast.
+//   5) zombie_hit_request 받으면 applyDamage.
+//   6) pos broadcast 받아서 플레이어 위치 추적 (AI 타깃용).
+//   7) match_start 받아서 difficulty 캡처.
+//   8) 5분 idle (플레이어 0명) 시 disconnect + DO sleep.
 
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
+import { loadBotMap, isBlockedAt, type BotMapData } from './map-loader.js';
+import {
+  applyDamage, makeBotWave, makeSnapshot, startWave, stepWave,
+  type BotWaveState, type Player,
+} from './sim.js';
+import { type Difficulty } from './stages.js';
 
 export interface Env {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
+  // 맵 JSON URL — 배포 시 클라이언트와 같은 origin (예: https://openmath.kr/maps/zombie_road.json)
+  MAP_URL?: string;
 }
 
-// 봇 ID — 사전순 최소가 되어야 클라이언트의 isLocalHost() 가 봇으로 향함.
-// UUID 영역(0-9, a-f) 보다 앞서는 '0' * 32 형식.
 const BOT_ID = '00000000-0000-0000-0000-000000000000';
 const BOT_NAME = '🤖 호스트';
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000;   // 5분 idle 시 자기 종료
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const TICK_INTERVAL_MS = 100;
+const SNAPSHOT_INTERVAL_MS = 200;
+const DEFAULT_MAP_URL = 'https://openmath.kr/maps/zombie_road.json';
 
-interface PresenceMeta {
-  id: string;
-  name: string;
-  color: string;
-  charIdx: number;
-}
+interface PlayerEntry { x: number; y: number; dead: boolean; lastSeenAt: number; }
 
 export class GameRoomDO implements DurableObject {
   private state: DurableObjectState;
@@ -36,7 +40,11 @@ export class GameRoomDO implements DurableObject {
   private supabase: SupabaseClient | null = null;
   private channel: RealtimeChannel | null = null;
   private roomId: string | null = null;
-  private playerCount = 0;
+  private map: BotMapData | null = null;
+  private wave: BotWaveState = makeBotWave();
+  private players = new Map<string, PlayerEntry>();
+  private lastTickAt = 0;
+  private lastSnapshotAt = 0;
   private lastActivityAt = Date.now();
 
   constructor(state: DurableObjectState, env: Env) {
@@ -47,32 +55,63 @@ export class GameRoomDO implements DurableObject {
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const roomId = url.searchParams.get('roomId') ?? '';
-
     if (url.pathname === '/start') {
       await this.ensureConnected(roomId);
-      return Response.json({ ok: true, roomId, playerCount: this.playerCount });
+      return Response.json({ ok: true, roomId, players: this.players.size, alive: this.wave.active });
     }
     if (url.pathname === '/status') {
       return Response.json({
         roomId: this.roomId,
-        playerCount: this.playerCount,
-        connected: this.channel !== null,
-        lastActivityAt: this.lastActivityAt,
+        players: this.players.size,
+        zombies: this.wave.zombies.length,
+        killCount: this.wave.killCount,
+        active: this.wave.active,
+        difficulty: this.wave.difficulty,
       });
     }
     return new Response('not found', { status: 404 });
   }
 
-  // 알람 — Phase 1 에서는 idle timeout 만 확인. Phase 2 에서 좀비 tick 추가.
+  // 알람 = sim tick + snapshot. setAlarm 으로 self-reschedule.
   async alarm(): Promise<void> {
-    const idleMs = Date.now() - this.lastActivityAt;
-    if (this.playerCount === 0 && idleMs > IDLE_TIMEOUT_MS) {
-      // 방에 아무도 없고 5분 지남 → 봇 종료 + DO sleep
+    if (!this.channel) {
+      // disconnect 됐는데 알람 남음 — 그냥 끝.
+      return;
+    }
+    const now = Date.now();
+    const idleMs = now - this.lastActivityAt;
+
+    // 활성 플레이어 정리 (pos heartbeat 안 오면 timeout 처리)
+    const PLAYER_TIMEOUT_MS = 30_000;
+    for (const [pid, p] of Array.from(this.players)) {
+      if (now - p.lastSeenAt > PLAYER_TIMEOUT_MS) this.players.delete(pid);
+    }
+
+    if (this.players.size === 0 && idleMs > IDLE_TIMEOUT_MS) {
       await this.disconnect();
       return;
     }
-    // 다음 알람 — Phase 2 에서는 sim tick 주기 (50~100ms). Phase 1: 1분.
-    await this.state.storage.setAlarm(Date.now() + 60_000);
+
+    // sim tick
+    if (this.wave.active && this.map) {
+      const dt = this.lastTickAt > 0 ? Math.min(250, now - this.lastTickAt) : TICK_INTERVAL_MS;
+      this.wave.playerCount = Math.max(1, this.players.size);
+      const playerArr: Player[] = Array.from(this.players, ([id, p]) => ({ id, x: p.x, y: p.y, dead: p.dead }));
+      stepWave(this.wave, dt, now, {
+        mapW: this.map.pixelW, mapH: this.map.pixelH,
+        isBlocked: (x, y) => isBlockedAt(this.map!, x, y),
+      }, playerArr);
+      this.lastTickAt = now;
+
+      // snapshot 주기적 broadcast
+      if (now - this.lastSnapshotAt >= SNAPSHOT_INTERVAL_MS) {
+        this.lastSnapshotAt = now;
+        const payload = makeSnapshot(this.wave, now / 1000);
+        void this.channel.send({ type: 'broadcast', event: 'zombie_snapshot', payload });
+      }
+    }
+
+    await this.state.storage.setAlarm(Date.now() + TICK_INTERVAL_MS);
   }
 
   private async ensureConnected(roomId: string): Promise<void> {
@@ -82,8 +121,18 @@ export class GameRoomDO implements DurableObject {
     }
     if (!roomId) return;
     this.roomId = roomId;
+
+    // 맵 로드 (1회 캐시)
+    try {
+      this.map = await loadBotMap(this.env.MAP_URL ?? DEFAULT_MAP_URL);
+    } catch (e) {
+      console.error('[bot] map load failed', e);
+      // 맵 없으면 sim 진행 불가 — 종료
+      return;
+    }
+
     this.supabase = createClient(this.env.SUPABASE_URL, this.env.SUPABASE_ANON_KEY, {
-      realtime: { params: { eventsPerSecond: 20 } },
+      realtime: { params: { eventsPerSecond: 30 } },
       auth: { persistSession: false },
     });
 
@@ -95,29 +144,82 @@ export class GameRoomDO implements DurableObject {
       },
     });
 
-    const meta: PresenceMeta = { id: BOT_ID, name: BOT_NAME, color: '#888888', charIdx: 0 };
+    const meta = { id: BOT_ID, name: BOT_NAME, color: '#888888', charIdx: 0 };
 
     this.channel
       .on('presence', { event: 'sync' }, () => {
-        const state = this.channel!.presenceState() as Record<string, unknown[]>;
-        this.playerCount = Math.max(0, Object.keys(state).length - 1);  // 봇 제외
+        const stateMap = this.channel!.presenceState() as Record<string, unknown[]>;
+        // 봇 자신 제외 카운트
+        let count = 0;
+        for (const k of Object.keys(stateMap)) if (k !== BOT_ID) count++;
         this.lastActivityAt = Date.now();
+        // 존재하지 않는 사람 players 에서 제거
+        const presentIds = new Set(Object.keys(stateMap).filter((k) => k !== BOT_ID));
+        for (const pid of Array.from(this.players.keys())) {
+          if (!presentIds.has(pid)) this.players.delete(pid);
+        }
+        if (count === 0) {
+          // 모든 플레이어 떠남 → wave 정지
+          if (this.wave.active) {
+            this.wave.active = false;
+            this.wave.zombies = [];
+          }
+        }
       })
-      .on('presence', { event: 'join' }, () => {
+      .on('broadcast', { event: 'pos' }, ({ payload }) => {
+        const p = payload as { id: string; x: number; y: number };
+        if (!p || typeof p.id !== 'string') return;
+        const now = Date.now();
+        const cur = this.players.get(p.id) ?? { x: 0, y: 0, dead: false, lastSeenAt: now };
+        cur.x = p.x; cur.y = p.y; cur.lastSeenAt = now;
+        this.players.set(p.id, cur);
+        this.lastActivityAt = now;
+      })
+      .on('broadcast', { event: 'hp' }, ({ payload }) => {
+        const p = payload as { id: string; hp: number };
+        const cur = this.players.get(p.id);
+        if (cur) cur.dead = p.hp <= 0;
+      })
+      .on('broadcast', { event: 'death' }, ({ payload }) => {
+        const p = payload as { id: string };
+        const cur = this.players.get(p.id);
+        if (cur) cur.dead = true;
+      })
+      .on('broadcast', { event: 'revive' }, ({ payload }) => {
+        const p = payload as { targetId: string };
+        const cur = this.players.get(p.targetId);
+        if (cur) cur.dead = false;
+      })
+      .on('broadcast', { event: 'zombie_wave_start' }, ({ payload }) => {
+        const p = payload as { startedAt: number };
+        if (!this.map) return;
+        // difficulty 는 match_start 에서 캡처 — wave_start 가 먼저 와도 기본값 normal
+        startWave(this.wave, Date.now(), {
+          mapW: this.map.pixelW, mapH: this.map.pixelH,
+          isBlocked: (x, y) => isBlockedAt(this.map!, x, y),
+        }, this.wave.difficulty);
         this.lastActivityAt = Date.now();
+        void p;
       })
-      .on('presence', { event: 'leave' }, () => {
-        this.lastActivityAt = Date.now();
+      .on('broadcast', { event: 'match_start' }, ({ payload }) => {
+        const p = payload as { zone: Difficulty };
+        if (p?.zone === 'easy' || p?.zone === 'normal' || p?.zone === 'hell') {
+          this.wave.difficulty = p.zone;
+        }
       })
-      // Phase 2 에서: zombie_hit_request 수신 → 좀비 hp 깎고 snapshot 에 반영.
+      .on('broadcast', { event: 'zombie_hit_request' }, ({ payload }) => {
+        const p = payload as { zid: string; dmg: number };
+        if (!p) return;
+        applyDamage(this.wave, p.zid, p.dmg);
+      })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await this.channel!.track(meta);
         }
       });
 
-    // 첫 알람 예약 — 1분 후 idle 체크 시작
-    await this.state.storage.setAlarm(Date.now() + 60_000);
+    // 첫 알람 — TICK_INTERVAL_MS 후 sim 시작
+    await this.state.storage.setAlarm(Date.now() + TICK_INTERVAL_MS);
   }
 
   private async disconnect(): Promise<void> {
@@ -128,8 +230,8 @@ export class GameRoomDO implements DurableObject {
     }
     this.supabase = null;
     this.roomId = null;
-    this.playerCount = 0;
-    // 알람 취소
+    this.players.clear();
+    this.wave = makeBotWave();
     await this.state.storage.deleteAlarm();
   }
 }
