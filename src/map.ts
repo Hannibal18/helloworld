@@ -318,12 +318,19 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
   };
   for (const layer of layers) {
     if (layer.kind === 'tile') {
+      // class="collision" 레이어 — 타일셋의 충돌박스 무시하고 전체 타일을 막힘으로.
+      // (용암/구덩이/물 같이 시각만 위험인 타일들도 통과 못 하게 강제할 때 사용)
+      const isFullCollision = (layer.class ?? '').toLowerCase() === 'collision';
       for (let i = 0; i < layer.data.length; i++) {
         const gid = layer.data[i];
         if (gid <= 0) continue;
         const tx = i % layer.width;
         const ty = Math.floor(i / layer.width);
-        pushCollisionForGid(gid, tx * tw, ty * th);
+        if (isFullCollision) {
+          collisionRects.push({ x0: tx * tw, y0: ty * th, x1: (tx + 1) * tw, y1: (ty + 1) * th });
+        } else {
+          pushCollisionForGid(gid, tx * tw, ty * th);
+        }
       }
     } else if (layer.kind === 'object') {
       for (const o of layer.objects) {

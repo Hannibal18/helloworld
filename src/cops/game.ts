@@ -15,7 +15,7 @@ import {
 import { makeCamera, TILE, triggerShake, updateCamera } from '../world';
 import { prescaleCharacter, randomCharColor } from '../sprites';
 import {
-  BODY_OFF_Y,
+  BODY_HH, BODY_HW, BODY_OFF_Y,
   makeLocalPlayer, MAX_HP, updateLocalPlayer, clampToWorld,
   type UpdateCtx,
 } from '../player';
@@ -122,12 +122,17 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   }
   console.log(`[cops] map zones: ${jumpZones.length} jump, ${portals.length} portal`);
 
-  // 쿨다운 — 진입 즉시 재발동 방지
+  // 점프: 시간 쿨다운. 포털: 출구 영역에서 완전히 벗어날 때까지 재발동 금지 (exit-based).
   let jumpCooldownUntil = 0;
-  let portalCooldownUntil = 0;
+  let portalJustExited: Portal | null = null;
   const JUMP_LEAP = 56;          // 점프 시 이동 방향으로 픽셀 (1.5 타일)
   const JUMP_COOLDOWN = 0.4;
-  const PORTAL_COOLDOWN = 1.0;
+  // 캐릭터 몸통 AABB 와 사각형 영역의 겹침 체크 — 점이 아닌 면 단위.
+  const bodyOverlaps = (rx: number, ry: number, rw: number, rh: number): boolean => {
+    const bx0 = local.x - BODY_HW, bx1 = local.x + BODY_HW;
+    const by0 = local.y + BODY_OFF_Y - BODY_HH, by1 = local.y + BODY_OFF_Y + BODY_HH;
+    return bx0 < rx + rw && bx1 > rx && by0 < ry + rh && by1 > ry;
+  };
 
   // ===== 카메라 + 캔버스 =====
   const camera = makeCamera(320, 240);
@@ -620,10 +625,10 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     updateLocalPlayer(local, ctx);
     clampToWorld(local, map);
 
-    // ===== 점프 영역 — 진입하면 이동 방향으로 leap =====
+    // ===== 점프 영역 — 몸통이 닿으면 이동 방향으로 leap. 시간 쿨다운. =====
     if (local.moving && now >= jumpCooldownUntil) {
       for (const z of jumpZones) {
-        if (local.x >= z.x && local.x <= z.x + z.w && local.y >= z.y && local.y <= z.y + z.h) {
+        if (bodyOverlaps(z.x, z.y, z.w, z.h)) {
           let dx = 0, dy = 0;
           switch (local.dir) {
             case 'up':    dy = -JUMP_LEAP; break;
@@ -631,7 +636,6 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
             case 'left':  dx = -JUMP_LEAP; break;
             case 'right': dx =  JUMP_LEAP; break;
           }
-          // 충돌 무시 — 그냥 좌표 이동
           local.x += dx;
           local.y += dy;
           clampToWorld(local, map);
@@ -641,21 +645,25 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
       }
     }
 
-    // ===== 포털 — 같은 pairId 끼리 순간이동. 출구에선 항상 아래(down) 바라봄 (자연스러움) =====
-    if (now >= portalCooldownUntil) {
+    // ===== 포털 — 몸통이 닿고 + 위(up) 방향 입력일 때만 발동.
+    // 출구 직후엔 그 포털에서 완전히 벗어날 때까지 재발동 막음 (exit-based cooldown).
+    if (portalJustExited && !bodyOverlaps(portalJustExited.x, portalJustExited.y, portalJustExited.w, portalJustExited.h)) {
+      portalJustExited = null;
+    }
+    const movingUp = input.moveY < 0;
+    if (movingUp) {
       for (const p of portals) {
-        if (local.x >= p.x && local.x <= p.x + p.w && local.y >= p.y && local.y <= p.y + p.h) {
-          const pair = portals.find((p2) => p2 !== p && p2.pairId === p.pairId);
-          if (pair) {
-            local.x = pair.cx;
-            local.y = pair.cy;
-            local.dir = 'down';
-            portalCooldownUntil = now + PORTAL_COOLDOWN;
-            // 즉시 pos broadcast (다른 클라가 빨리 따라잡음)
-            sendLocalPos();
-          }
-          break;
+        if (p === portalJustExited) continue;
+        if (!bodyOverlaps(p.x, p.y, p.w, p.h)) continue;
+        const pair = portals.find((p2) => p2 !== p && p2.pairId === p.pairId);
+        if (pair) {
+          local.x = pair.cx;
+          local.y = pair.cy;
+          local.dir = 'down';
+          portalJustExited = pair;
+          sendLocalPos();
         }
+        break;
       }
     }
 
