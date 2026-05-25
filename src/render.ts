@@ -57,6 +57,10 @@ export interface VisionConfig {
   forwardOffset?: number;
   /** FWD 원 반경 배율. 1.0 = vision.radius 그대로, 1.3 = FWD 가 OMNI 보다 30% 큼 (앞쪽 + 두꼐 동시 증가). */
   forwardScale?: number;
+  /** 한 번이라도 본 영역의 어두움. 0 = 완전 밝음(메모리 무시), 1 = 미탐색과 동일.
+   *  StarCraft 식 fog-of-war 효과 — 미탐색은 완전 검정, 탐색은 dim 검정, 현재 시야는 밝음.
+   *  미지정/0 이면 fog memory 안 씀 (현재 시야 밖은 모두 완전 검정). */
+  exploredDimAlpha?: number;
 }
 
 export function renderFrame(
@@ -349,17 +353,10 @@ export function renderFrame(
     const stretch = vision.forwardStretch ?? 1.0;
     const r = Math.max(20, vision.radius);
     const dx = vision.facingDx, dy = vision.facingDy;
-    const buildFog = (W: number, H: number, scale: number): HTMLCanvasElement => {
-      const fog = getFogCanvas(W, H);
-      const fctx = fog.getContext('2d')!;
-      fctx.setTransform(1, 0, 0, 1, 0, 0);   // reset (캐시 재사용)
-      fctx.globalCompositeOperation = 'source-over';
-      fctx.fillStyle = '#000';
-      fctx.fillRect(0, 0, W, H);
-      fctx.globalCompositeOperation = 'destination-out';
-      const cx = sx * scale, cy = sy * scale;
-      // 부드러운 단조 감소 stops — 안쪽 plateau 없음, 가장자리까지 균등하게 어두워짐.
-      // 약간 concave (slow start, faster mid, slow end) 로 자연스러운 라이트 폴오프.
+    const dimAlpha = Math.max(0, Math.min(1, vision.exploredDimAlpha ?? 0));
+    // helper — fog 캔버스에 OMNI + FWD 시야 도형 그리기 (현재 fillStyle 색상으로).
+    // wx/wy = 시야 중심을 그릴 위치 (해당 캔버스 좌표). scale = 그릴 크기 배율.
+    const paintVisionShapes = (fctx: CanvasRenderingContext2D, W: number, H: number, wx: number, wy: number, scale: number) => {
       const addSoftStops = (grad: CanvasGradient) => {
         grad.addColorStop(0,    'rgba(255,255,255,1.0)');
         grad.addColorStop(0.2,  'rgba(255,255,255,0.82)');
@@ -368,16 +365,14 @@ export function renderFrame(
         grad.addColorStop(0.8,  'rgba(255,255,255,0.15)');
         grad.addColorStop(1,    'rgba(255,255,255,0)');
       };
-      // (1) OMNI — 캐릭터 중심 동심원. 반경 = full r (FWD 와 같음) → OMNI 경계 안 보임.
       const omniR = Math.max(8, r * scale);
-      const og = fctx.createRadialGradient(cx, cy, 0, cx, cy, omniR);
+      const og = fctx.createRadialGradient(wx, wy, 0, wx, wy, omniR);
       addSoftStops(og);
       fctx.fillStyle = og;
       fctx.fillRect(0, 0, W, H);
-      // (2) FWD — facing 방향으로 시프트 + X 스트레치 (회전된 좌표계에서 동심원)
       if (dx !== 0 || dy !== 0) {
-        const fx = (sx + dx * fwdShift) * scale;
-        const fy = (sy + dy * fwdShift) * scale;
+        const fx = wx + dx * fwdShift * scale;
+        const fy = wy + dy * fwdShift * scale;
         const fwdR = Math.max(8, r * (vision.forwardScale ?? 1) * scale);
         fctx.save();
         fctx.translate(fx, fy);
@@ -389,6 +384,39 @@ export function renderFrame(
         fctx.fillRect(-W * 2, -H * 2, W * 4, H * 4);
         fctx.restore();
       }
+    };
+
+    // ===== explored mask 갱신 (월드 좌표계, persistent) =====
+    // dimAlpha>0 일 때만 활성. 현재 시야 위치에서 destination-out 으로 영구 erase.
+    let explored: HTMLCanvasElement | null = null;
+    if (dimAlpha > 0) {
+      explored = getExploredCanvas(map.pixelW, map.pixelH);
+      const ectx = explored.getContext('2d')!;
+      ectx.setTransform(1, 0, 0, 1, 0, 0);
+      ectx.globalCompositeOperation = 'destination-out';
+      // 현재 vision 도형을 explored 좌표(=월드)에 그림. wx/wy = 캐릭터 월드 좌표.
+      paintVisionShapes(ectx, map.pixelW, map.pixelH, vision.worldX, vision.worldY, 1);
+      ectx.globalCompositeOperation = 'source-over';
+    }
+
+    const buildFog = (W: number, H: number, scale: number): HTMLCanvasElement => {
+      const fog = getFogCanvas(W, H);
+      const fctx = fog.getContext('2d')!;
+      fctx.setTransform(1, 0, 0, 1, 0, 0);   // reset (캐시 재사용)
+      fctx.globalCompositeOperation = 'source-over';
+      // 1. dimAlpha 활성 시: 시작은 dim 검정. 비활성 시: 완전 검정.
+      fctx.fillStyle = explored ? `rgba(0,0,0,${dimAlpha})` : '#000';
+      fctx.fillRect(0, 0, W, H);
+      // 2. explored 있으면, 미탐색 영역은 완전 검정 추가 (explored 마스크 blit).
+      if (explored) {
+        // explored 의 카메라 영역만 blit. scale 차이 처리 — explored 는 월드 px, 우리는 scale 적용된 viewport px.
+        const ex = camera.x, ey = camera.y;
+        const ew = camera.viewW, eh = camera.viewH;
+        fctx.drawImage(explored, ex, ey, ew, eh, 0, 0, W, H);
+      }
+      // 3. destination-out 으로 현재 시야 carve (viewport 좌표 — 캐릭터 화면 위치 sx*scale, sy*scale).
+      fctx.globalCompositeOperation = 'destination-out';
+      paintVisionShapes(fctx, W, H, sx * scale, sy * scale, scale);
       return fog;
     };
     // game 캔버스
@@ -406,6 +434,32 @@ export function renderFrame(
 // offscreen fog 캔버스 캐시 — 매 프레임 alloc 안 하고 재사용 (사이즈 바뀌면 리사이즈).
 let _fogCanvasGame: HTMLCanvasElement | null = null;
 let _fogCanvasHud: HTMLCanvasElement | null = null;
+
+// 한 번이라도 본 영역(explored) — 맵 사이즈 캔버스. 처음엔 완전 검정, 시야가 닿은 곳만 alpha 감소.
+let _exploredCanvas: HTMLCanvasElement | null = null;
+function getExploredCanvas(w: number, h: number): HTMLCanvasElement {
+  if (!_exploredCanvas || _exploredCanvas.width !== w || _exploredCanvas.height !== h) {
+    _exploredCanvas = document.createElement('canvas');
+    _exploredCanvas.width = w;
+    _exploredCanvas.height = h;
+    // 시작: 전체 검정 (alpha 1) — 미탐색 상태
+    const ectx = _exploredCanvas.getContext('2d')!;
+    ectx.fillStyle = '#000';
+    ectx.fillRect(0, 0, w, h);
+  }
+  return _exploredCanvas;
+}
+/** explored mask 리셋 — 맵 전환 / 라운드 시작 시 호출. */
+export function resetExploredFog(): void {
+  if (_exploredCanvas) {
+    const ectx = _exploredCanvas.getContext('2d')!;
+    ectx.setTransform(1, 0, 0, 1, 0, 0);
+    ectx.globalCompositeOperation = 'source-over';
+    ectx.fillStyle = '#000';
+    ectx.fillRect(0, 0, _exploredCanvas.width, _exploredCanvas.height);
+  }
+}
+
 function getFogCanvas(w: number, h: number): HTMLCanvasElement {
   // 두 사이즈 가능 (game/hud) — 그냥 1개로 캐시 못 함. 사이즈로 분기.
   // 간단히: 두 개 캐시, 사이즈 다르면 game/hud 중 작은 쪽으로 식별.
