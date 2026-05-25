@@ -71,7 +71,8 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   // ?vision=120 으로 시야 반경(px) 조절. 0 또는 미지정이면 시야 제한 없음.
   const urlParams = new URLSearchParams(window.location.search);
   const mapParam = urlParams.get('map');
-  const visionParam = parseInt(urlParams.get('vision') ?? '0', 10);
+  // 테스트 기본값 120 (반경 120px). ?vision=0 으로 끄거나 ?vision=200 등으로 조절.
+  const visionParam = parseInt(urlParams.get('vision') ?? '120', 10);
   const mapPath = mapParam === 'lost_temple'
     ? '/maps/lost_temple/lost_temple.json'
     : '/maps/cops_lobby/cops_lobby.json';
