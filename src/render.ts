@@ -51,10 +51,10 @@ export function renderFrame(
 ): void {
   ctx.imageSmoothingEnabled = false;
 
-  // 1. 바닥 / 장식 — 항상 캐릭터 아래
+  // 1. 바닥 / 장식 — 항상 캐릭터 아래. now 전달 시 애니메이션 타일이 시간에 따라 전환.
   for (const name of ['ground', 'decor']) {
     const layer = map.layerByName.get(name);
-    if (layer) drawTileLayer(ctx, map, layer, camera.x, camera.y, camera.viewW, camera.viewH);
+    if (layer) drawTileLayer(ctx, map, layer, camera.x, camera.y, camera.viewW, camera.viewH, now);
   }
 
   // 2. Y-소트 — objects_below 의 각 타일과 캐릭터를 발 위치 기준으로 정렬해서 그림.
@@ -88,7 +88,8 @@ export function renderFrame(
     if (it.kind === 'tile') {
       drawTile(ctx, map, it.gid,
         Math.round(it.tx * map.tileW - camera.x),
-        Math.round(it.ty * map.tileH - camera.y));
+        Math.round(it.ty * map.tileH - camera.y),
+        now);
     } else if (it.kind === 'local') {
       drawLocal(ctx, camera, local, now);
     } else if (it.kind === 'remote') {
@@ -98,7 +99,7 @@ export function renderFrame(
 
   // 3. objects_above — 항상 캐릭터 위 (지붕·나무 윗부분 등 가림 효과 전용)
   const above = map.layerByName.get('objects_above');
-  if (above) drawTileLayer(ctx, map, above, camera.x, camera.y, camera.viewW, camera.viewH);
+  if (above) drawTileLayer(ctx, map, above, camera.x, camera.y, camera.viewW, camera.viewH, now);
 
   // 4. 이름/HP/킬 — HUD 오버레이 캔버스에 그림 (full DPR, 크리스프 텍스트).
   //    HUD 캔버스는 게임 캔버스보다 해상도가 높으므로 좌표는 (worldX - camera.x) * displayScale 로 변환.

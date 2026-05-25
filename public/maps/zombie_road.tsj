@@ -1361,6 +1361,11 @@
         }, 
         {
          "id":81,
+         "animation":[
+                {"tileid":81, "duration":100},
+                {"tileid":82, "duration":100},
+                {"tileid":83, "duration":100}
+            ],
          "objectgroup":
             {
              "draworder":"index",
@@ -1385,7 +1390,7 @@
              "x":0,
              "y":0
             }
-        }, 
+        },
         {
          "id":82,
          "objectgroup":

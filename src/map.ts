@@ -17,6 +17,11 @@ export interface Tileset {
   // localId(타일셋 내부 ID) → 타일 내부 좌표(0..tilewidth) 기준 충돌 사각형들.
   // Tiled 의 Tile Collision Editor 로 그린 도형. width/height 0 인 Point 객체는 무시.
   tileCollisions: Map<number, Array<{ x: number; y: number; w: number; h: number }>>;
+  // localId → 애니메이션 프레임 시퀀스. duration 은 ms.
+  // Tiled 의 Tile Animation Editor 로 만든 데이터.
+  tileAnimations: Map<number, Array<{ tileid: number; duration: number }>>;
+  // 위의 totalDuration 캐시 (매 프레임 합산 안 하려고)
+  tileAnimTotal: Map<number, number>;
 }
 
 export type Layer =
@@ -86,6 +91,7 @@ interface RawTilesetTile {
       height?: number;
     }>;
   };
+  animation?: Array<{ tileid: number; duration: number }>;
 }
 interface RawLayer {
   id?: number;
@@ -140,6 +146,9 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
     // per-tile 충돌 도형 모음 — Tile Collision Editor 의 사각형들.
     // width 또는 height 가 0/undefined 인 객체는 Point 도구로 찍은 점이라 무시.
     const tileCollisions = new Map<number, Array<{ x: number; y: number; w: number; h: number }>>();
+    // per-tile 애니메이션 — Tile Animation Editor 의 프레임 시퀀스.
+    const tileAnimations = new Map<number, Array<{ tileid: number; duration: number }>>();
+    const tileAnimTotal = new Map<number, number>();
     for (const tileEntry of t.tiles ?? []) {
       const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
       for (const o of tileEntry.objectgroup?.objects ?? []) {
@@ -148,6 +157,12 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
         if (w > 0 && h > 0) rects.push({ x: o.x, y: o.y, w, h });
       }
       if (rects.length > 0) tileCollisions.set(tileEntry.id, rects);
+      if (tileEntry.animation && tileEntry.animation.length > 0) {
+        tileAnimations.set(tileEntry.id, tileEntry.animation);
+        let total = 0;
+        for (const f of tileEntry.animation) total += Math.max(1, f.duration);
+        tileAnimTotal.set(tileEntry.id, total);
+      }
     }
 
     const ts: Tileset = {
@@ -162,6 +177,8 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
       imageLoaded: false,
       imageError: null,
       tileCollisions,
+      tileAnimations,
+      tileAnimTotal,
     };
     tilesets.push(ts);
 
@@ -334,16 +351,43 @@ export function resolveTile(map: TileMap, gid: number):
   return null;
 }
 
+// 애니메이션 타일이면 nowSec 기준 현재 프레임 gid 반환. 아니면 원본 gid 그대로.
+// nowSec 가 안 들어오면 항상 첫 프레임만 보임 (정적).
+export function resolveAnimatedGid(map: TileMap, gid: number, nowSec: number | null): number {
+  if (gid <= 0 || nowSec === null) return gid;
+  // 어떤 타일셋의 타일인지 — firstgid 기반.
+  for (let i = map.tilesets.length - 1; i >= 0; i--) {
+    const ts = map.tilesets[i];
+    if (gid < ts.firstgid) continue;
+    const localId = gid - ts.firstgid;
+    const frames = ts.tileAnimations.get(localId);
+    if (!frames) return gid;       // 정적 타일
+    const total = ts.tileAnimTotal.get(localId) ?? 0;
+    if (total <= 0) return gid;
+    const t = (nowSec * 1000) % total;
+    let acc = 0;
+    for (const f of frames) {
+      acc += Math.max(1, f.duration);
+      if (t < acc) return ts.firstgid + f.tileid;
+    }
+    return ts.firstgid + frames[frames.length - 1].tileid;
+  }
+  return gid;
+}
+
 // 타일 한 칸 그리기 — 이미지 로드됐으면 drawImage, 아니면 placeholder 색.
+// nowSec 가 들어오면 애니메이션 타일은 현재 프레임으로 자동 교체.
 export function drawTile(
   ctx: CanvasRenderingContext2D,
   map: TileMap,
   gid: number,
   dx: number,
   dy: number,
+  nowSec: number | null = null,
 ): void {
   if (gid <= 0) return;
-  const r = resolveTile(map, gid);
+  const animGid = resolveAnimatedGid(map, gid, nowSec);
+  const r = resolveTile(map, animGid);
   if (!r) return;
   if (r.tileset.image && r.tileset.imageLoaded) {
     ctx.drawImage(
@@ -369,6 +413,7 @@ function placeholderColor(gid: number): string {
 }
 
 // 한 타일 레이어를 카메라 기준으로 그린다.
+// nowSec 가 들어오면 애니메이션 타일이 시간에 따라 자동 전환.
 export function drawTileLayer(
   ctx: CanvasRenderingContext2D,
   map: TileMap,
@@ -377,6 +422,7 @@ export function drawTileLayer(
   cameraY: number,
   viewW: number,
   viewH: number,
+  nowSec: number | null = null,
 ): void {
   if (layer.kind !== 'tile' || !layer.visible) return;
   const tw = map.tileW, th = map.tileH;
@@ -388,7 +434,7 @@ export function drawTileLayer(
     for (let tx = tx0; tx <= tx1; tx++) {
       const gid = layer.data[ty * layer.width + tx];
       if (gid <= 0) continue;
-      drawTile(ctx, map, gid, Math.round(tx * tw - cameraX), Math.round(ty * th - cameraY));
+      drawTile(ctx, map, gid, Math.round(tx * tw - cameraX), Math.round(ty * th - cameraY), nowSec);
     }
   }
 }
