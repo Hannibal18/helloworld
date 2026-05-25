@@ -4,10 +4,11 @@
 export type Dir = 'up' | 'down' | 'left' | 'right';
 
 // 게임 모드 — 입장 시 선택. 채널 키에 포함돼 다른 모드끼리 격리됨.
-// 'lobby'  = 대기 광장 (좀비 X, 무기 X, 채팅 가능). 모두 1 룸.
-// 'zombie' = 실제 배틀. 매치메이킹으로 동적 룸 ID 부여.
-// 'pk'     = 옛 PvP 모드 (현재 UI 비활성).
-export type GameMode = 'pk' | 'zombie' | 'lobby';
+// 'lobby'      = 엄마전쟁 대기 광장 (좀비 X, 무기 X, 채팅 가능). 모두 1 룸.
+// 'zombie'     = 엄마전쟁 실제 배틀. 매치메이킹으로 동적 룸 ID 부여.
+// 'pk'         = 옛 PvP 모드 (현재 UI 비활성).
+// 'cops_lobby' = 경찰과도둑 대기실. 별개 게임이라 채널 분리.
+export type GameMode = 'pk' | 'zombie' | 'lobby' | 'cops_lobby';
 
 // presence track payload — 누가 방에 있는지 (신원만)
 export interface PresenceMeta {

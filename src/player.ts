@@ -272,11 +272,11 @@ function rectIntersect(a: { x0: number; y0: number; x1: number; y1: number }, b:
 
 // "공격 신호를 받으면 내가 맞았는지 판정"하는 핵심 함수.
 // 트레이드오프: Realtime 은 중계만 하므로 클라가 자기 권위 — 치팅 가능. 캐주얼 게임이라 수용.
-export function onAttackBroadcast(p: LocalPlayer, atk: AttackPayload, ctx: UpdateCtx, mode: 'pk' | 'zombie' | 'lobby' = 'pk'): void {
+export function onAttackBroadcast(p: LocalPlayer, atk: AttackPayload, ctx: UpdateCtx, mode: 'pk' | 'zombie' | 'lobby' | 'cops_lobby' = 'pk'): void {
   if (p.dead) return;
   if (atk.id === p.id) return; // 자기 메시지는 self:false 라 안 옴 — 방어용
   if (ctx.now < p.iFrameUntil) return;
-  if (mode !== 'pk') return; // 좀비/광장 = PvP 비활성. PK 모드에서만 데미지.
+  if (mode !== 'pk') return; // 좀비/광장/경찰대기실 = PvP 비활성. PK 모드에서만 데미지.
 
   const hb = attackerHitbox(atk);
   const me = bodyAabb(p);

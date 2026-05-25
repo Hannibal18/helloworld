@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>엄마 전쟁</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/quiple/galmuri/dist/galmuri.css" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 입장 화면 -->
+      <div id="intro" class="intro">
+        <div class="intro-card">
+          <h1 class="intro-title">엄마 전쟁</h1>
+          <p class="intro-sub">캐릭터를 뽑고 입장하세요</p>
+          <div class="char-preview">
+            <canvas id="char-preview-canvas" class="char-preview-canvas" width="64" height="64"></canvas>
+          </div>
+          <button id="reroll" class="reroll-btn" type="button">🎲 다시 뽑기</button>
+          <!-- form 으로 감싸야 iOS 의 연락처 자동완성 차단이 안정적. -->
+          <form id="intro-form" autocomplete="off" onsubmit="return false" style="margin:0;padding:0;">
+            <input id="nick" class="nick-input" type="search" name="nickname"
+              maxlength="12" placeholder="닉네임"
+              autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+              inputmode="text" enterkeyhint="go"
+              data-form-type="other" data-lpignore="true" data-1p-ignore="true" />
+          </form>
+          <!-- 방 코드 / PK 모드 토글 임시 비활성화 — 추후 부활할 때 hidden 만 제거.
+               main.ts 가 자동으로 mode='zombie', gameId='' 로 처리한다. -->
+          <input id="game-id" class="nick-input game-id-input hidden" type="search" maxlength="8" placeholder="방 코드 (비우면 새 방)"
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+            data-form-type="other" />
+          <div class="mode-toggle hidden" role="radiogroup" aria-label="게임 모드">
+            <button id="mode-pk" type="button" class="mode-btn" data-mode="pk">⚔️ PK 모드</button>
+            <button id="mode-zombie" type="button" class="mode-btn active" data-mode="zombie">🧟 좀비 모드</button>
+          </div>
+          <button id="enter" class="enter-btn">입 장</button>
+          <p class="intro-hint">PC: WASD/방향키 이동 · Space 공격<br/>모바일: 조이스틱 + 공격 버튼</p>
+          <!-- 밸런스 대시보드 링크 — UI 에서 숨김. 운영자는 /dashboard.html 직접 접근. -->
+          <!-- <a href="/dashboard.html" class="dash-link-intro">⚙️ 밸런스 대시보드</a> -->
+        </div>
+      </div>
+
+      <!-- 게임 화면 -->
+      <div id="game" class="game hidden">
+        <!-- 백버퍼 + 말풍선 오버레이를 정수배 업스케일된 viewport 박스 안에서 함께 다룬다 -->
+        <div id="viewport" class="viewport">
+          <canvas id="canvas"></canvas>
+          <canvas id="hud-canvas" class="hud-canvas"></canvas>
+          <div id="bubbles" class="bubbles-layer"></div>
+        </div>
+
+        <!-- 상단 HUD — 좌/우 그룹으로 분리해서 점수(중앙 canvas) 가 가려지지 않게 -->
+        <div class="hud-top">
+          <div class="hud-top-group">
+            <div class="hud-pill" id="roster">접속자 1</div>
+            <div class="hud-pill" id="my-kills">킬 0</div>
+          </div>
+          <div class="hud-top-group hud-top-right" id="hud-top-right">
+            <!-- 스테이지 pill 동적 삽입 -->
+          </div>
+        </div>
+
+        <!-- 좌상단 스택: 랭킹 → 채팅 로그 (flex column 으로 자동 정렬) -->
+        <div class="left-stack">
+          <div id="ranking" class="ranking"></div>
+          <div id="chat-log" class="chat-log"></div>
+        </div>
+
+        <!-- 미니맵 (우상단) -->
+        <canvas id="minimap" class="minimap" width="120" height="80"></canvas>
+
+        <!-- 킬/사망 중앙 배너 -->
+        <div id="banner" class="banner"></div>
+
+        <!-- 좀비 모드 사망 화면 (점수 브레이크다운 + 재도전) -->
+        <div id="death-screen" class="death-screen hidden">
+          <div class="death-card">
+            <div class="death-title">쓰러졌다…</div>
+            <div class="death-grade" id="death-grade"></div>
+            <div class="death-stats" id="death-stats"></div>
+            <button id="death-retry" type="button" class="death-retry">다시 도전</button>
+          </div>
+        </div>
+
+        <!-- 모바일 가상 컨트롤 -->
+        <div id="touch-controls" class="touch-controls hidden">
+          <div id="stick" class="stick">
+            <div id="stick-knob" class="stick-knob"></div>
+          </div>
+          <div class="touch-right">
+            <button id="btn-mental" class="touch-btn touch-btn-mental">멘탈<br/>공격</button>
+            <button id="btn-attack" class="touch-btn touch-btn-attack">공격</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 모바일 디버깅: 모듈 로딩 실패도 잡히게 inline 으로 가장 먼저 attach. -->
+    <script>
+      (function () {
+        function showFatal(msg) {
+          try {
+            var b = document.getElementById('fatal-error');
+            if (!b) {
+              b = document.createElement('div');
+              b.id = 'fatal-error';
+              b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#3a1010;color:#ff9a9a;padding:10px 14px;font:12px monospace;border-bottom:2px solid #a02a2a;white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow:auto;';
+              (document.body || document.documentElement).appendChild(b);
+            }
+            b.textContent = '[FATAL] ' + msg;
+          } catch (_) {}
+        }
+        window.addEventListener('error', function (e) {
+          showFatal((e && e.message ? e.message : 'error') + '\n' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason ? e.reason : null;
+          showFatal('unhandled rejection: ' + (r && r.message ? r.message : (r || 'unknown')));
+        });
+      })();
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

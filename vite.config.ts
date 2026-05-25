@@ -11,6 +11,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: 'index.html',
+        momWar: 'mom-war.html',
+        cops: 'cops.html',
         dashboard: 'dashboard.html',
       },
     },

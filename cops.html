@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>경찰과 도둑</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/quiple/galmuri/dist/galmuri.css" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 입장 화면 -->
+      <div id="intro" class="intro">
+        <div class="intro-card">
+          <a href="/" class="dash-link-intro" style="display:block;margin-bottom:8px;color:#9a8060;text-decoration:none;font-size:11px;">← 게임 선택</a>
+          <h1 class="intro-title">경찰과 도둑</h1>
+          <p class="intro-sub">캐릭터를 뽑고 대기실 입장</p>
+          <div class="char-preview">
+            <canvas id="char-preview-canvas" class="char-preview-canvas" width="64" height="64"></canvas>
+          </div>
+          <button id="reroll" class="reroll-btn" type="button">🎲 다시 뽑기</button>
+          <form id="intro-form" autocomplete="off" onsubmit="return false" style="margin:0;padding:0;">
+            <input id="nick" class="nick-input" type="search" name="nickname"
+              maxlength="12" placeholder="닉네임"
+              autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+              inputmode="text" enterkeyhint="go"
+              data-form-type="other" data-lpignore="true" data-1p-ignore="true" />
+          </form>
+          <button id="enter" class="enter-btn">대기실 입장</button>
+          <p class="intro-hint">대기실에서 친구와 파티를 짤 수 있어<br/>(게임 로직은 개발 중)</p>
+        </div>
+      </div>
+
+      <!-- 게임 화면 -->
+      <div id="game" class="game hidden">
+        <div id="viewport" class="viewport">
+          <canvas id="canvas"></canvas>
+          <canvas id="hud-canvas" class="hud-canvas"></canvas>
+          <div id="bubbles" class="bubbles-layer"></div>
+        </div>
+
+        <!-- 상단 HUD — 좌측에 접속자, 우측은 예비 -->
+        <div class="hud-top">
+          <div class="hud-top-group">
+            <div class="hud-pill" id="roster">접속자 1</div>
+          </div>
+          <div class="hud-top-group hud-top-right" id="hud-top-right"></div>
+        </div>
+
+        <!-- 좌상단 스택: 채팅 로그 -->
+        <div class="left-stack">
+          <div id="chat-log" class="chat-log"></div>
+        </div>
+
+        <!-- 미니맵 (대기실은 작은 맵이지만 통일감 위해 유지) -->
+        <canvas id="minimap" class="minimap" width="120" height="80"></canvas>
+
+        <!-- 배너 (출발/안내) -->
+        <div id="banner" class="banner"></div>
+
+        <!-- 모바일 가상 컨트롤 — 멘탈 공격 버튼은 대기실에 불필요해서 숨김 -->
+        <div id="touch-controls" class="touch-controls hidden">
+          <div id="stick" class="stick">
+            <div id="stick-knob" class="stick-knob"></div>
+          </div>
+          <div class="touch-right">
+            <button id="btn-attack" class="touch-btn touch-btn-attack" style="display:none;">공격</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 모바일 디버깅용 인라인 에러 핸들러 -->
+    <script>
+      (function () {
+        function showFatal(msg) {
+          try {
+            var b = document.getElementById('fatal-error');
+            if (!b) {
+              b = document.createElement('div');
+              b.id = 'fatal-error';
+              b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#3a1010;color:#ff9a9a;padding:10px 14px;font:12px monospace;border-bottom:2px solid #a02a2a;white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow:auto;';
+              (document.body || document.documentElement).appendChild(b);
+            }
+            b.textContent = '[FATAL] ' + msg;
+          } catch (_) {}
+        }
+        window.addEventListener('error', function (e) {
+          showFatal((e && e.message ? e.message : 'error') + '\n' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason ? e.reason : null;
+          showFatal('unhandled rejection: ' + (r && r.message ? r.message : (r || 'unknown')));
+        });
+      })();
+    </script>
+    <script type="module" src="/src/cops/main.ts"></script>
+  </body>
+</html>
