@@ -773,10 +773,25 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
         danceStart: r.danceStart,
       });
     }
-    // 시야 비네트 — ?vision=N (반경 px) 으로 활성. 캐릭터 몸통 중심에서 그라데이션.
+    // 시야 비네트 — 캐릭터 바라보는 방향으로 시야 중심을 앞쪽 이동 → 앞은 멀리, 뒤는 가까이.
+    // 8방향: 이동 중이면 input 정규화 벡터, 정지 중이면 local.dir 의 4방향.
+    let facingDx = 0, facingDy = 0;
+    if (local.moving) {
+      const mx = input.moveX, my = input.moveY;
+      const len = Math.hypot(mx, my);
+      if (len > 0) { facingDx = mx / len; facingDy = my / len; }
+    } else {
+      switch (local.dir) {
+        case 'up':    facingDy = -1; break;
+        case 'down':  facingDy =  1; break;
+        case 'left':  facingDx = -1; break;
+        case 'right': facingDx =  1; break;
+      }
+    }
+    const FORWARD_SHIFT = Math.max(0, visionParam * 0.4);   // 반경의 40% 앞쪽으로
     const vision = visionParam > 0 ? {
-      worldX: local.x,
-      worldY: local.y + BODY_OFF_Y,
+      worldX: local.x + facingDx * FORWARD_SHIFT,
+      worldY: (local.y + BODY_OFF_Y) + facingDy * FORWARD_SHIFT,
       radius: visionParam,
       fadeWidth: Math.max(20, visionParam * 0.4),
     } : null;
