@@ -71,28 +71,58 @@ export function renderFrame(
   //    object layer 의 tile-object:
   //      - 충돌박스 있는 타일 (예: 줄기) → Y-sort 에 참여 (캐릭터와 앞/뒤 자연 정렬)
   //      - 충돌박스 없는 타일 (예: 잎) → 항상 캐릭터 위 (objects_above 와 동일 취급)
+  // 'above' = per-tile 폴리곤 영역 (예: 나무 줄기 윗부분). Y-sort 에 참여해서
+  //  캐릭터가 폴리곤 발 위치(폴리곤 내 최하단 Y)보다 남쪽이면 캐릭터 위에 그려져 가리고,
+  //  북쪽이면 캐릭터가 폴리곤 위에 그려져 보임.
   type SortItem =
     | { ySort: number; kind: 'local' }
     | { ySort: number; kind: 'remote'; remote: RenderableRemote }
     | { ySort: number; kind: 'tile'; gid: number; tx: number; ty: number }
-    | { ySort: number; kind: 'obj'; gid: number; px: number; py: number };
+    | { ySort: number; kind: 'obj'; gid: number; px: number; py: number }
+    | { ySort: number; kind: 'above'; gid: number; worldX: number; worldY: number; poly: Array<[number, number]> };
   const items: SortItem[] = [];
   // 충돌 없는 object tile-objects (잎 등) — 캐릭터 위에 그릴 것들. 별도 큐.
   const overObjs: Array<{ gid: number; px: number; py: number }> = [];
+
+  // gid 의 above 폴리곤들을 items 에 푸시 (worldX, worldY = 타일 top-left 월드좌표)
+  const addAboveItems = (gid: number, worldX: number, worldY: number): void => {
+    if (gid <= 0) return;
+    for (let i = map.tilesets.length - 1; i >= 0; i--) {
+      const ts = map.tilesets[i];
+      if (gid < ts.firstgid) continue;
+      const lid = gid - ts.firstgid;
+      const polys = ts.tileAboveRegions.get(lid);
+      if (!polys || polys.length === 0) return;
+      for (const poly of polys) {
+        let maxY = -Infinity;
+        for (const [, py] of poly) if (py > maxY) maxY = py;
+        items.push({ kind: 'above', ySort: worldY + maxY, gid, worldX, worldY, poly });
+      }
+      return;
+    }
+  };
   items.push({ ySort: local.y, kind: 'local' });
   for (const r of remotes) items.push({ ySort: r.y, kind: 'remote', remote: r });
 
-  const objBelow = map.layerByName.get('objects_below');
-  if (objBelow && objBelow.kind === 'tile' && objBelow.visible) {
+  {
     const tw = map.tileW, th = map.tileH;
     const tx0 = Math.max(0, Math.floor(camera.x / tw));
     const ty0 = Math.max(0, Math.floor(camera.y / th));
-    const tx1 = Math.min(objBelow.width  - 1, Math.floor((camera.x + camera.viewW) / tw));
-    const ty1 = Math.min(objBelow.height - 1, Math.floor((camera.y + camera.viewH) / th));
-    for (let ty = ty0; ty <= ty1; ty++) {
-      for (let tx = tx0; tx <= tx1; tx++) {
-        const gid = objBelow.data[ty * objBelow.width + tx];
-        if (gid > 0) items.push({ ySort: (ty + 1) * th, kind: 'tile', gid, tx, ty });
+    // 모든 tile 레이어 순회: objects_below 는 Y-sort 자체 렌더에 참여, 그 외(decor 등) 는
+    // 이미 배경으로 그려졌지만 above 영역만 Y-sort 에 참여시킴.
+    for (const layer of map.layers) {
+      if (layer.kind !== 'tile' || !layer.visible) continue;
+      if (layer.name === 'objects_above') continue;     // 통째로 위에 그려짐
+      const isBelow = layer.name === 'objects_below';
+      const tx1 = Math.min(layer.width  - 1, Math.floor((camera.x + camera.viewW) / tw));
+      const ty1 = Math.min(layer.height - 1, Math.floor((camera.y + camera.viewH) / th));
+      for (let ty = ty0; ty <= ty1; ty++) {
+        for (let tx = tx0; tx <= tx1; tx++) {
+          const gid = layer.data[ty * layer.width + tx];
+          if (gid <= 0) continue;
+          if (isBelow) items.push({ ySort: (ty + 1) * th, kind: 'tile', gid, tx, ty });
+          addAboveItems(gid, tx * tw, ty * th);
+        }
       }
     }
   }
@@ -108,14 +138,50 @@ export function renderFrame(
       // 카메라 컬링 (대충)
       if (px + (o.width || map.tileW) < camera.x || px > camera.x + camera.viewW) continue;
       if (py + objH < camera.y || py > camera.y + camera.viewH) continue;
-      if (tileHasCollision(map, o.gid)) {
+      const hasColl = tileHasCollision(map, o.gid);
+      if (hasColl) {
         items.push({ ySort: o.y, kind: 'obj', gid: o.gid, px, py });
+        addAboveItems(o.gid, px, py);     // 충돌 있는 obj 도 above 영역 Y-sort
       } else {
         overObjs.push({ gid: o.gid, px, py });
+        // 충돌 없는 obj (잎 등) 는 통째로 위에 → above 폴리곤 redundant. skip.
       }
     }
   }
   items.sort((a, b) => a.ySort - b.ySort);
+
+  // above 폴리곤 클립 + 소스 타일 드로우 (애니메이션 gid swap 처리).
+  const drawAboveClipped = (gid: number, worldX: number, worldY: number, poly: Array<[number, number]>): void => {
+    for (let i = map.tilesets.length - 1; i >= 0; i--) {
+      const ts = map.tilesets[i];
+      if (gid < ts.firstgid) continue;
+      let sourceLid = gid - ts.firstgid;
+      const frames = ts.tileAnimations.get(sourceLid);
+      if (frames && frames.length > 0) {
+        const total = ts.tileAnimTotal.get(sourceLid) ?? 0;
+        if (total > 0) {
+          const t = (now * 1000) % total;
+          let acc = 0;
+          for (const f of frames) { acc += Math.max(1, f.duration); if (t < acc) { sourceLid = f.tileid; break; } }
+        }
+      }
+      if (!ts.image || !ts.imageLoaded) return;
+      const sx = (sourceLid % ts.columns) * ts.tilewidth;
+      const sy = Math.floor(sourceLid / ts.columns) * ts.tileheight;
+      const dx = Math.round(worldX - camera.x);
+      const dy = Math.round(worldY - camera.y);
+      if (poly.length < 3) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(Math.round(dx + poly[0][0]), Math.round(dy + poly[0][1]));
+      for (let k = 1; k < poly.length; k++) ctx.lineTo(Math.round(dx + poly[k][0]), Math.round(dy + poly[k][1]));
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(ts.image, sx, sy, ts.tilewidth, ts.tileheight, dx, dy, ts.tilewidth, ts.tileheight);
+      ctx.restore();
+      return;
+    }
+  };
 
   for (const it of items) {
     if (it.kind === 'tile') {
@@ -128,6 +194,8 @@ export function renderFrame(
         Math.round(it.px - camera.x),
         Math.round(it.py - camera.y),
         now);
+    } else if (it.kind === 'above') {
+      drawAboveClipped(it.gid, it.worldX, it.worldY, it.poly);
     } else if (it.kind === 'local') {
       drawLocal(ctx, camera, local, now);
     } else if (it.kind === 'remote') {
@@ -145,80 +213,7 @@ export function renderFrame(
       now);
   }
 
-  // 3.5. Per-tile "above" 폴리곤 영역 — 일반 타일이 충돌은 있어도 윗부분(예: 나무 윗쪽 폴리곤)이
-  //      캐릭터 위로 가려야 할 때. 타일셋에서 class/type="above" 로 그린 영역 (.tsj 의 above 필드).
-  //      각 타일을 그 폴리곤으로 clip 한 채 다시 그린다.
-  const aboveTileAtTile = (gid: number, dx: number, dy: number): void => {
-    if (gid <= 0) return;
-    // 애니메이션 gid swap 도 고려 — resolveAnimatedGid 가 현재 프레임 gid 반환
-    const animGid = (() => {
-      for (let i = map.tilesets.length - 1; i >= 0; i--) {
-        const ts = map.tilesets[i];
-        if (gid < ts.firstgid) continue;
-        const lid = gid - ts.firstgid;
-        if (!ts.tileAboveRegions.has(lid)) return null;  // above 영역 없으면 skip
-        // 같은 ts 내 애니메이션 swap
-        const frames = ts.tileAnimations.get(lid);
-        if (!frames || frames.length === 0) return { ts, lid, sourceLid: lid };
-        const total = ts.tileAnimTotal.get(lid) ?? 0;
-        if (total <= 0) return { ts, lid, sourceLid: lid };
-        const t = (now * 1000) % total;
-        let acc = 0;
-        for (const f of frames) { acc += Math.max(1, f.duration); if (t < acc) return { ts, lid, sourceLid: f.tileid }; }
-        return { ts, lid, sourceLid: frames[frames.length - 1].tileid };
-      }
-      return null;
-    })();
-    if (!animGid) return;
-    const { ts, lid, sourceLid } = animGid;
-    const polys = ts.tileAboveRegions.get(lid);
-    if (!polys || polys.length === 0) return;
-    if (!ts.image || !ts.imageLoaded) return;
-    const sx = (sourceLid % ts.columns) * ts.tilewidth;
-    const sy = Math.floor(sourceLid / ts.columns) * ts.tileheight;
-    ctx.save();
-    ctx.beginPath();
-    for (const poly of polys) {
-      if (poly.length < 3) continue;
-      ctx.moveTo(Math.round(dx + poly[0][0]), Math.round(dy + poly[0][1]));
-      for (let i = 1; i < poly.length; i++) ctx.lineTo(Math.round(dx + poly[i][0]), Math.round(dy + poly[i][1]));
-      ctx.closePath();
-    }
-    ctx.clip();
-    ctx.drawImage(ts.image, sx, sy, ts.tilewidth, ts.tileheight, dx, dy, ts.tilewidth, ts.tileheight);
-    ctx.restore();
-  };
-
-  // 모든 tile 레이어의 visible 영역에서 above 영역 가진 타일들 재그림
-  for (const layer of map.layers) {
-    if (layer.kind !== 'tile' || !layer.visible) continue;
-    if (layer.name === 'objects_above') continue;   // 이미 통째로 위에 그려짐
-    const tw = map.tileW, th = map.tileH;
-    const tx0 = Math.max(0, Math.floor(camera.x / tw));
-    const ty0 = Math.max(0, Math.floor(camera.y / th));
-    const tx1 = Math.min(layer.width - 1, Math.floor((camera.x + camera.viewW) / tw));
-    const ty1 = Math.min(layer.height - 1, Math.floor((camera.y + camera.viewH) / th));
-    for (let ty = ty0; ty <= ty1; ty++) {
-      for (let tx = tx0; tx <= tx1; tx++) {
-        const gid = layer.data[ty * layer.width + tx];
-        if (gid <= 0) continue;
-        aboveTileAtTile(gid, Math.round(tx * tw - camera.x), Math.round(ty * th - camera.y));
-      }
-    }
-  }
-  // 그리고 object layer 의 tile-objects 도
-  for (const layer of map.layers) {
-    if (layer.kind !== 'object' || !layer.visible) continue;
-    for (const o of layer.objects) {
-      if (!o.gid) continue;
-      const objH = o.height > 0 ? o.height : map.tileH;
-      const px = o.x;
-      const py = o.y - objH;
-      if (px + (o.width || map.tileW) < camera.x || px > camera.x + camera.viewW) continue;
-      if (py + objH < camera.y || py > camera.y + camera.viewH) continue;
-      aboveTileAtTile(o.gid, Math.round(px - camera.x), Math.round(py - camera.y));
-    }
-  }
+  // (above 폴리곤은 위 Y-sort items 에 통합됨 — 캐릭터가 폴리곤 발 위치보다 남쪽이면 가리지 않음.)
 
   // 4. 이름/HP/킬 — HUD 오버레이 캔버스에 그림 (full DPR, 크리스프 텍스트).
   //    HUD 캔버스는 게임 캔버스보다 해상도가 높으므로 좌표는 (worldX - camera.x) * displayScale 로 변환.
