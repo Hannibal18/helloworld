@@ -3,16 +3,18 @@
 좀비 모드 협동 게임의 **호스트 봇** — 클라이언트(P2P 호스트) 대신
 서버가 좀비 시뮬을 권위적으로 돌리도록 점진적 마이그.
 
-## 현재 상태 (Phase 1)
+## 현재 상태 (Phase 3 완료)
 
 - ✅ Worker 진입점 (`POST /room/:roomId/start` → 그 룸 DO 깨우기)
-- ✅ Durable Object 골격 (룸당 1 인스턴스)
-- ✅ Supabase Realtime 채널에 봇으로 가입 (presence track)
-- ✅ Idle 5분 시 자동 종료 (DO sleep)
-- ⏳ 좀비 시뮬 (Phase 2)
-- ⏳ hit_request 처리 (Phase 2)
-- ⏳ snapshot broadcast (Phase 2)
-- ⏳ 클라이언트 봇 감지 (Phase 3)
+- ✅ Durable Object (룸당 1 인스턴스, idle 5분 sleep)
+- ✅ Supabase Realtime 채널 가입 (봇 ID = 사전순 최소 UUID)
+- ✅ 좀비 시뮬 (spawn / AI / damage / snapshot)
+- ✅ 5Hz snapshot broadcast (zombie_snapshot)
+- ✅ zombie_hit_request 처리 (호스트 권위)
+- ✅ pos / hp / death / revive 수신 → 플레이어 추적
+- ✅ match_start 수신 → 난이도 캡처
+- ✅ 클라이언트 자동 봇 호출 (`VITE_WORKER_URL` 설정 시 진입할 때 POST)
+- ⏳ Phase 4: 배포 + 운영 (아래 참고)
 
 ## 설정
 
@@ -51,8 +53,33 @@ curl http://localhost:8787/room/DEFAULT/status
 npm run deploy
 ```
 
-배포 후 URL (예: `https://helloworld-server.<account>.workers.dev`) 을
-클라이언트에서 사용. Phase 3 에서 클라이언트가 매치 시작 시 자동 POST.
+배포 후 출력에 URL 표시 (예: `https://helloworld-server.<account>.workers.dev`).
+
+## Phase 4 — 클라이언트와 연결
+
+배포된 Worker URL 을 클라이언트 `.env` 에 추가:
+
+```
+VITE_WORKER_URL=https://helloworld-server.<account>.workers.dev
+```
+
+Vercel 배포본도 같은 env 추가 (Vercel 대시보드 → Settings → Environment Variables).
+그 다음 `git push` → Vercel 자동 재배포. 이후부터 모든 매치는 봇이 호스트.
+
+미설정 시 → 사용자 중 id 최소가 호스트 (기존 P2P 폴백).
+
+## 검증
+
+배포 후 모니터:
+```bash
+curl https://helloworld-server.<account>.workers.dev/room/B12345/status
+# → { roomId, players, zombies, killCount, active, difficulty }
+```
+
+Wrangler tail (실시간 로그):
+```bash
+npx wrangler tail
+```
 
 ## 디자인
 

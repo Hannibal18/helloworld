@@ -194,6 +194,13 @@ ready(() => {
   // URL 에 ?battle=ROOM 있으면 인트로 카드 숨기고 검은 "입장중…" 오버레이.
   // 점이 . → .. → ... → . 로 동적. 1.5초 후 enter() + 추가 0.3초 후 오버레이 제거.
   if (battleRoom) {
+    // 서버 봇 깨우기 (VITE_WORKER_URL 설정 시). 미설정 = P2P 호스트 폴백.
+    // 멱등 — 봇이 이미 살아있으면 no-op. 멤버 모두 POST 해도 안전.
+    const workerUrl = import.meta.env.VITE_WORKER_URL as string | undefined;
+    if (workerUrl) {
+      fetch(`${workerUrl.replace(/\/$/, '')}/room/${battleRoom}/start`, { method: 'POST' })
+        .catch((e) => console.warn('[bot] wakeup failed', e));
+    }
     try { (document.querySelector('.intro-card') as HTMLElement | null)?.style.setProperty('display', 'none'); } catch { /* noop */ }
     const overlay = document.createElement('div');
     overlay.id = 'battle-loading';
