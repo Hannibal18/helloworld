@@ -6,7 +6,7 @@
 // 순환 import 회피: ZombieType / WeaponType 을 zombie.ts / weapons.ts 가 아닌
 // 여기서 직접 선언 (string union). 두 모듈은 config.ts 를 import 만 함.
 
-export const CFG_ZOMBIE_TYPES = ['normal', 'fast', 'tank', 'gold'] as const;
+export const CFG_ZOMBIE_TYPES = ['normal', 'fast', 'tank', 'gold', 'frank'] as const;
 export type CfgZombieType = typeof CFG_ZOMBIE_TYPES[number];
 
 export const CFG_WEAPON_TYPES = ['lightning', 'ice', 'curse'] as const;
@@ -63,7 +63,10 @@ export interface GameConfig {
 }
 
 // ===== 기본 스테이지 5개 (Stage 1 = 워밍업, Stage 5 = 지옥) =====
-function mkStage(name: string, dur: number, z: Partial<StageConfig['zombie']>, w: Partial<StageConfig['weapons']>): StageConfig {
+type ZombieInput = Omit<Partial<StageConfig['zombie']>, 'typeWeights'> & {
+  typeWeights?: Partial<Record<CfgZombieType, number>>;
+};
+function mkStage(name: string, dur: number, z: ZombieInput, w: Partial<StageConfig['weapons']>): StageConfig {
   return {
     name,
     durationSec: dur,
@@ -71,7 +74,7 @@ function mkStage(name: string, dur: number, z: Partial<StageConfig['zombie']>, w
       hpMult: z.hpMult ?? 1,
       speedMult: z.speedMult ?? 1,
       spawnIntervalMult: z.spawnIntervalMult ?? 1,
-      typeWeights: { normal: 100, fast: 0, tank: 0, gold: 0, ...(z.typeWeights ?? {}) },
+      typeWeights: { normal: 100, fast: 0, tank: 0, gold: 0, frank: 0, ...(z.typeWeights ?? {}) },
       bossEnabled: z.bossEnabled ?? false,
     },
     weapons: {

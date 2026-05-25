@@ -93,7 +93,7 @@ export interface ZombieWaveStartPayload {
 // 같은 좀비를 봄. 데미지는 비-호스트가 ZombieHitRequest 로 호스트에 요청.
 export interface ZombieSnapshotItem {
   id: string;
-  type: 'normal' | 'fast' | 'tank' | 'gold' | 'boss';
+  type: 'normal' | 'fast' | 'tank' | 'gold' | 'boss' | 'frank';
   x: number;
   y: number;
   dir: Dir;

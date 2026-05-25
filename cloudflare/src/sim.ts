@@ -91,7 +91,7 @@ function pickZombieType(state: BotWaveState, nowMs: number): ZombieType {
   const z = currentStageZombie(state, nowMs);
   const tw = z.typeWeights;
   const arr: [ZombieType, number][] = [
-    ['normal', tw.normal], ['fast', tw.fast], ['tank', tw.tank], ['gold', tw.gold],
+    ['normal', tw.normal], ['fast', tw.fast], ['tank', tw.tank], ['gold', tw.gold], ['frank', tw.frank],
   ];
   let total = 0;
   for (const [, w] of arr) total += Math.max(0, w);

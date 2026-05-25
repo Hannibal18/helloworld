@@ -14,7 +14,7 @@ import {
 } from './config';
 
 const ZOMBIE_LABEL: Record<CfgZombieType, string> = {
-  normal: '🧟 일반', fast: '🏃 빠른', tank: '🛡 탱크', gold: '💰 골드',
+  normal: '🧟 일반', fast: '🏃 빠른', tank: '🛡 탱크', gold: '💰 골드', frank: '🟢 프랭크',
 };
 const WEAPON_LABEL: Record<CfgWeaponType, string> = {
   lightning: '⚡ 라이트닝', ice: '❄ 얼음', curse: '💀 저주',

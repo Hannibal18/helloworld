@@ -58,23 +58,28 @@ const ROW_SPELL: Record<Dir, number> = { up: 0, left: 1, down: 2, right: 3 };
 const ROW_WALK:  Record<Dir, number> = { up: 8, left: 9, down: 10, right: 11 };
 const FRAME = 64;
 
-// ===== 좀비 타입 — 점수/체력/스피드/외형 차등 =====
-export type ZombieType = 'normal' | 'fast' | 'tank' | 'gold' | 'boss';
+// ===== 몬스터 타입 — 점수/체력/스피드/외형 차등 =====
+// zombie = 기존 LPC zombie 스프라이트. frank = 별도 스프라이트시트 (frank.png).
+// sheet 필드로 두 종류 분리: 'zombie' / 'frank'.
+export type ZombieType = 'normal' | 'fast' | 'tank' | 'gold' | 'boss' | 'frank';
 
 interface ZombieTypeSpec {
+  sheet: 'zombie' | 'frank';     // 어느 스프라이트시트 사용
   speedMult: number;
   hp: number;
-  basePoints: number;     // 처치 시 점수 (콤보 배율 추가)
-  scale: number;          // 렌더 스케일 배율 (1.0 = 일반)
-  tint: string | null;    // null = 틴팅 없음. else CSS color (alpha 포함)
+  basePoints: number;
+  scale: number;
+  tint: string | null;
   showHpBar: boolean;
 }
 export const ZOMBIE_SPEC: Record<ZombieType, ZombieTypeSpec> = {
-  normal: { speedMult: 1.0, hp: 1,  basePoints: 10,  scale: 1.0, tint: null,                showHpBar: false },
-  fast:   { speedMult: 1.8, hp: 1,  basePoints: 18,  scale: 0.85, tint: 'rgba(140,255,160,0.45)', showHpBar: false },
-  tank:   { speedMult: 0.55, hp: 4, basePoints: 35,  scale: 1.35, tint: 'rgba(180,90,255,0.55)',  showHpBar: true },
-  gold:   { speedMult: 1.2, hp: 1,  basePoints: 80,  scale: 1.0, tint: 'rgba(255,200,40,0.65)',   showHpBar: false },
-  boss:   { speedMult: 0.5, hp: 18, basePoints: 250, scale: 2.0, tint: 'rgba(255,40,40,0.5)',     showHpBar: true },
+  normal: { sheet: 'zombie', speedMult: 1.0, hp: 1,  basePoints: 10,  scale: 1.0,  tint: null,                          showHpBar: false },
+  fast:   { sheet: 'zombie', speedMult: 1.8, hp: 1,  basePoints: 18,  scale: 0.85, tint: 'rgba(140,255,160,0.45)',      showHpBar: false },
+  tank:   { sheet: 'zombie', speedMult: 0.55, hp: 4, basePoints: 35,  scale: 1.35, tint: 'rgba(180,90,255,0.55)',       showHpBar: true  },
+  gold:   { sheet: 'zombie', speedMult: 1.2, hp: 1,  basePoints: 80,  scale: 1.0,  tint: 'rgba(255,200,40,0.65)',       showHpBar: false },
+  boss:   { sheet: 'zombie', speedMult: 0.5, hp: 18, basePoints: 250, scale: 2.0,  tint: 'rgba(255,40,40,0.5)',         showHpBar: true  },
+  // 🟢 Frank — 초록 LPC 몬스터, 새 스프라이트. 좀비보다 빠르고 hp 살짝 ↑
+  frank:  { sheet: 'frank',  speedMult: 1.3, hp: 2,  basePoints: 25,  scale: 1.0,  tint: null,                          showHpBar: false },
 };
 
 interface Zombie {
@@ -140,10 +145,20 @@ function currentSpawnInterval(wave: ZombieWave, now: number): number {
 }
 
 // ===== 스프라이트 로딩 =====
-const sheet = new Image();
-let sheetReady = false;
-sheet.src = '/sprites/zombie.png';
-sheet.onload = () => { sheetReady = true; };
+const zombieSheet = new Image();
+let zombieSheetReady = false;
+zombieSheet.src = '/sprites/zombie.png';
+zombieSheet.onload = () => { zombieSheetReady = true; };
+
+const frankSheet = new Image();
+let frankSheetReady = false;
+frankSheet.src = '/sprites/frank.png';
+frankSheet.onload = () => { frankSheetReady = true; };
+
+function pickSheet(spec: ZombieTypeSpec): { img: HTMLImageElement; ready: boolean } {
+  if (spec.sheet === 'frank') return { img: frankSheet, ready: frankSheetReady };
+  return { img: zombieSheet, ready: zombieSheetReady };
+}
 
 // 틴트용 오프스크린 캔버스 — source-atop 이 메인 캔버스에선 잔디 같은
 // 불투명 배경까지 칠해버려 박스 전체가 보이는 버그 회피.
@@ -488,12 +503,14 @@ export function drawZombies(
   now: number,
   charScale: number = currentCharScale(),
 ): void {
-  if (!wave.active || !sheetReady) return;
+  if (!wave.active) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   const baseW = FRAME * charScale;
   for (const z of wave.zombies) {
     const spec = ZOMBIE_SPEC[z.type];
+    const sheet = pickSheet(spec);
+    if (!sheet.ready) continue;   // 자기 시트 로드 전이면 그 좀비만 스킵
     const dstW = Math.round(baseW * spec.scale);
     const dstH = dstW;
     const footY = Math.round(58 * charScale * spec.scale);
@@ -512,19 +529,17 @@ export function drawZombies(
     const dx = sx - Math.round(dstW / 2);
     const dy = sy - footY;
     if (spec.tint && _tintCtx) {
-      // 1) 오프스크린에 1프레임 그리기 + 픽셀만 틴트
       _tintCtx.globalCompositeOperation = 'source-over';
       _tintCtx.clearRect(0, 0, FRAME, FRAME);
       _tintCtx.imageSmoothingEnabled = false;
-      _tintCtx.drawImage(sheet, col * FRAME, row * FRAME, FRAME, FRAME, 0, 0, FRAME, FRAME);
+      _tintCtx.drawImage(sheet.img, col * FRAME, row * FRAME, FRAME, FRAME, 0, 0, FRAME, FRAME);
       _tintCtx.globalCompositeOperation = 'source-atop';
       _tintCtx.fillStyle = spec.tint;
       _tintCtx.fillRect(0, 0, FRAME, FRAME);
       _tintCtx.globalCompositeOperation = 'source-over';
-      // 2) 메인 캔버스에 스케일 적용해 복사
       ctx.drawImage(_tintCanvas, 0, 0, FRAME, FRAME, dx, dy, dstW, dstH);
     } else {
-      ctx.drawImage(sheet, col * FRAME, row * FRAME, FRAME, FRAME, dx, dy, dstW, dstH);
+      ctx.drawImage(sheet.img, col * FRAME, row * FRAME, FRAME, FRAME, dx, dy, dstW, dstH);
     }
     // HP 바 (탱크/보스만)
     if (spec.showHpBar && z.hp < z.maxHp) {

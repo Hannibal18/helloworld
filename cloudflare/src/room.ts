@@ -92,6 +92,21 @@ export class GameRoomDO implements DurableObject {
       return;
     }
 
+    // wave 자동 시작 — 플레이어 1명+ 보이고 map 있고 아직 wave 안 시작이면 ON.
+    // (클라이언트 isLocalHost() 가 봇 우선 → 클라가 wave_start 안 보냄.
+    //  따라서 봇이 자기 wave 를 시작 + zombie_wave_start broadcast 해야 함.)
+    if (this.map && !this.wave.active && this.players.size >= 1 && this.channel) {
+      startWave(this.wave, now, {
+        mapW: this.map.pixelW, mapH: this.map.pixelH,
+        isBlocked: (x, y) => isBlockedAt(this.map!, x, y),
+      }, this.wave.difficulty);
+      void this.channel.send({
+        type: 'broadcast',
+        event: 'zombie_wave_start',
+        payload: { startedAt: now / 1000 },
+      });
+    }
+
     // sim tick
     if (this.wave.active && this.map) {
       const dt = this.lastTickAt > 0 ? Math.min(250, now - this.lastTickAt) : TICK_INTERVAL_MS;
@@ -190,16 +205,10 @@ export class GameRoomDO implements DurableObject {
         const cur = this.players.get(p.targetId);
         if (cur) cur.dead = false;
       })
-      .on('broadcast', { event: 'zombie_wave_start' }, ({ payload }) => {
-        const p = payload as { startedAt: number };
-        if (!this.map) return;
-        // difficulty 는 match_start 에서 캡처 — wave_start 가 먼저 와도 기본값 normal
-        startWave(this.wave, Date.now(), {
-          mapW: this.map.pixelW, mapH: this.map.pixelH,
-          isBlocked: (x, y) => isBlockedAt(this.map!, x, y),
-        }, this.wave.difficulty);
+      .on('broadcast', { event: 'zombie_wave_start' }, () => {
+        // 봇이 wave 직접 시작하므로 클라이언트 wave_start 는 무시.
+        // (옛 클라이언트 호환 — 봇 미배포 환경에서는 클라가 트리거)
         this.lastActivityAt = Date.now();
-        void p;
       })
       .on('broadcast', { event: 'match_start' }, ({ payload }) => {
         const p = payload as { zone: Difficulty };

@@ -2,7 +2,7 @@
 // 클라이언트와 별도로 유지 (DO 가 src/ import 불가). 밸런스 변경 시 양쪽 동기 필요.
 
 export type Difficulty = 'easy' | 'normal' | 'hell';
-export type ZombieType = 'normal' | 'fast' | 'tank' | 'gold' | 'boss';
+export type ZombieType = 'normal' | 'fast' | 'tank' | 'gold' | 'boss' | 'frank';
 
 export interface StageConfig {
   name: string;
@@ -11,21 +11,21 @@ export interface StageConfig {
     hpMult: number;
     speedMult: number;
     spawnIntervalMult: number;
-    typeWeights: { normal: number; fast: number; tank: number; gold: number };
+    typeWeights: { normal: number; fast: number; tank: number; gold: number; frank: number };
     bossEnabled: boolean;
   };
 }
 
 function mkStage(name: string, dur: number,
   hpMult: number, speedMult: number, spawnIntervalMult: number,
-  weights: [number, number, number, number],   // normal/fast/tank/gold
+  weights: [number, number, number, number, number],   // normal/fast/tank/gold/frank
   bossEnabled: boolean,
 ): StageConfig {
   return {
     name, durationSec: dur,
     zombie: {
       hpMult, speedMult, spawnIntervalMult,
-      typeWeights: { normal: weights[0], fast: weights[1], tank: weights[2], gold: weights[3] },
+      typeWeights: { normal: weights[0], fast: weights[1], tank: weights[2], gold: weights[3], frank: weights[4] },
       bossEnabled,
     },
   };
@@ -33,23 +33,23 @@ function mkStage(name: string, dur: number,
 
 export const PRESETS: Record<Difficulty, StageConfig[]> = {
   easy: [
-    mkStage('🟢 EASY 1', 60,  1.0, 1.0, 1.1, [100, 0, 0, 0], false),
-    mkStage('🟢 EASY 2', 60,  1.0, 1.05, 0.9, [60, 35, 5, 0], false),
-    mkStage('🟢 EASY 3', 90,  1.15, 1.1, 0.7, [45, 35, 18, 2], true),
-    mkStage('🟢 EASY 4', 999, 1.25, 1.15, 0.55, [35, 35, 25, 5], true),
+    mkStage('🟢 EASY 1', 60,  1.0, 1.0, 1.1, [100, 0, 0, 0, 0], false),
+    mkStage('🟢 EASY 2', 60,  1.0, 1.05, 0.9, [55, 30, 5, 0, 10], false),
+    mkStage('🟢 EASY 3', 90,  1.15, 1.1, 0.7, [40, 30, 15, 2, 13], true),
+    mkStage('🟢 EASY 4', 999, 1.25, 1.15, 0.55, [30, 30, 22, 5, 13], true),
   ],
   normal: [
-    mkStage('🟡 NORMAL 1', 60,  1.0, 1.05, 0.9, [70, 25, 5, 0], false),
-    mkStage('🟡 NORMAL 2', 75,  1.15, 1.15, 0.7, [50, 30, 18, 2], true),
-    mkStage('🟡 NORMAL 3', 90,  1.3, 1.25, 0.55, [35, 35, 25, 5], true),
-    mkStage('🟡 NORMAL 4', 999, 1.5, 1.35, 0.42, [25, 35, 30, 10], true),
+    mkStage('🟡 NORMAL 1', 60,  1.0, 1.05, 0.9, [60, 22, 5, 0, 13], false),
+    mkStage('🟡 NORMAL 2', 75,  1.15, 1.15, 0.7, [45, 25, 15, 2, 13], true),
+    mkStage('🟡 NORMAL 3', 90,  1.3, 1.25, 0.55, [30, 30, 22, 5, 13], true),
+    mkStage('🟡 NORMAL 4', 999, 1.5, 1.35, 0.42, [22, 30, 25, 10, 13], true),
   ],
   hell: [
-    mkStage('🔴 HELL 1', 50, 1.1, 1.2, 0.65, [50, 40, 10, 0], true),
-    mkStage('🔴 HELL 2', 70, 1.25, 1.3, 0.5, [35, 35, 25, 5], true),
-    mkStage('🔴 HELL 3', 80, 1.45, 1.4, 0.4, [25, 35, 30, 10], true),
-    mkStage('🔴 HELL 4', 90, 1.65, 1.45, 0.35, [15, 30, 40, 15], true),
-    mkStage('🔴 HELL 5', 999, 1.9, 1.55, 0.3, [10, 25, 45, 20], true),
+    mkStage('🔴 HELL 1', 50, 1.1, 1.2, 0.65, [45, 35, 10, 0, 10], true),
+    mkStage('🔴 HELL 2', 70, 1.25, 1.3, 0.5, [30, 30, 22, 5, 13], true),
+    mkStage('🔴 HELL 3', 80, 1.45, 1.4, 0.4, [22, 30, 25, 10, 13], true),
+    mkStage('🔴 HELL 4', 90, 1.65, 1.45, 0.35, [12, 27, 35, 13, 13], true),
+    mkStage('🔴 HELL 5', 999, 1.9, 1.55, 0.3, [10, 22, 40, 18, 10], true),
   ],
 };
 
@@ -109,4 +109,5 @@ export const ZOMBIE_SPEC: Record<ZombieType, ZombieTypeSpec> = {
   tank:   { speedMult: 0.55, hp: 4, basePoints: 35,  scale: 1.35 },
   gold:   { speedMult: 1.2, hp: 1,  basePoints: 80,  scale: 1.0 },
   boss:   { speedMult: 0.5, hp: 18, basePoints: 250, scale: 2.0 },
+  frank:  { speedMult: 1.3, hp: 2,  basePoints: 25,  scale: 1.0 },
 };
