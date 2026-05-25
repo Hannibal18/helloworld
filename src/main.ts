@@ -27,7 +27,7 @@ import { startGame } from './game';
 import { setupViewport } from './viewport';
 import { CHARACTER_COUNT, drawCharacterPreview, randomCharIdx } from './sprites';
 import { load as loadSfx, loadVariants, unlock as unlockSfx } from './sfx';
-import { startBgm } from './bgm';
+import { isBgmMuted, setBgmMuted, startBgm } from './bgm';
 import type { GameMode } from './types';
 
 // SFX 초기 등록 — 라이트닝 발사 음 4종 변형.
@@ -46,7 +46,7 @@ try {
   // hit 은 위치별 순차로 여러 번 재생됨 — 한 발씩 임팩트 있게 크게.
   loadSfx('curse_hit', '/audio/curse/hit.wav', 1.5);
   // AK 발사 — 매 발마다 재생됨, 너무 크면 시끄러우니 보수적으로.
-  loadSfx('ak_shot', '/audio/ak/shot.wav', 1.4);
+  loadSfx('ak_shot', '/audio/ak/shot.wav', 0.98);   // 1.4 × 0.7
   // 맨주먹 공격 (무기 없을 때).
   loadSfx('punch', '/audio/melee/punch.wav', 0.7);
 } catch (e) {
@@ -189,6 +189,42 @@ ready(() => {
   nick.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') enter();
   });
+
+  // ===== BGM 토글 버튼 (우상단 고정, 페이지 전체에서 보임) =====
+  // localStorage 로 muted 상태 영구. 시작 시 복원.
+  try {
+    if (localStorage.getItem('helloworld:bgmMuted') === '1') setBgmMuted(true);
+  } catch { /* noop */ }
+  const bgmBtn = document.createElement('button');
+  bgmBtn.id = 'bgm-toggle';
+  bgmBtn.type = 'button';
+  bgmBtn.style.cssText = [
+    'position:fixed',
+    'top:calc(env(safe-area-inset-top) + 8px)',
+    'right:calc(env(safe-area-inset-right) + 8px)',
+    'z-index:50',
+    'width:36px', 'height:36px',
+    'padding:0',
+    'background:rgba(20,14,8,0.75)',
+    'border:1px solid #6a4a2a',
+    'border-radius:50%',
+    'color:#ffd84a',
+    'font:16px system-ui, sans-serif',
+    'cursor:pointer',
+    'display:flex', 'align-items:center', 'justify-content:center',
+  ].join(';');
+  const refreshBgmBtn = () => {
+    bgmBtn.textContent = isBgmMuted() ? '🔇' : '🔊';
+    bgmBtn.title = isBgmMuted() ? 'BGM 켜기' : 'BGM 끄기';
+  };
+  refreshBgmBtn();
+  bgmBtn.addEventListener('click', () => {
+    const next = !isBgmMuted();
+    setBgmMuted(next);
+    try { localStorage.setItem('helloworld:bgmMuted', next ? '1' : '0'); } catch { /* noop */ }
+    refreshBgmBtn();
+  });
+  document.body.appendChild(bgmBtn);
 
   // ===== 매치메이킹 자동 진입 =====
   // URL 에 ?battle=ROOM 있으면 인트로 카드 숨기고 검은 "입장중…" 오버레이.
