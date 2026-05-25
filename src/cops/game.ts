@@ -795,9 +795,9 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
       worldY: local.y + BODY_OFF_Y,
       facingDx,
       facingDy,
-      nearRadius: visionParam * 0.45,      // 캐릭터에서의 반경 (작음 — 뒤쪽도 이 만큼만)
-      farRadius: visionParam * 1.1,        // 콘 끝의 반경 (큼 — 멀리 갈수록 넓음)
-      coneLength: visionParam * 1.2,       // 콘 길이 (캐릭터 → 콘 끝)
+      nearRadius: visionParam * 0.6,       // 캐릭터에서의 반경 — ↑ 뒤/옆 길게
+      farRadius: visionParam * 0.85,       // 콘 끝의 반경
+      coneLength: visionParam * 0.7,       // 콘 길이 — ↓ 앞쪽 짧게
       coneSteps: 6,                        // 콘 매끈도
       exploredDimAlpha: 0.55,              // 한 번 본 영역 dim
     } : null;
