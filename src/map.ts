@@ -37,6 +37,9 @@ export interface TmxObject {
   width: number;
   height: number;
   point?: boolean;
+  /** tile-object 인 경우 gid. Tiled 에서 object layer 에 타일을 드래그하면 이 필드가 채워진다.
+   *  Tiled 의 tile-object 는 (x, y) 가 bottom-left 기준 → 렌더 시 (x, y - height) 가 top-left. */
+  gid?: number;
 }
 
 export interface CollisionRect {
@@ -275,34 +278,46 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
     }
   }
 
-  // 2) per-tile 충돌 — 모든 tile layer 를 훑으며 각 타일이 자체 충돌박스를 갖는지 확인.
-  //    같은 칸에 여러 레이어가 겹쳐도 OK (중복 충돌박스 생겨도 isBlocked 결과 동일).
+  // 2) per-tile 충돌 — 모든 tile layer + object layer 의 gid 객체를 훑으며
+  //    각 타일이 자체 충돌박스를 갖는지 확인.
+  //    object 의 (x, y) 는 bottom-left 라 top-left 는 (x, y - height) 임에 주의.
   const tw = raw.tilewidth, th = raw.tileheight;
+  const matchTileset = (gid: number): Tileset | null => {
+    for (let j = tilesets.length - 1; j >= 0; j--) {
+      if (gid >= tilesets[j].firstgid) return tilesets[j];
+    }
+    return null;
+  };
+  const pushCollisionForGid = (gid: number, worldX0: number, worldY0: number) => {
+    const matched = matchTileset(gid);
+    if (!matched) return;
+    const localId = gid - matched.firstgid;
+    const localRects = matched.tileCollisions.get(localId);
+    if (!localRects) return;
+    for (const lr of localRects) {
+      collisionRects.push({
+        x0: worldX0 + lr.x,
+        y0: worldY0 + lr.y,
+        x1: worldX0 + lr.x + lr.w,
+        y1: worldY0 + lr.y + lr.h,
+      });
+    }
+  };
   for (const layer of layers) {
-    if (layer.kind !== 'tile') continue;
-    for (let i = 0; i < layer.data.length; i++) {
-      const gid = layer.data[i];
-      if (gid <= 0) continue;
-      // 인라인 tileset 매칭 (resolveTile 과 같은 로직이지만 TileMap 객체가 아직 없으므로).
-      let matched: Tileset | null = null;
-      for (let j = tilesets.length - 1; j >= 0; j--) {
-        if (gid >= tilesets[j].firstgid) { matched = tilesets[j]; break; }
+    if (layer.kind === 'tile') {
+      for (let i = 0; i < layer.data.length; i++) {
+        const gid = layer.data[i];
+        if (gid <= 0) continue;
+        const tx = i % layer.width;
+        const ty = Math.floor(i / layer.width);
+        pushCollisionForGid(gid, tx * tw, ty * th);
       }
-      if (!matched) continue;
-      const localId = gid - matched.firstgid;
-      const localRects = matched.tileCollisions.get(localId);
-      if (!localRects) continue;
-      const tx = i % layer.width;
-      const ty = Math.floor(i / layer.width);
-      const worldX0 = tx * tw;
-      const worldY0 = ty * th;
-      for (const lr of localRects) {
-        collisionRects.push({
-          x0: worldX0 + lr.x,
-          y0: worldY0 + lr.y,
-          x1: worldX0 + lr.x + lr.w,
-          y1: worldY0 + lr.y + lr.h,
-        });
+    } else if (layer.kind === 'object') {
+      for (const o of layer.objects) {
+        if (!o.gid) continue;
+        // tile-object 의 top-left 는 (x, y - height). height 가 없으면 tilewidth 가정.
+        const objH = o.height > 0 ? o.height : th;
+        pushCollisionForGid(o.gid, o.x, o.y - objH);
       }
     }
   }
@@ -349,6 +364,19 @@ export function resolveTile(map: TileMap, gid: number):
     }
   }
   return null;
+}
+
+// gid 의 타일이 자체 충돌박스를 갖는지 — object-layer 트리에서 줄기(true)/잎(false) 구분에 사용.
+export function tileHasCollision(map: TileMap, gid: number): boolean {
+  if (gid <= 0) return false;
+  for (let i = map.tilesets.length - 1; i >= 0; i--) {
+    const ts = map.tilesets[i];
+    if (gid < ts.firstgid) continue;
+    const localId = gid - ts.firstgid;
+    const rects = ts.tileCollisions.get(localId);
+    return !!(rects && rects.length > 0);
+  }
+  return false;
 }
 
 // 애니메이션 타일이면 nowSec 기준 현재 프레임 gid 반환. 아니면 원본 gid 그대로.

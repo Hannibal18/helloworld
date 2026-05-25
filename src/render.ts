@@ -8,7 +8,7 @@ import {
   CHAR_H, CHAR_W, DANCE_H, dancePoseFrame, drawCharacter, drawDancing,
 } from './sprites';
 import { ATTACK_SWING_DUR, BODY_HH, BODY_HW, BODY_OFF_Y, FOOT_HH, FOOT_HW, type LocalPlayer } from './player';
-import { drawCollisionDebug, drawGridDebug, drawTile, drawTileLayer, type TileMap } from './map';
+import { drawCollisionDebug, drawGridDebug, drawTile, drawTileLayer, tileHasCollision, type TileMap } from './map';
 import type { DebugState } from './debug';
 import type { RemotePlayer } from './types';
 
@@ -63,14 +63,19 @@ export function renderFrame(
     if (layer) drawTileLayer(ctx, map, layer, camera.x, camera.y, camera.viewW, camera.viewH, now);
   }
 
-  // 2. Y-소트 — objects_below 의 각 타일과 캐릭터를 발 위치 기준으로 정렬해서 그림.
-  //    한 화면에 보이는 칸만 수집 → 정렬 → 순서대로 그림.
-  //    트리/바위의 footY = (ty+1)*tileH 즉 타일 바닥. 캐릭터의 footY = player.y.
+  // 2. Y-소트 — objects_below 의 각 타일 + object layer 의 tile-objects + 캐릭터를
+  //    발(footY) 위치 기준으로 정렬해서 그림.
+  //    object layer 의 tile-object:
+  //      - 충돌박스 있는 타일 (예: 줄기) → Y-sort 에 참여 (캐릭터와 앞/뒤 자연 정렬)
+  //      - 충돌박스 없는 타일 (예: 잎) → 항상 캐릭터 위 (objects_above 와 동일 취급)
   type SortItem =
     | { ySort: number; kind: 'local' }
     | { ySort: number; kind: 'remote'; remote: RenderableRemote }
-    | { ySort: number; kind: 'tile'; gid: number; tx: number; ty: number };
+    | { ySort: number; kind: 'tile'; gid: number; tx: number; ty: number }
+    | { ySort: number; kind: 'obj'; gid: number; px: number; py: number };
   const items: SortItem[] = [];
+  // 충돌 없는 object tile-objects (잎 등) — 캐릭터 위에 그릴 것들. 별도 큐.
+  const overObjs: Array<{ gid: number; px: number; py: number }> = [];
   items.push({ ySort: local.y, kind: 'local' });
   for (const r of remotes) items.push({ ySort: r.y, kind: 'remote', remote: r });
 
@@ -88,6 +93,25 @@ export function renderFrame(
       }
     }
   }
+  // 모든 object layer 의 tile-objects (gid 있는 것) — Tiled 에서 드래그로 배치한 트리·바위 등.
+  // (x, y) 는 bottom-left → top-left = (x, y - height). footY = y (bottom 그대로).
+  for (const layer of map.layers) {
+    if (layer.kind !== 'object' || !layer.visible) continue;
+    for (const o of layer.objects) {
+      if (!o.gid) continue;
+      const objH = o.height > 0 ? o.height : map.tileH;
+      const px = o.x;
+      const py = o.y - objH;       // top-left for drawing
+      // 카메라 컬링 (대충)
+      if (px + (o.width || map.tileW) < camera.x || px > camera.x + camera.viewW) continue;
+      if (py + objH < camera.y || py > camera.y + camera.viewH) continue;
+      if (tileHasCollision(map, o.gid)) {
+        items.push({ ySort: o.y, kind: 'obj', gid: o.gid, px, py });
+      } else {
+        overObjs.push({ gid: o.gid, px, py });
+      }
+    }
+  }
   items.sort((a, b) => a.ySort - b.ySort);
 
   for (const it of items) {
@@ -96,6 +120,11 @@ export function renderFrame(
         Math.round(it.tx * map.tileW - camera.x),
         Math.round(it.ty * map.tileH - camera.y),
         now);
+    } else if (it.kind === 'obj') {
+      drawTile(ctx, map, it.gid,
+        Math.round(it.px - camera.x),
+        Math.round(it.py - camera.y),
+        now);
     } else if (it.kind === 'local') {
       drawLocal(ctx, camera, local, now);
     } else if (it.kind === 'remote') {
@@ -103,9 +132,15 @@ export function renderFrame(
     }
   }
 
-  // 3. objects_above — 항상 캐릭터 위 (지붕·나무 윗부분 등 가림 효과 전용)
+  // 3. objects_above tile layer + 충돌 없는 object tile-objects (잎 등) — 항상 캐릭터 위
   const above = map.layerByName.get('objects_above');
   if (above) drawTileLayer(ctx, map, above, camera.x, camera.y, camera.viewW, camera.viewH, now);
+  for (const o of overObjs) {
+    drawTile(ctx, map, o.gid,
+      Math.round(o.px - camera.x),
+      Math.round(o.py - camera.y),
+      now);
+  }
 
   // 4. 이름/HP/킬 — HUD 오버레이 캔버스에 그림 (full DPR, 크리스프 텍스트).
   //    HUD 캔버스는 게임 캔버스보다 해상도가 높으므로 좌표는 (worldX - camera.x) * displayScale 로 변환.
