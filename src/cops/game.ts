@@ -641,7 +641,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
       }
     }
 
-    // ===== 포털 — 같은 pairId 끼리 순간이동 =====
+    // ===== 포털 — 같은 pairId 끼리 순간이동. 출구에선 항상 아래(down) 바라봄 (자연스러움) =====
     if (now >= portalCooldownUntil) {
       for (const p of portals) {
         if (local.x >= p.x && local.x <= p.x + p.w && local.y >= p.y && local.y <= p.y + p.h) {
@@ -649,6 +649,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
           if (pair) {
             local.x = pair.cx;
             local.y = pair.cy;
+            local.dir = 'down';
             portalCooldownUntil = now + PORTAL_COOLDOWN;
             // 즉시 pos broadcast (다른 클라가 빨리 따라잡음)
             sendLocalPos();

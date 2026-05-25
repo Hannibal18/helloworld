@@ -14,6 +14,23 @@
  "version": "1.10",
  "tiles": [
   {
+   "id": 10,
+   "animation": [
+    {
+     "tileid": 10,
+     "duration": 150
+    },
+    {
+     "tileid": 11,
+     "duration": 150
+    },
+    {
+     "tileid": 12,
+     "duration": 150
+    }
+   ]
+  },
+  {
    "id": 14,
    "objectgroup": {
     "type": "objectgroup",
