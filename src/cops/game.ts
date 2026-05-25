@@ -300,15 +300,24 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     },
     () => { sendLeaveAndReset(); },
   );
-  // 파티 패널을 우상단(미니맵 아래)로 옮김 — 기본 위치는 좌측이라 chat-log 와 겹침.
-  // setupPartyPanel 은 lobby.ts 의 공용 코드라 inline style 만 덮어씀.
+  // 파티 패널 위치 — 좌측 left-stack 안에 끼워넣어 자연 flex 스택.
+  // 결과 순서: (hud-top 의 접속자 pill) → 파티 패널 → 채팅 로그.
+  // setupPartyPanel 이 body 에 position:fixed 로 박아둔 걸 reparent + position 해제.
   {
     const panelEl = document.getElementById('party-panel');
-    if (panelEl) {
+    const leftStack = document.querySelector('.left-stack');
+    const chatLog = document.getElementById('chat-log');
+    if (panelEl && leftStack) {
+      panelEl.style.position = 'static';
+      panelEl.style.top = 'auto';
       panelEl.style.left = 'auto';
-      panelEl.style.right = 'calc(env(safe-area-inset-right) + 8px)';
-      // 미니맵(top 40 + height 80 + margin) 아래쪽
-      panelEl.style.top = 'calc(env(safe-area-inset-top) + 130px)';
+      panelEl.style.right = 'auto';
+      // 채팅 로그보다 위로 (chat-log 가 있으면 그 앞에 삽입)
+      if (chatLog && chatLog.parentNode === leftStack) {
+        leftStack.insertBefore(panelEl, chatLog);
+      } else {
+        leftStack.appendChild(panelEl);
+      }
     }
   }
   refreshPartyUI();
