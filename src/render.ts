@@ -366,8 +366,8 @@ export function renderFrame(
         grad.addColorStop(0.8,  'rgba(255,255,255,0.15)');
         grad.addColorStop(1,    'rgba(255,255,255,0)');
       };
-      // (1) OMNI — 캐릭터 발치 부드러운 원 (360° 가시)
-      const omniR = Math.max(8, r * 0.45 * scale);
+      // (1) OMNI — 캐릭터 중심 동심원. 반경 = full r (FWD 와 같음) → OMNI 경계 안 보임.
+      const omniR = Math.max(8, r * scale);
       const og = fctx.createRadialGradient(cx, cy, 0, cx, cy, omniR);
       addSoftStops(og);
       fctx.fillStyle = og;
