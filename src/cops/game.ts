@@ -40,9 +40,9 @@ const POS_IDLE_GRACE = 3.0;
 // 대기실은 작은 맵이라 PC 도 살짝 크게 보이게 한다.
 const DEFAULT_VIEW_TILES_PC = 24;
 const TARGET_TILES_WIDE_MOBILE = 14;
-// 1.0 = 원본 LPC 64px 그대로 (bilinear 다운스케일 안 함 → 도트 또렷).
-// 엄마전쟁은 0.75 라 살짝 흐림 있지만 카메라가 더 멀어서 안 보임. cops 는 가까이서 보이니 1.0 권장.
-const DEFAULT_CHAR_SCALE = 1.0;
+// 0.5 = LPC 64px → 32px (한 타일 크기). 정확히 절반이라 bilinear 가 0.75 보다 깔끔.
+// 1.0 도 시도했으나 작은 맵에서 캐릭터가 너무 크게 보임.
+const DEFAULT_CHAR_SCALE = 0.5;
 
 const PARTY_MAX = 8;
 
