@@ -240,10 +240,10 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     return out;
   };
 
-  // 출발 조건 — 경찰과도둑은 zone 없음. 파티장이고 2명 이상이면 OK.
+  // 출발 조건 — 파티장이면 1인도 OK (테스트). 추후 2+ 강제할 수 있음.
   const checkCanStart = (infos: PartyMemberInfo[]): { ok: boolean; reason: string } => {
     if (!iAmLeader()) return { ok: false, reason: '파티장만 출발 가능' };
-    if (infos.length < 2) return { ok: false, reason: '2명 이상이어야 출발' };
+    if (infos.length < 1) return { ok: false, reason: '' };
     return { ok: true, reason: '' };
   };
 
@@ -335,12 +335,13 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   tapMenu = setupTapMenu();
   partyPanel = setupPartyPanel(
     () => {
-      // 출발 — 술래잡기 로직은 다음 단계. 일단 배너만.
+      // 출발 — 임시: lost_temple 게임장으로 이동 (술래잡기 로직 만들 때 정식 매치메이킹으로 교체).
       const infos = buildPartyMemberInfos();
       const { ok } = checkCanStart(infos);
       if (!ok) return;
-      showBanner(ui, 'info', '🚓 출발! (게임 로직 개발 중)');
-      pushChatLog(ui, '🚓 시스템', '파티가 출발했습니다 — 술래잡기는 다음 업데이트', '#ffd84a');
+      const url = new URL(window.location.href);
+      url.searchParams.set('map', 'lost_temple');
+      window.location.href = url.toString();
     },
     () => { sendLeaveAndReset(); },
   );

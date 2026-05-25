@@ -1,10 +1,5 @@
 {
  "compressionlevel": -1,
- "editorsettings": {
-  "export": {
-   "format": "json"
-  }
- },
  "height": 20,
  "infinite": false,
  "layers": [
@@ -21223,7 +21218,7 @@
      "name": "Object Layer 2",
      "objects": [
       {
-       "height": 32,
+       "height": 8.17777777777781,
        "id": 2,
        "name": "portal",
        "opacity": 1,
@@ -21237,9 +21232,9 @@
        "rotation": 0,
        "type": "portal",
        "visible": true,
-       "width": 32,
-       "x": 144,
-       "y": 512
+       "width": 21.9555555555555,
+       "x": 150.044444444444,
+       "y": 535.822222222222
       }
      ],
      "opacity": 1,
@@ -21263,7 +21258,7 @@
      "name": "Object Layer 2",
      "objects": [
       {
-       "height": 32,
+       "height": 8,
        "id": 3,
        "name": "portal",
        "opacity": 1,
@@ -21277,9 +21272,9 @@
        "rotation": 0,
        "type": "portal",
        "visible": true,
-       "width": 32,
-       "x": 1040,
-       "y": 512
+       "width": 21.9740963771255,
+       "x": 1045.97409637713,
+       "y": 536
       }
      ],
      "opacity": 1,
