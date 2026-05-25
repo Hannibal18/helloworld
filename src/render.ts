@@ -51,6 +51,12 @@ export function renderFrame(
 ): void {
   ctx.imageSmoothingEnabled = false;
 
+  // 0. 캔버스 클리어 — 맵이 화면보다 작을 때(예: cops 대기실 같은 작은 맵을
+  //    모바일 세로에서 보면 viewH > map.pixelH) 맵 바깥 영역에 이전 프레임 픽셀이
+  //    남아 잔상이 생김. 검정으로 매 프레임 덮는다.
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, camera.viewW, camera.viewH);
+
   // 1. 바닥 / 장식 — 항상 캐릭터 아래. now 전달 시 애니메이션 타일이 시간에 따라 전환.
   for (const name of ['ground', 'decor']) {
     const layer = map.layerByName.get(name);
