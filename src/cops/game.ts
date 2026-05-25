@@ -32,12 +32,12 @@ import type {
   PartyLeavePayload, PosPayload, PresenceMeta, RemotePlayer,
 } from '../types';
 
-// 술래잡기 — 원격 캐릭터 움직임 정확도가 중요. 송신율 ↑ + 클라이언트 예측 사용.
-const POS_SEND_INTERVAL = 1 / 15;       // 이동 중 송신 주기 (66ms) — 10Hz 보다 빠르게
+// 술래잡기 — 원격 캐릭터 움직임 정확도가 핵심. 송신율 ↑ + vx/vy 외삽 + 즉시 송신 트리거.
+const POS_SEND_INTERVAL = 1 / 20;       // 이동 중 송신 주기 (50ms = 20Hz)
 const POS_HEARTBEAT = 1.0;              // 정지 직후 하트비트
 const POS_HEARTBEAT_IDLE = 3.0;         // 오래 정지 시 더 느슨하게
 const POS_IDLE_GRACE = 3.0;
-const REMOTE_SPEED = 120;               // px/sec, player.ts 의 SPEED 와 동일. 예측용.
+const REMOTE_SPEED = 120;               // px/sec, player.ts SPEED 와 동일. dir-만 폴백용.
 
 // 대기실은 작은 맵이라 PC 도 살짝 크게 보이게 한다.
 const DEFAULT_VIEW_TILES_PC = 24;
@@ -131,6 +131,8 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
 
   // ===== 원격 플레이어 맵 =====
   const remotes = new Map<string, RemotePlayer>();
+  // 원격 플레이어 속도벡터 — onPos 의 vx/vy 저장. dir-only 폴백.
+  const remoteVel = new Map<string, { vx: number; vy: number }>();
 
   const upsertRemote = (m: PresenceMeta) => {
     if (m.id === local.id) return;
@@ -381,8 +383,28 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
       if (!r) return;
       r.x = p.x; r.y = p.y;
       r.dir = p.dir;
+      const wasMoving = r.moving;
       r.moving = p.moving;
       r.lastSeen = nowSec();
+      // vx/vy 저장 — 정확한 외삽용. 없으면 dir-기반 폴백 (REMOTE_SPEED).
+      if (typeof p.vx === 'number' && typeof p.vy === 'number') {
+        remoteVel.set(p.id, { vx: p.vx, vy: p.vy });
+      } else {
+        // 폴백: dir 만 있는 경우 (mom-war 호환). 정규 방향벡터 × REMOTE_SPEED.
+        let fx = 0, fy = 0;
+        switch (p.dir) {
+          case 'up':    fy = -REMOTE_SPEED; break;
+          case 'down':  fy =  REMOTE_SPEED; break;
+          case 'left':  fx = -REMOTE_SPEED; break;
+          case 'right': fx =  REMOTE_SPEED; break;
+        }
+        remoteVel.set(p.id, { vx: p.moving ? fx : 0, vy: p.moving ? fy : 0 });
+      }
+      // 정지 패킷 도착 시 즉시 snap — 외삽 drift 제거 (술래잡기에선 정지 위치가 중요).
+      if (wasMoving && !p.moving) {
+        r.renderX = p.x;
+        r.renderY = p.y;
+      }
     },
     onChat: (c: ChatPayload) => {
       const r = remotes.get(c.id);
@@ -427,6 +449,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     onPresenceLeave: (members) => {
       for (const m of members) {
         remotes.delete(m.id);
+        remoteVel.delete(m.id);
         // 파티 멤버가 룸 떠나면 정리. leader 였으면 해산.
         if (partyMembers.has(m.id) && m.id !== local.id) {
           if (m.id === partyLeader) {
@@ -487,9 +510,28 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   let lastT = performance.now();
   let posTimer = 0;
   let lastPosMoving = false;
+  let lastPosDir = local.dir;
   let heartbeatTimer = 0;
   let idleSec = 0;
   let minimapAccum = 0;
+
+  // 로컬 속도벡터 계산 — input 정규화 × SPEED. 정지면 0.
+  const computeLocalVel = (): { vx: number; vy: number } => {
+    if (!local.moving) return { vx: 0, vy: 0 };
+    const mx = input.moveX;
+    const my = input.moveY;
+    const len = Math.hypot(mx, my);
+    if (len === 0) return { vx: 0, vy: 0 };
+    return { vx: (mx / len) * REMOTE_SPEED, vy: (my / len) * REMOTE_SPEED };
+  };
+
+  const sendLocalPos = (): void => {
+    const v = computeLocalVel();
+    net.sendPos({
+      id: local.id, x: local.x, y: local.y, dir: local.dir, moving: local.moving,
+      vx: v.vx, vy: v.vy,
+    });
+  };
 
   // 디버그 상태는 cops 에선 안 씀 — render 가 요구하니 빈 객체만 전달
   const debug = {
@@ -516,24 +558,30 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     updateLocalPlayer(local, ctx);
     clampToWorld(local, map);
 
-    // 원격 플레이어 — 술래잡기 반응성 위해 클라이언트 예측.
+    // 원격 플레이어 — 술래잡기 반응성. 클라이언트 예측 + 큰 발산 시 snap.
     //  - r.x/r.y = 마지막 수신 좌표 (authoritative). onPos 에서만 갱신.
-    //  - renderX/Y = 화면용 예측 좌표. moving 이면 매 프레임 SPEED*dt*dir 로 자체 이동.
-    //  - 패킷 도착 시 r.x 가 새 값으로 → 작은 lerp 로 부드럽게 보정 (drift 제거).
-    // 결과: 네트워크 지연 무관하게 즉시 움직임 반영. 정지/방향전환 시 짧은 보정만.
-    const CORRECT_K = 1 - Math.exp(-dt / 0.12);   // 120ms 정도 보정
+    //  - renderX/Y = 화면용 예측 좌표. moving 이면 매 프레임 vx*dt, vy*dt 로 자체 이동.
+    //  - 패킷 도착 시 r.x 새 값 → 보정. 발산이 크면(>32px) 즉시 snap, 작으면 빠른 lerp.
+    const SOFT_K = 1 - Math.exp(-dt / 0.08);   // 80ms 빠른 보정
+    const SNAP_DIST2 = 32 * 32;                // 32px 이상 차이나면 snap
     for (const r of remotes.values()) {
       if (r.moving) {
-        switch (r.dir) {
-          case 'up':    r.renderY -= REMOTE_SPEED * dt; break;
-          case 'down':  r.renderY += REMOTE_SPEED * dt; break;
-          case 'left':  r.renderX -= REMOTE_SPEED * dt; break;
-          case 'right': r.renderX += REMOTE_SPEED * dt; break;
+        const v = remoteVel.get(r.id);
+        if (v) {
+          r.renderX += v.vx * dt;
+          r.renderY += v.vy * dt;
         }
       }
-      // authoritative 와 화면 좌표 차이 보정 — moving 동안엔 작은 drift, 정지 시 즉시 수렴
-      r.renderX += (r.x - r.renderX) * CORRECT_K;
-      r.renderY += (r.y - r.renderY) * CORRECT_K;
+      const dx = r.x - r.renderX;
+      const dy = r.y - r.renderY;
+      if (dx * dx + dy * dy > SNAP_DIST2) {
+        // 멀어졌으면 즉시 snap — 보정 lerp 가 따라잡기 너무 오래 걸림
+        r.renderX = r.x;
+        r.renderY = r.y;
+      } else {
+        r.renderX += dx * SOFT_K;
+        r.renderY += dy * SOFT_K;
+      }
     }
 
     // ===== 위치 broadcast — 이동 중 throttle / 정지 시 하트비트 =====
@@ -541,13 +589,15 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     heartbeatTimer += dt;
     const movingNow = local.moving;
     const movingChanged = movingNow !== lastPosMoving;
-    if (movingNow && posTimer >= POS_SEND_INTERVAL) {
-      net.sendPos({ id: local.id, x: local.x, y: local.y, dir: local.dir, moving: true });
+    const dirChanged = local.dir !== lastPosDir;
+    // 즉시 송신 트리거 — 방향/이동상태 변화는 throttle 무시 (반응성 ↑)
+    if (movingChanged || dirChanged) {
+      sendLocalPos();
       posTimer = 0;
       heartbeatTimer = 0;
       idleSec = 0;
-    } else if (movingChanged) {
-      net.sendPos({ id: local.id, x: local.x, y: local.y, dir: local.dir, moving: movingNow });
+    } else if (movingNow && posTimer >= POS_SEND_INTERVAL) {
+      sendLocalPos();
       posTimer = 0;
       heartbeatTimer = 0;
       idleSec = 0;
@@ -555,12 +605,12 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
       if (!movingNow) idleSec += dt;
       const hbInterval = idleSec >= POS_IDLE_GRACE ? POS_HEARTBEAT_IDLE : POS_HEARTBEAT;
       if (heartbeatTimer >= hbInterval) {
-        net.sendPos({ id: local.id, x: local.x, y: local.y, dir: local.dir, moving: movingNow });
+        sendLocalPos();
         heartbeatTimer = 0;
       }
     }
     lastPosMoving = movingNow;
-    void input;
+    lastPosDir = local.dir;
 
     // 카메라
     updateCamera(camera, local.x, local.y, map.pixelW, map.pixelH, dt, 0.5);

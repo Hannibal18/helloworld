@@ -19,12 +19,17 @@ export interface PresenceMeta {
 }
 
 // 이동 위치 broadcast
+// vx/vy 는 cops 처럼 정밀 외삽이 필요한 모드용 optional 필드 — 정규화된 방향벡터 × SPEED (px/sec).
+// dir 만 보내면 대각선 정보가 손실되므로 vx/vy 도 함께 보내면 수신측이 정확히 외삽 가능.
+// mom-war 는 이 필드 안 써도 정상 동작 (단순 lerp 만).
 export interface PosPayload {
   id: string;
   x: number;
   y: number;
   dir: Dir;
   moving: boolean;
+  vx?: number;
+  vy?: number;
 }
 
 // 채팅 broadcast
