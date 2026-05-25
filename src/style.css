@@ -109,6 +109,10 @@ input[type="text"], textarea {
   letter-spacing: 2px;
 }
 .nick-input:focus { border-color: #c8a04a; }
+/* type="search" 의 iOS 기본 돋보기/X 무력화 — 일반 텍스트 박스처럼 */
+.nick-input { -webkit-appearance: none; appearance: none; }
+.nick-input::-webkit-search-cancel-button,
+.nick-input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
 .game-id-input {
   margin-top: 8px;
   text-transform: uppercase;     /* 방 코드 보기 좋게 대문자 */
