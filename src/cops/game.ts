@@ -788,20 +788,18 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
         case 'right': facingDx =  1; break;
       }
     }
-    // 회전 + X 스트레치 + 동심원 그라데이션. 부드러운 타원형 손전등.
+    // 손전등 콘 — 캐릭터에서 시작해 앞쪽으로 점점 넓어짐.
+    // nearRadius (작음, 캐릭터 주변) → farRadius (큼, 콘 끝) 까지 coneLength 거리에 stack.
     const vision = visionParam > 0 ? {
       worldX: local.x,
       worldY: local.y + BODY_OFF_Y,
       facingDx,
       facingDy,
-      radius: visionParam,
-      // 티어드롭 모양: 작은 OMNI (캐릭터 주변 360°) + 앞쪽 큰 원 (forward)
-      // 두 원이 부드럽게 union → 둥글지도 타원도 아닌 비대칭 물방울 형태
-      omniScale: 0.5,                      // OMNI 작게 (캐릭터 주변만)
-      forwardStretch: 1.0,                 // FWD 는 늘리지 않음 (그냥 원)
-      forwardOffset: visionParam * 0.55,   // FWD 중심을 앞쪽으로 많이 시프트
-      forwardScale: 1.0,                   // FWD 원 크기 = vision.radius
-      exploredDimAlpha: 0.55,              // 한 번 본 영역 dim 강도
+      nearRadius: visionParam * 0.45,      // 캐릭터에서의 반경 (작음 — 뒤쪽도 이 만큼만)
+      farRadius: visionParam * 1.1,        // 콘 끝의 반경 (큼 — 멀리 갈수록 넓음)
+      coneLength: visionParam * 1.2,       // 콘 길이 (캐릭터 → 콘 끝)
+      coneSteps: 6,                        // 콘 매끈도
+      exploredDimAlpha: 0.55,              // 한 번 본 영역 dim
     } : null;
     renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale }, vision);
 

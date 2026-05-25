@@ -49,19 +49,15 @@ export interface VisionConfig {
   /** 바라보는 방향 (정규화 벡터). 0,0 이면 무방향 (등방 원). */
   facingDx: number;
   facingDy: number;
-  /** 기본 시야 반경 (transformed 좌표 기준 px). */
-  radius: number;
-  /** 앞쪽 늘림 비율 (1.0 = 원, 1.5 = 앞뒤로 1.5x 타원). */
-  forwardStretch?: number;
-  /** 앞쪽 시프트 — transformed 좌표에서 그라데이션 중심을 +X 로 이동. 0 = 캐릭터 중심. */
-  forwardOffset?: number;
-  /** FWD 원 반경 배율. 1.0 = vision.radius 그대로, 1.3 = FWD 가 OMNI 보다 30% 큼. */
-  forwardScale?: number;
-  /** OMNI 원 반경 배율. 1.0 = vision.radius 그대로 (둥근 시야), 0.5 = 작게 (티어드롭). */
-  omniScale?: number;
-  /** 한 번이라도 본 영역의 어두움. 0 = 완전 밝음(메모리 무시), 1 = 미탐색과 동일.
-   *  StarCraft 식 fog-of-war 효과 — 미탐색은 완전 검정, 탐색은 dim 검정, 현재 시야는 밝음.
-   *  미지정/0 이면 fog memory 안 씀 (현재 시야 밖은 모두 완전 검정). */
+  /** 시야 콘 — 캐릭터에서 시작해 facing 방향으로 점점 넓어지는 손전등 모양.
+   *  nearRadius (캐릭터에서의 반경) 부터 farRadius (콘 끝의 반경) 까지 length 거리에 걸쳐
+   *  여러 원을 stack 해서 union → 자연스러운 콘 형태. */
+  nearRadius: number;
+  farRadius: number;
+  coneLength: number;
+  /** 원 stack 개수 (기본 5). 많을수록 콘 모양 매끈. */
+  coneSteps?: number;
+  /** 한 번이라도 본 영역의 어두움. 0 = 완전 밝음(메모리 무시), 1 = 미탐색과 동일. */
   exploredDimAlpha?: number;
 }
 
@@ -351,61 +347,68 @@ export function renderFrame(
   if (vision) {
     const sx = vision.worldX - camera.x;
     const sy = vision.worldY - camera.y;
-    const fwdShift = (vision.forwardOffset ?? 0);
-    const stretch = vision.forwardStretch ?? 1.0;
-    const r = Math.max(20, vision.radius);
     const dx = vision.facingDx, dy = vision.facingDy;
+    const nearR = Math.max(8, vision.nearRadius);
+    const farR = Math.max(nearR, vision.farRadius);
+    const coneLen = Math.max(0, vision.coneLength);
+    const steps = Math.max(2, vision.coneSteps ?? 5);
     const dimAlpha = Math.max(0, Math.min(1, vision.exploredDimAlpha ?? 0));
-    // helper — fog 캔버스에 OMNI + FWD 시야 도형 그리기 (현재 fillStyle 색상으로).
-    // wx/wy = 시야 중심을 그릴 위치 (해당 캔버스 좌표). scale = 그릴 크기 배율.
-    const paintVisionShapes = (fctx: CanvasRenderingContext2D, W: number, H: number, wx: number, wy: number, scale: number) => {
-      // Convex 곡선 — 안쪽에서 빠르게 어두워지고 가장자리에서 천천히 fade.
-      // → 카브된 "구멍" 의 edge 가 부드럽게 늘어남, sharp 경계 안 보임.
+    // 콘을 이루는 원들 (월드 좌표). 캐릭터에서 facing 방향으로 step 별 위치 + 반경 선형 보간.
+    // i=0: 캐릭터 위치, 반경 nearR. i=steps-1: 콘 끝, 반경 farR.
+    type Circle = { wx: number; wy: number; r: number };
+    const buildCircles = (): Circle[] => {
+      const arr: Circle[] = [];
+      const hasDir = dx !== 0 || dy !== 0;
+      for (let i = 0; i < steps; i++) {
+        const t = i / (steps - 1);
+        const dist = hasDir ? t * coneLen : 0;
+        const radius = nearR + (farR - nearR) * t;
+        arr.push({ wx: vision.worldX + dx * dist, wy: vision.worldY + dy * dist, r: radius });
+        if (!hasDir) break;   // 무방향이면 OMNI 원 1개만
+      }
+      return arr;
+    };
+    const circles = buildCircles();
+    // 어떤 월드 좌표가 콘 안인지 — 캐릭터/이름 hiding 에 사용.
+    const isInsideCone = (worldX: number, worldY: number): boolean => {
+      for (const c of circles) {
+        const ex = worldX - c.wx, ey = worldY - c.wy;
+        if (ex * ex + ey * ey <= c.r * c.r) return true;
+      }
+      return false;
+    };
+
+    // helper — fog 캔버스에 콘 (여러 원의 union) 그리기.
+    // scale = 캐릭터 좌표 단위를 해당 캔버스 픽셀로 변환하는 계수.
+    const paintVisionShapes = (fctx: CanvasRenderingContext2D, W: number, H: number, originX: number, originY: number, scale: number) => {
+      // 부드러운 stops — convex 곡선으로 가장자리 페이드 길게.
       const addSoftStops = (grad: CanvasGradient) => {
         grad.addColorStop(0,    'rgba(255,255,255,1.0)');
-        grad.addColorStop(0.25, 'rgba(255,255,255,0.55)');
-        grad.addColorStop(0.5,  'rgba(255,255,255,0.25)');
-        grad.addColorStop(0.75, 'rgba(255,255,255,0.08)');
+        grad.addColorStop(0.3,  'rgba(255,255,255,0.6)');
+        grad.addColorStop(0.6,  'rgba(255,255,255,0.25)');
+        grad.addColorStop(0.85, 'rgba(255,255,255,0.06)');
         grad.addColorStop(1,    'rgba(255,255,255,0)');
       };
-      const omniR = Math.max(8, r * (vision.omniScale ?? 1) * scale);
-      const og = fctx.createRadialGradient(wx, wy, 0, wx, wy, omniR);
-      addSoftStops(og);
-      fctx.fillStyle = og;
-      fctx.fillRect(0, 0, W, H);
-      if (dx !== 0 || dy !== 0) {
-        const fx = wx + dx * fwdShift * scale;
-        const fy = wy + dy * fwdShift * scale;
-        const fwdR = Math.max(8, r * (vision.forwardScale ?? 1) * scale);
-        fctx.save();
-        fctx.translate(fx, fy);
-        fctx.rotate(Math.atan2(dy, dx));
-        fctx.scale(stretch, 1);
-        const fg = fctx.createRadialGradient(0, 0, 0, 0, 0, fwdR);
-        addSoftStops(fg);
-        fctx.fillStyle = fg;
-        fctx.fillRect(-W * 2, -H * 2, W * 4, H * 4);
-        fctx.restore();
+      for (const c of circles) {
+        const cx = (c.wx - vision.worldX) * scale + originX;
+        const cy = (c.wy - vision.worldY) * scale + originY;
+        const cr = Math.max(4, c.r * scale);
+        const g = fctx.createRadialGradient(cx, cy, 0, cx, cy, cr);
+        addSoftStops(g);
+        fctx.fillStyle = g;
+        fctx.fillRect(0, 0, W, H);
       }
     };
 
     // ===== explored mask 갱신 (월드 좌표계, persistent) =====
-    // dimAlpha>0 일 때만 활성. 현재 vision 의 복잡한 모양(타원/콘) 그대로 누적하지 않고,
-    // 단순한 원 (반경 r) 으로만 누적 → explored 영역의 모양이 깔끔한 원형 트레일.
-    // 또한 단일 큰 stop 으로 영역 전체가 한 번에 explored 처리 (가장자리 부드럽게).
+    // 콘 모양 그대로 누적 — 캐릭터가 본 영역만 정확히 메모리에 남음.
     let explored: HTMLCanvasElement | null = null;
     if (dimAlpha > 0) {
       explored = getExploredCanvas(map.pixelW, map.pixelH);
       const ectx = explored.getContext('2d')!;
       ectx.setTransform(1, 0, 0, 1, 0, 0);
       ectx.globalCompositeOperation = 'destination-out';
-      const eg = ectx.createRadialGradient(vision.worldX, vision.worldY, 0, vision.worldX, vision.worldY, r);
-      // 안쪽은 진하게 (한 번에 다 explored), 가장자리만 부드럽게 사라짐
-      eg.addColorStop(0,    'rgba(255,255,255,1)');
-      eg.addColorStop(0.7,  'rgba(255,255,255,0.9)');
-      eg.addColorStop(1,    'rgba(255,255,255,0)');
-      ectx.fillStyle = eg;
-      ectx.fillRect(0, 0, map.pixelW, map.pixelH);
+      paintVisionShapes(ectx, map.pixelW, map.pixelH, vision.worldX, vision.worldY, 1);
       ectx.globalCompositeOperation = 'source-over';
     }
 
@@ -438,6 +441,21 @@ export function renderFrame(
     const hudH = hud.ctx.canvas.height / dpr;
     const fogHud = buildFog(hudW, hudH, hud.displayScale);
     hud.ctx.drawImage(fogHud, 0, 0);
+
+    // ===== 현재 시야 밖 캐릭터/이름 가리기 =====
+    // dim 영역 (탐색했지만 현재 안 보임) 에서 다른 플레이어가 비치면 안 됨.
+    // 시야 콘 밖에 있는 캐릭터는 게임/HUD 캔버스 둘 다 검정 사각형으로 덮음.
+    const PAD = 28;        // 캐릭터 sprite 대략 사이즈 (몸+이름 포함)
+    const ds = hud.displayScale;
+    ctx.fillStyle = '#000';
+    hud.ctx.fillStyle = '#000';
+    for (const r of remotes) {
+      if (isInsideCone(r.x, r.y)) continue;
+      const gx = Math.round(r.x - camera.x);
+      const gy = Math.round(r.y - camera.y);
+      ctx.fillRect(gx - PAD, gy - PAD * 2, PAD * 2, PAD * 2.6);
+      hud.ctx.fillRect((gx - PAD) * ds, (gy - PAD * 2) * ds, PAD * 2 * ds, PAD * 2.6 * ds);
+    }
   }
 }
 
