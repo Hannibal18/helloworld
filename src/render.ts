@@ -335,47 +335,82 @@ export function renderFrame(
   if (debug.showCollision) drawCollisionDebug(ctx, map, camera.x, camera.y);
   if (debug.showHitbox) drawHitboxes(ctx, camera, local, remotes);
 
-  // 7. 시야 비네트 — 회전 + X 스트레치 + 동심원 라디얼 그라데이션 (offset-center 콘 보다 매끈).
+  // 7. 시야 비네트 — 스타크래프트식 fog of war.
+  //    offscreen 캔버스에 검정 fog 채우고 destination-out 으로 부드러운 원을 "구멍 뚫음".
+  //    동심원 라디얼 그라데이션이라 등밝기 곡선이 깨끗한 원 (offset-center 콘 artifact 없음).
+  //    여러 원 (omni + 앞쪽) 을 동시에 erase → 자연스러운 oval/cone 모양 union.
+  //    완성된 fog 오버레이를 drawImage 로 게임/HUD 캔버스에 합성.
   if (vision) {
     const sx = vision.worldX - camera.x;
     const sy = vision.worldY - camera.y;
-    const angle = (vision.facingDx === 0 && vision.facingDy === 0)
-      ? 0
-      : Math.atan2(vision.facingDy, vision.facingDx);
+    const fwdShift = (vision.forwardOffset ?? 0);
     const stretch = vision.forwardStretch ?? 1.0;
-    const offset = vision.forwardOffset ?? 0;
-    const r = Math.max(1, vision.radius);
-    // 부드러운 S커브 stops (안쪽 천천히 → 가장자리 급격)
-    const addStops = (grad: CanvasGradient) => {
-      grad.addColorStop(0,    'rgba(0,0,0,0)');
-      grad.addColorStop(0.5,  'rgba(0,0,0,0.08)');
-      grad.addColorStop(0.78, 'rgba(0,0,0,0.4)');
-      grad.addColorStop(0.92, 'rgba(0,0,0,0.85)');
-      grad.addColorStop(1,    'rgba(0,0,0,1)');
+    const r = Math.max(20, vision.radius);
+    const dx = vision.facingDx, dy = vision.facingDy;
+    const buildFog = (W: number, H: number, scale: number): HTMLCanvasElement => {
+      const fog = getFogCanvas(W, H);
+      const fctx = fog.getContext('2d')!;
+      fctx.setTransform(1, 0, 0, 1, 0, 0);   // reset (캐시 재사용)
+      fctx.globalCompositeOperation = 'source-over';
+      fctx.fillStyle = '#000';
+      fctx.fillRect(0, 0, W, H);
+      fctx.globalCompositeOperation = 'destination-out';
+      const cx = sx * scale, cy = sy * scale;
+      // (1) OMNI — 캐릭터 발치 부드러운 원 (360° 가시)
+      const omniR = Math.max(8, r * 0.45 * scale);
+      const og = fctx.createRadialGradient(cx, cy, 0, cx, cy, omniR);
+      og.addColorStop(0,    'rgba(255,255,255,1)');
+      og.addColorStop(0.55, 'rgba(255,255,255,0.85)');
+      og.addColorStop(1,    'rgba(255,255,255,0)');
+      fctx.fillStyle = og;
+      fctx.fillRect(0, 0, W, H);
+      // (2) FWD — facing 방향으로 시프트 + X 스트레치 (회전된 좌표계에서 동심원)
+      if (dx !== 0 || dy !== 0) {
+        const fx = (sx + dx * fwdShift) * scale;
+        const fy = (sy + dy * fwdShift) * scale;
+        const fwdR = Math.max(8, r * scale);
+        fctx.save();
+        fctx.translate(fx, fy);
+        fctx.rotate(Math.atan2(dy, dx));
+        fctx.scale(stretch, 1);
+        const fg = fctx.createRadialGradient(0, 0, 0, 0, 0, fwdR);
+        fg.addColorStop(0,    'rgba(255,255,255,1)');
+        fg.addColorStop(0.55, 'rgba(255,255,255,0.7)');
+        fg.addColorStop(1,    'rgba(255,255,255,0)');
+        fctx.fillStyle = fg;
+        fctx.fillRect(-W * 2, -H * 2, W * 4, H * 4);
+        fctx.restore();
+      }
+      return fog;
     };
     // game 캔버스
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(angle);
-    ctx.scale(stretch, 1);
-    const g = ctx.createRadialGradient(offset, 0, 0, offset, 0, r);
-    addStops(g);
-    ctx.fillStyle = g;
-    // 변환 후에도 viewport 를 충분히 덮도록 큰 사각형
-    ctx.fillRect(-10000, -10000, 20000, 20000);
-    ctx.restore();
-    // HUD 캔버스 (CSS px = 백버퍼 px × displayScale)
-    const ds = hud.displayScale;
-    hud.ctx.save();
-    hud.ctx.translate(sx * ds, sy * ds);
-    hud.ctx.rotate(angle);
-    hud.ctx.scale(stretch, 1);
-    const hg = hud.ctx.createRadialGradient(offset * ds, 0, 0, offset * ds, 0, r * ds);
-    addStops(hg);
-    hud.ctx.fillStyle = hg;
-    hud.ctx.fillRect(-20000, -20000, 40000, 40000);
-    hud.ctx.restore();
+    const fogGame = buildFog(camera.viewW, camera.viewH, 1);
+    ctx.drawImage(fogGame, 0, 0);
+    // HUD 캔버스 (CSS px 단위 — displayScale 만큼 더 큼)
+    const dpr = window.devicePixelRatio || 1;
+    const hudW = hud.ctx.canvas.width / dpr;
+    const hudH = hud.ctx.canvas.height / dpr;
+    const fogHud = buildFog(hudW, hudH, hud.displayScale);
+    hud.ctx.drawImage(fogHud, 0, 0);
   }
+}
+
+// offscreen fog 캔버스 캐시 — 매 프레임 alloc 안 하고 재사용 (사이즈 바뀌면 리사이즈).
+let _fogCanvasGame: HTMLCanvasElement | null = null;
+let _fogCanvasHud: HTMLCanvasElement | null = null;
+function getFogCanvas(w: number, h: number): HTMLCanvasElement {
+  // 두 사이즈 가능 (game/hud) — 그냥 1개로 캐시 못 함. 사이즈로 분기.
+  // 간단히: 두 개 캐시, 사이즈 다르면 game/hud 중 작은 쪽으로 식별.
+  // 실용적으로는 호출자 측에서 game 먼저 → hud 둘 다 다른 사이즈일 가능성 큼.
+  // 그냥 사이즈 ≤ 800 → game 캐시, 그 이상 → hud 캐시.
+  const useHud = w > 800;
+  let c = useHud ? _fogCanvasHud : _fogCanvasGame;
+  if (!c) { c = document.createElement('canvas'); if (useHud) _fogCanvasHud = c; else _fogCanvasGame = c; }
+  if (c.width !== Math.ceil(w) || c.height !== Math.ceil(h)) {
+    c.width = Math.ceil(w);
+    c.height = Math.ceil(h);
+  }
+  return c;
 }
 
 // 댄스 중인 캐릭터 발 밑에 옅은 분홍 그림자.
