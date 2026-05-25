@@ -39,7 +39,7 @@ const POS_IDLE_GRACE = 3.0;
 
 // 대기실은 작은 맵이라 PC 도 살짝 크게 보이게 한다.
 const DEFAULT_VIEW_TILES_PC = 18;
-const TARGET_TILES_WIDE_MOBILE = 10;
+const TARGET_TILES_WIDE_MOBILE = 12;
 // 1.0 = 원본 LPC 64px 그대로 (bilinear 다운스케일 안 함 → 도트 또렷).
 // 엄마전쟁은 0.75 라 살짝 흐림 있지만 카메라가 더 멀어서 안 보임. cops 는 가까이서 보이니 1.0 권장.
 const DEFAULT_CHAR_SCALE = 1.0;
