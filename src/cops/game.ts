@@ -46,6 +46,18 @@ const DEFAULT_CHAR_SCALE = 0.75;
 
 const PARTY_MAX = 8;
 
+// 맵 메타데이터 — id, 파일 경로, 표시 이름, 게임장(arena) 여부.
+// 게임장은 상단 중앙에 잔여 시간 타이머 + 우측 미니맵 아래 맵 이름 표시.
+const MAPS = {
+  lobby: { id: 'lobby', path: '/maps/cops_lobby/cops_lobby.json', name: '대기실', isArena: false },
+  lost_temple: { id: 'lost_temple', path: '/maps/lost_temple/lost_temple.json', name: '로스트 템플', isArena: true },
+} as const;
+type MapId = keyof typeof MAPS;
+
+// 게임장 잔여 시간 (초). 테스트 중 — 0 이 되어도 게임 종료 X.
+const ARENA_DURATION_SEC = 10 * 60;
+const SEC_PER_MIN = 60;
+
 interface CopsStartOpts {
   name: string;
   charIdx: number;
@@ -67,15 +79,13 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   showGame(ui);
 
   // ===== 맵 로드 =====
-  // 기본 대기실: cops_lobby (waitingroom.tmx 임포트). ?map=lost_temple 로 게임장 맵 테스트.
+  // 기본 대기실. ?map=<id> 로 다른 맵 (위 MAPS 참고).
   // ?vision=120 으로 시야 반경(px) 조절. 0 또는 미지정이면 시야 제한 없음.
   const urlParams = new URLSearchParams(window.location.search);
-  const mapParam = urlParams.get('map');
-  // 테스트 기본값 120 (반경 120px). ?vision=0 으로 끄거나 ?vision=200 등으로 조절.
+  const mapParam = (urlParams.get('map') ?? 'lobby') as MapId;
+  const mapMeta = MAPS[mapParam] ?? MAPS.lobby;
   const visionParam = parseInt(urlParams.get('vision') ?? '120', 10);
-  const mapPath = mapParam === 'lost_temple'
-    ? '/maps/lost_temple/lost_temple.json'
-    : '/maps/cops_lobby/cops_lobby.json';
+  const mapPath = mapMeta.path;
   let map: TileMap;
   try {
     map = await loadMap(mapPath);
@@ -344,7 +354,14 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   };
 
   // ===== UI 세팅 =====
-  setupLobbyTitle();
+  // 대기실이면 "대기실" 타이틀, 게임장이면 잔여 시간 타이머 + 맵 이름 라벨.
+  let arenaTimerHandle: { update(s: number): void; destroy(): void } | null = null;
+  if (mapMeta.isArena) {
+    arenaTimerHandle = setupArenaTimer();
+    setupMapNameLabel(mapMeta.name);
+  } else {
+    setupLobbyTitle();
+  }
   lobbyChat = setupLobbyChat((text) => {
     const n = nowSec();
     local.chatText = text;
@@ -630,10 +647,19 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     viewTilesWide: DEFAULT_VIEW_TILES_PC,
   };
 
+  // 게임장 잔여 시간 기준점 — 첫 프레임에서 startedAt 설정.
+  let arenaStartedAt = 0;
   function loop(t: number): void {
     const dt = Math.min(0.05, (t - lastT) / 1000);
     lastT = t;
     const now = nowSec();
+
+    // 게임장 잔여 시간 갱신 (시작 시각 기준 — 음수 안 가게 max 0)
+    if (arenaTimerHandle) {
+      if (arenaStartedAt === 0) arenaStartedAt = now;
+      const remaining = Math.max(0, ARENA_DURATION_SEC - (now - arenaStartedAt));
+      arenaTimerHandle.update(remaining);
+    }
 
     if (local.shakePending > 0) {
       triggerShake(camera, local.shakePending);
@@ -833,4 +859,69 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
+}
+
+// ===== 게임장 전용 UI 헬퍼 =====
+
+/** 상단 중앙 잔여 시간 타이머 (MM:SS). 0 이 되어도 게임 종료 X (테스트). */
+function setupArenaTimer(): { update(remainingSec: number): void; destroy(): void } {
+  const el = document.createElement('div');
+  el.id = 'arena-timer';
+  el.style.cssText = [
+    'position:fixed',
+    'top:calc(env(safe-area-inset-top) + 8px)',
+    'left:50%',
+    'transform:translateX(-50%)',
+    'z-index:6',
+    'pointer-events:none',
+    'font:900 22px "Galmuri11", "NeoDunggeunmo", monospace',
+    'letter-spacing:4px',
+    'color:#ffe080',
+    'text-shadow:2px 2px 0 #1a0e08, -2px 2px 0 #1a0e08, 2px -2px 0 #1a0e08, -2px -2px 0 #1a0e08, 0 0 12px rgba(255,200,80,0.4)',
+    'padding:4px 16px',
+    'background:rgba(20,14,8,0.55)',
+    'border:2px solid #6a4a2a',
+    'border-radius:4px',
+    // 1초마다 textContent 만 갱신 — 매 프레임 set 해도 같은 값이면 reflow 적음
+  ].join(';');
+  document.body.appendChild(el);
+  let lastShown = '';
+  const fmt = (sec: number): string => {
+    const total = Math.ceil(sec);
+    const m = Math.floor(total / SEC_PER_MIN);
+    const s = total - m * SEC_PER_MIN;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
+  return {
+    update: (remainingSec) => {
+      const txt = fmt(remainingSec);
+      if (txt !== lastShown) { el.textContent = txt; lastShown = txt; }
+    },
+    destroy: () => { el.remove(); },
+  };
+}
+
+/** 우측 미니맵 아래 맵 이름 라벨 (일반 폰트, 흰 글자). */
+function setupMapNameLabel(name: string): { destroy(): void } {
+  const el = document.createElement('div');
+  el.id = 'arena-mapname';
+  el.textContent = name;
+  // 미니맵 우상단 위치 — top:40px height:80px → 미니맵 아래에 8px 간격으로 붙임.
+  // CSS 의 .minimap 선언과 정수 일치시키는 단일 상수 없어 inline 계산.
+  const MINIMAP_TOP = 40;       // .minimap CSS top
+  const MINIMAP_H = 80;         // .minimap CSS height
+  const GAP = 6;
+  const TOP_PX = MINIMAP_TOP + MINIMAP_H + GAP;
+  el.style.cssText = [
+    'position:fixed',
+    `top:calc(env(safe-area-inset-top) + ${TOP_PX}px)`,
+    'right:calc(env(safe-area-inset-right) + 8px)',
+    'z-index:5',
+    'pointer-events:none',
+    'font:14px system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif',
+    'color:#fff',
+    'text-shadow:1px 1px 2px rgba(0,0,0,0.8)',
+  ].join(';');
+  document.body.appendChild(el);
+  return { destroy: () => { el.remove(); } };
 }
