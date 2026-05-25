@@ -47,6 +47,14 @@ export interface HpPayload {
   hp: number;
 }
 
+// 점수 broadcast — 좀비 모드에서 주기적으로 자기 totalScore 송신.
+// 다른 클라가 ranking 에 표시. 3초 주기 + 큰 변화 시 즉시.
+export interface ScorePayload {
+  id: string;
+  score: number;
+  kills: number;
+}
+
 // 사망 broadcast — 본인이 죽었다고 알린다. killerId 포함.
 // zombie 모드: 비석 위치(tx, ty) 도 보냄. 동료들이 같은 위치에서 부활 인터랙션 가능.
 export interface DeathPayload {
@@ -218,4 +226,6 @@ export interface RemotePlayer {
   // 보조 무기 보유 (weapon_pickup broadcast 받으면 set). 머리 위 아이콘 표시.
   weaponType: WeaponTypePayload | null;
   weaponUntil: number;
+  // 좀비 모드 totalScore (score_update broadcast 로 갱신).
+  score: number;
 }

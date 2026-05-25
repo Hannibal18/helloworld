@@ -46,13 +46,21 @@ export function setKills(ui: UiHandles, n: number): void {
   ui.myKills.textContent = `킬 ${n}`;
 }
 
-// 좌상단 KDA 랭킹 — kills 내림차순, 동률은 deaths 오름차순.
-export interface RankEntry { id: string; name: string; kills: number; deaths: number; }
+// 좌상단 KDA 랭킹 — score 내림차순 (있으면), 없으면 kills 내림차순.
+export interface RankEntry { id: string; name: string; kills: number; deaths: number; score?: number; }
 export function updateRanking(ui: UiHandles, local: RankEntry, remotes: Iterable<RankEntry>): void {
   const all: Array<RankEntry & { isLocal: boolean }> = [{ ...local, isLocal: true }];
-  for (const r of remotes) all.push({ id: r.id, name: r.name, kills: r.kills, deaths: r.deaths, isLocal: false });
-  all.sort((a, b) => (b.kills - a.kills) || (a.deaths - b.deaths) || a.name.localeCompare(b.name));
-  const top = all.slice(0, 5);
+  for (const r of remotes) all.push({ id: r.id, name: r.name, kills: r.kills, deaths: r.deaths, score: r.score, isLocal: false });
+  // 좀비 모드면 score 우선, 아니면 kills.
+  const anyScore = all.some((p) => typeof p.score === 'number' && p.score > 0);
+  all.sort((a, b) => {
+    if (anyScore) {
+      const sa = a.score ?? 0; const sb = b.score ?? 0;
+      if (sb !== sa) return sb - sa;
+    }
+    return (b.kills - a.kills) || (a.deaths - b.deaths) || a.name.localeCompare(b.name);
+  });
+  const top = all.slice(0, 8);   // 파티 최대 8명 모두 보이게
   ui.ranking.innerHTML = '';
   top.forEach((p, i) => {
     const item = document.createElement('div');
@@ -65,7 +73,12 @@ export function updateRanking(ui: UiHandles, local: RankEntry, remotes: Iterable
     name.textContent = p.name;
     const kd = document.createElement('span');
     kd.className = 'ranking-kd';
-    kd.textContent = `${p.kills}/${p.deaths}`;
+    // 좀비 모드: 점수 (없으면 K/D 폴백)
+    if (anyScore) {
+      kd.textContent = `${(p.score ?? 0).toLocaleString()}`;
+    } else {
+      kd.textContent = `${p.kills}/${p.deaths}`;
+    }
     item.appendChild(rank);
     item.appendChild(name);
     item.appendChild(kd);

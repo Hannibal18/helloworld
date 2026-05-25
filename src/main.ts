@@ -202,7 +202,7 @@ ready(() => {
     'position:fixed',
     'top:calc(env(safe-area-inset-top) + 8px)',
     'right:calc(env(safe-area-inset-right) + 8px)',
-    'z-index:50',
+    'z-index:100',                    // 다른 UI 보다 위 — 어디서나 보임
     'width:36px', 'height:36px',
     'padding:0',
     'background:rgba(20,14,8,0.75)',

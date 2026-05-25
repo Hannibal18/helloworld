@@ -493,6 +493,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         danceUntil: 0, danceStart: 0,
         gunUntil: 0,
         weaponType: null, weaponUntil: 0,
+        score: 0,
       };
       remotes.set(m.id, r);
     } else {
@@ -504,7 +505,12 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     refreshRanking();
   };
 
-  const refreshRanking = () => updateRanking(ui, local, remotes.values());
+  // 좀비 모드면 local.score = scoreState.totalScore 로 ranking 표시.
+  const localRankEntry = (): { id: string; name: string; kills: number; deaths: number; score?: number } => ({
+    id: local.id, name: local.name, kills: local.kills, deaths: local.deaths,
+    score: scoreState?.totalScore,
+  });
+  const refreshRanking = () => updateRanking(ui, localRankEntry(), remotes.values());
 
   // ===== 총(AK) =====
   const gunState: GunState = makeGunState(nowSec());
@@ -579,6 +585,10 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   let scoreState: ScoreState | null = null;
   // 마일스톤: 50킬마다 풀힐 (보너스 무기는 제거됨)
   let lastHealKillThreshold = 0;
+  // 점수 broadcast — 3초 주기 (큰 변동 시 즉시).
+  let scoreBroadcastAt = 0;
+  let lastBroadcastScore = -1;
+  const SCORE_BROADCAST_INTERVAL = 3.0;
 
   // ===== 사망 시 자유 카메라 (스와이프) =====
   // 죽은 동안 카메라를 손가락 드래그로 자유롭게 움직임. 살아나면 자동 리셋.
@@ -833,6 +843,13 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
     onPartyDecline: (p: PartyDeclinePayload) => { applyPartyDecline(p); },
     onPartyLeave: (p: PartyLeavePayload) => { applyPartyLeave(p); },
     onRevive: (p: RevivePayload) => { applyRevive(p); },
+    onScore: (p) => {
+      const r = remotes.get(p.id);
+      if (!r) return;
+      r.score = p.score;
+      r.kills = p.kills;
+      refreshRanking();
+    },
     onZombieSnapshot: (p: ZombieSnapshotPayload) => {
       // 호스트는 자기 시뮬레이션이 권위 — 스냅샷 무시.
       if (!isLocalHost()) applyZombieSnapshot(zombieWave, p, nowSec());
@@ -1202,6 +1219,15 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       }
       zombieWave.recentKillPoints.length = 0;
       updateScore(scoreState, dt, now);
+
+      // 점수 broadcast — 3초 주기 또는 점수 50+ 변동 시 즉시. 랭킹 동기화용.
+      const dtScore = scoreState.totalScore - lastBroadcastScore;
+      if (now - scoreBroadcastAt >= SCORE_BROADCAST_INTERVAL || dtScore >= 50 || lastBroadcastScore < 0) {
+        scoreBroadcastAt = now;
+        lastBroadcastScore = scoreState.totalScore;
+        net.sendScore({ id: local.id, score: scoreState.totalScore, kills: local.kills });
+        refreshRanking();
+      }
 
       if (!local.dead) {
         // (보너스 무기 자동 지급 기능 제거됨 — 무기는 드랍/픽업으로만 획득)
