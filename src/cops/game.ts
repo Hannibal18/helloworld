@@ -69,7 +69,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   // ===== 맵 로드 =====
   let map: TileMap;
   try {
-    map = await loadMap('/maps/zombie_road.json');
+    map = await loadMap('/maps/lost_temple/lost_temple.json');
   } catch (err) {
     console.error(err);
     alert(`맵 로드 실패: ${(err as Error).message}`);
@@ -86,6 +86,42 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   const local = makeLocalPlayer(id, name, color, charIdx, spawn);
 
   prescaleCharacter(DEFAULT_CHAR_SCALE);
+
+  // ===== 맵 인터랙티브 영역 수집 — jump zone + portal pairs =====
+  // 규약 (Tiled object layer class):
+  //   - class="jump"   : 점프해야 넘는 영역. 진입하면 이동 방향으로 leap.
+  //   - class="Portal" : 순간이동. 같은 first-property 이름끼리 페어 (a-a, b-b, ...).
+  interface JumpZone { x: number; y: number; w: number; h: number }
+  interface Portal { x: number; y: number; w: number; h: number; cx: number; cy: number; pairId: string }
+  const jumpZones: JumpZone[] = [];
+  const portals: Portal[] = [];
+  for (const layer of map.layers) {
+    if (layer.kind !== 'object') continue;
+    const cls = (layer.class ?? '').toLowerCase();
+    if (cls === 'jump') {
+      for (const o of layer.objects) {
+        if (o.width > 0 && o.height > 0) jumpZones.push({ x: o.x, y: o.y, w: o.width, h: o.height });
+      }
+    } else if (cls === 'portal') {
+      for (const o of layer.objects) {
+        if (o.width <= 0 || o.height <= 0) continue;
+        const pairId = (o.properties && o.properties[0] && o.properties[0].name) || (o.name || 'default');
+        portals.push({
+          x: o.x, y: o.y, w: o.width, h: o.height,
+          cx: o.x + o.width / 2, cy: o.y + o.height / 2,
+          pairId,
+        });
+      }
+    }
+  }
+  console.log(`[cops] map zones: ${jumpZones.length} jump, ${portals.length} portal`);
+
+  // 쿨다운 — 진입 즉시 재발동 방지
+  let jumpCooldownUntil = 0;
+  let portalCooldownUntil = 0;
+  const JUMP_LEAP = 56;          // 점프 시 이동 방향으로 픽셀 (1.5 타일)
+  const JUMP_COOLDOWN = 0.4;
+  const PORTAL_COOLDOWN = 1.0;
 
   // ===== 카메라 + 캔버스 =====
   const camera = makeCamera(320, 240);
@@ -576,6 +612,44 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     ctx.dt = dt;
     updateLocalPlayer(local, ctx);
     clampToWorld(local, map);
+
+    // ===== 점프 영역 — 진입하면 이동 방향으로 leap =====
+    if (local.moving && now >= jumpCooldownUntil) {
+      for (const z of jumpZones) {
+        if (local.x >= z.x && local.x <= z.x + z.w && local.y >= z.y && local.y <= z.y + z.h) {
+          let dx = 0, dy = 0;
+          switch (local.dir) {
+            case 'up':    dy = -JUMP_LEAP; break;
+            case 'down':  dy =  JUMP_LEAP; break;
+            case 'left':  dx = -JUMP_LEAP; break;
+            case 'right': dx =  JUMP_LEAP; break;
+          }
+          // 충돌 무시 — 그냥 좌표 이동
+          local.x += dx;
+          local.y += dy;
+          clampToWorld(local, map);
+          jumpCooldownUntil = now + JUMP_COOLDOWN;
+          break;
+        }
+      }
+    }
+
+    // ===== 포털 — 같은 pairId 끼리 순간이동 =====
+    if (now >= portalCooldownUntil) {
+      for (const p of portals) {
+        if (local.x >= p.x && local.x <= p.x + p.w && local.y >= p.y && local.y <= p.y + p.h) {
+          const pair = portals.find((p2) => p2 !== p && p2.pairId === p.pairId);
+          if (pair) {
+            local.x = pair.cx;
+            local.y = pair.cy;
+            portalCooldownUntil = now + PORTAL_COOLDOWN;
+            // 즉시 pos broadcast (다른 클라가 빨리 따라잡음)
+            sendLocalPos();
+          }
+          break;
+        }
+      }
+    }
 
     // 원격 플레이어 — 술래잡기 반응성. 클라이언트 예측 + 큰 발산 시 snap.
     //  - r.x/r.y = 마지막 수신 좌표 (authoritative). onPos 에서만 갱신.

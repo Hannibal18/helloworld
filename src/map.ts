@@ -25,13 +25,14 @@ export interface Tileset {
 }
 
 export type Layer =
-  | { kind: 'tile';   id: number; name: string; width: number; height: number; data: Uint32Array; visible: boolean }
-  | { kind: 'object'; id: number; name: string; objects: TmxObject[]; visible: boolean };
+  | { kind: 'tile';   id: number; name: string; class?: string; width: number; height: number; data: Uint32Array; visible: boolean }
+  | { kind: 'object'; id: number; name: string; class?: string; objects: TmxObject[]; visible: boolean };
 
 export interface TmxObject {
   id: number;
   name?: string;
   type?: string;
+  class?: string;             // Tiled 의 object class
   x: number;
   y: number;
   width: number;
@@ -40,6 +41,8 @@ export interface TmxObject {
   /** tile-object 인 경우 gid. Tiled 에서 object layer 에 타일을 드래그하면 이 필드가 채워진다.
    *  Tiled 의 tile-object 는 (x, y) 가 bottom-left 기준 → 렌더 시 (x, y - height) 가 top-left. */
   gid?: number;
+  /** Custom Properties (이름/값 쌍) — Tiled object properties. */
+  properties?: Array<{ name: string; type?: string; value: unknown }>;
 }
 
 export interface CollisionRect {
@@ -98,8 +101,9 @@ interface RawTilesetTile {
 }
 interface RawLayer {
   id?: number;
-  type: 'tilelayer' | 'objectgroup' | string;
+  type: 'tilelayer' | 'objectgroup' | 'group' | string;
   name: string;
+  class?: string;           // Tiled 의 layer class (옵션)
   visible?: boolean;
   width?: number;
   height?: number;
@@ -107,6 +111,7 @@ interface RawLayer {
   encoding?: string;        // 'csv' or undefined for array
   compression?: string;
   objects?: TmxObject[];
+  layers?: RawLayer[];      // group 레이어의 자식들
 }
 
 export async function loadMap(jsonUrl: string): Promise<TileMap> {
@@ -204,45 +209,53 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
   tilesets.sort((a, b) => a.firstgid - b.firstgid);
   await Promise.all(imagePromises);
 
-  // ===== 레이어 파싱 =====
+  // ===== 레이어 파싱 (group 재귀 평탄화) =====
   const layers: Layer[] = [];
   const layerByName = new Map<string, Layer>();
 
-  for (const rl of raw.layers) {
-    if (rl.type === 'tilelayer') {
-      if (!rl.data || !rl.width || !rl.height) continue;
-      let arr: number[];
-      if (typeof rl.data === 'string') {
-        if (rl.encoding && rl.encoding !== 'csv') {
-          throw new Error(`[map] '${rl.name}' 레이어 encoding=${rl.encoding} 는 미지원. Tiled Export 옵션에서 'CSV' 또는 'array' 로 저장하세요.`);
+  const walk = (raws: RawLayer[]): void => {
+    for (const rl of raws) {
+      if (rl.type === 'tilelayer') {
+        if (!rl.data || !rl.width || !rl.height) continue;
+        let arr: number[];
+        if (typeof rl.data === 'string') {
+          if (rl.encoding && rl.encoding !== 'csv') {
+            throw new Error(`[map] '${rl.name}' 레이어 encoding=${rl.encoding} 는 미지원. Tiled Export 옵션에서 'CSV' 또는 'array' 로 저장하세요.`);
+          }
+          arr = rl.data.split(',').map((s) => parseInt(s.trim(), 10));
+        } else {
+          arr = rl.data;
         }
-        arr = rl.data.split(',').map((s) => parseInt(s.trim(), 10));
-      } else {
-        arr = rl.data;
+        const layer: Layer = {
+          kind: 'tile',
+          id: rl.id ?? 0,
+          name: rl.name,
+          class: rl.class,
+          width: rl.width,
+          height: rl.height,
+          data: new Uint32Array(arr),
+          visible: rl.visible !== false,
+        };
+        layers.push(layer);
+        layerByName.set(rl.name, layer);
+      } else if (rl.type === 'objectgroup') {
+        const layer: Layer = {
+          kind: 'object',
+          id: rl.id ?? 0,
+          name: rl.name,
+          class: rl.class,
+          objects: rl.objects ?? [],
+          visible: rl.visible !== false,
+        };
+        layers.push(layer);
+        layerByName.set(rl.name, layer);
+      } else if (rl.type === 'group') {
+        // Tiled 의 그룹 레이어 — 자식들을 그대로 펼친다 (문서 순서 유지).
+        if (rl.layers) walk(rl.layers);
       }
-      const layer: Layer = {
-        kind: 'tile',
-        id: rl.id ?? 0,
-        name: rl.name,
-        width: rl.width,
-        height: rl.height,
-        data: new Uint32Array(arr),
-        visible: rl.visible !== false,
-      };
-      layers.push(layer);
-      layerByName.set(rl.name, layer);
-    } else if (rl.type === 'objectgroup') {
-      const layer: Layer = {
-        kind: 'object',
-        id: rl.id ?? 0,
-        name: rl.name,
-        objects: rl.objects ?? [],
-        visible: rl.visible !== false,
-      };
-      layers.push(layer);
-      layerByName.set(rl.name, layer);
     }
-  }
+  };
+  walk(raw.layers);
 
   // ===== 충돌 모음 =====
   // 두 가지 소스를 합쳐서 만든다:
