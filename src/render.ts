@@ -337,17 +337,24 @@ export function renderFrame(
     const oy = vision.outerY - camera.y;
     const ir = Math.max(0, vision.innerRadius);
     const or = Math.max(ir + 1, vision.outerRadius);
+    // 중간 stop 추가 — 선형이 아닌 부드러운 곡선 (안쪽은 천천히, 가장자리에서 급격히 어두워짐).
+    // 결과: inner 경계가 안 느껴지고 자연스러운 글로우.
+    const addStops = (grad: CanvasGradient) => {
+      grad.addColorStop(0,    'rgba(0,0,0,0)');
+      grad.addColorStop(0.4,  'rgba(0,0,0,0.05)');
+      grad.addColorStop(0.7,  'rgba(0,0,0,0.35)');
+      grad.addColorStop(0.9,  'rgba(0,0,0,0.8)');
+      grad.addColorStop(1,    'rgba(0,0,0,1)');
+    };
     // game 캔버스 (백버퍼 px)
     const g = ctx.createRadialGradient(ix, iy, ir, ox, oy, or);
-    g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(1, 'rgba(0,0,0,1)');
+    addStops(g);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, camera.viewW, camera.viewH);
     // HUD 캔버스 (CSS px = 백버퍼 px × displayScale)
     const ds = hud.displayScale;
     const hg = hud.ctx.createRadialGradient(ix * ds, iy * ds, ir * ds, ox * ds, oy * ds, or * ds);
-    hg.addColorStop(0, 'rgba(0,0,0,0)');
-    hg.addColorStop(1, 'rgba(0,0,0,1)');
+    addStops(hg);
     hud.ctx.fillStyle = hg;
     const dpr = window.devicePixelRatio || 1;
     hud.ctx.fillRect(0, 0, hud.ctx.canvas.width / dpr, hud.ctx.canvas.height / dpr);

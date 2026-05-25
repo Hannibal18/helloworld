@@ -791,9 +791,11 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     const cx = local.x, cy = local.y + BODY_OFF_Y;
     // inner: 캐릭터 발 근처의 작은 밝은 영역 (앞뒤 무관하게 항상 보임)
     // outer: 바라보는 방향으로 큰 폭 시프트 (콘 끝이 앞쪽 멀리)
-    const innerR = Math.max(40, visionParam * 0.5);      // 반경의 50% — 뒤쪽도 어느정도 보이게
-    const outerR = visionParam;                          // 명목 반경
-    const SHIFT = visionParam * 0.35;                    // 콘 시프트 — 줄여서 뒤쪽 가시거리 확보
+    // innerRadius 0 = 안쪽 평평한 100% 밝은 영역 없음 → 경계 안 보임, 전체 소프트 글로우.
+    // outerRadius 를 살짝 키워 (vision×1.3) 가장자리 페이드가 더 부드럽게.
+    const innerR = 0;
+    const outerR = visionParam * 1.3;
+    const SHIFT = visionParam * 0.4;                     // 콘 시프트 — 앞쪽 가시거리 확보
     const vision = visionParam > 0 ? {
       innerX: cx,
       innerY: cy,
