@@ -490,6 +490,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
         attackUntil: 0,
         danceUntil: 0, danceStart: 0,
         gunUntil: 0,
+        weaponType: null, weaponUntil: 0,
       };
       remotes.set(m.id, r);
     } else {
@@ -525,7 +526,12 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       clearAllOwnedWeapons(weaponsState);
     } else {
       const r = remotes.get(p.by);
-      if (r) r.gunUntil = now + GUN_HOLD_DURATION;
+      if (r) {
+        r.gunUntil = now + GUN_HOLD_DURATION;
+        // 한 번에 한 무기 — 보조 무기 해제
+        r.weaponType = null;
+        r.weaponUntil = 0;
+      }
     }
   };
   const applyBullet = (p: BulletPayload) => {
@@ -541,12 +547,20 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   };
   const applyWeaponPickup = (p: WeaponPickupPayload) => {
     weaponsState.drops.delete(p.id);
+    const n = nowSec();
     if (p.by === local.id) {
-      grantOwnership(weaponsState, p.type, nowSec());
+      grantOwnership(weaponsState, p.type, n);
       // 한 번에 한 무기 — AK 보유 중이면 해제
       local.gunUntil = 0;
+    } else {
+      // 원격 플레이어 보유 표시 — 머리 위 아이콘
+      const r = remotes.get(p.by);
+      if (r) {
+        r.weaponType = p.type;
+        r.weaponUntil = n + 30;     // WEAPON_HOLD_DURATION
+        r.gunUntil = 0;             // 한 번에 한 무기 — AK 해제
+      }
     }
-    // 원격 플레이어 보유 표시는 v1 에서 생략 (자기 캐릭터 위에만 표시)
   };
 
   // ===== 좀비 웨이브 =====
@@ -1373,6 +1387,14 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       drawLightningClouds(ctx2d, camera, weaponsState, now, local.x, local.y);
       drawIceCast(ctx2d, camera, weaponsState, now, local.x, local.y);
       drawCurseCast(ctx2d, camera, weaponsState, now, local.x, local.y);
+    }
+    // 원격 플레이어 머리 위 무기 아이콘 (AK + 보조)
+    for (const r of remotes.values()) {
+      if (r.dead) continue;
+      const remoteWeapons: WeaponType[] = (r.weaponType && now < r.weaponUntil) ? [r.weaponType] : [];
+      const remoteHasGun = now < r.gunUntil;
+      if (remoteWeapons.length === 0 && !remoteHasGun) continue;
+      drawOwnedIcons(ctx2d, camera, r.renderX, r.renderY, CHAR_H, remoteWeapons, remoteHasGun);
     }
 
     // 좀비 (zombie 모드만) — 캐릭터 위에 그림

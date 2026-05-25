@@ -215,4 +215,7 @@ export interface RemotePlayer {
   danceStart: number; // 댄스 시작 시각 (애니메이션 위상 계산용)
   // AK 보유 만료 (gun_pickup broadcast 받으면 set). 보유 중이면 옆에 총 그림.
   gunUntil: number;
+  // 보조 무기 보유 (weapon_pickup broadcast 받으면 set). 머리 위 아이콘 표시.
+  weaponType: WeaponTypePayload | null;
+  weaponUntil: number;
 }
