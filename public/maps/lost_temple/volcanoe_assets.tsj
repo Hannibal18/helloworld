@@ -140,10 +140,10 @@
     "objects": [
      {
       "id": 0,
-      "x": 0,
-      "y": 0,
-      "width": 0,
-      "height": 0
+      "x": 5.77675,
+      "y": 13.0347,
+      "width": 24.7363,
+      "height": 16.145265000000002
      }
     ]
    }
@@ -155,25 +155,10 @@
     "objects": [
      {
       "id": 0,
-      "x": 32,
+      "x": 24,
       "y": 24,
-      "width": 0,
-      "height": 0
-     }
-    ]
-   }
-  },
-  {
-   "id": 71,
-   "objectgroup": {
-    "type": "objectgroup",
-    "objects": [
-     {
-      "id": 0,
-      "x": 0,
-      "y": 24,
-      "width": 32,
-      "height": 0
+      "width": 8,
+      "height": 8
      }
     ]
    }
@@ -187,8 +172,8 @@
       "id": 0,
       "x": 0,
       "y": 24,
-      "width": 0,
-      "height": 0
+      "width": 8,
+      "height": 8
      }
     ]
    }
@@ -200,10 +185,10 @@
     "objects": [
      {
       "id": 0,
-      "x": 24,
+      "x": 8,
       "y": 0,
-      "width": 0,
-      "height": 0
+      "width": 24,
+      "height": 24
      }
     ]
    }
@@ -230,10 +215,10 @@
     "objects": [
      {
       "id": 0,
-      "x": 8,
+      "x": 0,
       "y": 0,
-      "width": 0,
-      "height": 0
+      "width": 16,
+      "height": 16
      }
     ]
    }
