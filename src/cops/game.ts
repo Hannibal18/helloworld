@@ -39,11 +39,10 @@ const POS_HEARTBEAT_IDLE = 3.0;         // 오래 정지 시 더 느슨하게
 const POS_IDLE_GRACE = 3.0;
 const REMOTE_SPEED = 120;               // px/sec, player.ts SPEED 와 동일. dir-만 폴백용.
 
-// 대기실은 작은 맵이라 PC 도 살짝 크게 보이게 한다.
+// 엄마전쟁과 동일 설정 — 같은 맵 공유.
 const DEFAULT_VIEW_TILES_PC = 24;
-const TARGET_TILES_WIDE_MOBILE = 14;
-// 1.0 = 원본 LPC 64px 그대로. 도트 또렷.
-const DEFAULT_CHAR_SCALE = 1.0;
+const TARGET_TILES_WIDE_MOBILE = 10;
+const DEFAULT_CHAR_SCALE = 0.75;
 
 const PARTY_MAX = 8;
 
@@ -70,7 +69,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   // ===== 맵 로드 =====
   let map: TileMap;
   try {
-    map = await loadMap('/maps/cops_lobby.json');
+    map = await loadMap('/maps/zombie_road.json');
   } catch (err) {
     console.error(err);
     alert(`맵 로드 실패: ${(err as Error).message}`);
