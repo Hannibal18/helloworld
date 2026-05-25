@@ -788,21 +788,15 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
         case 'right': facingDx =  1; break;
       }
     }
-    const cx = local.x, cy = local.y + BODY_OFF_Y;
-    // inner: 캐릭터 발 근처의 작은 밝은 영역 (앞뒤 무관하게 항상 보임)
-    // outer: 바라보는 방향으로 큰 폭 시프트 (콘 끝이 앞쪽 멀리)
-    // innerRadius 0 = 안쪽 평평한 100% 밝은 영역 없음 → 경계 안 보임, 전체 소프트 글로우.
-    // outerRadius 를 살짝 키워 (vision×1.3) 가장자리 페이드가 더 부드럽게.
-    const innerR = 0;
-    const outerR = visionParam * 1.3;
-    const SHIFT = visionParam * 0.4;                     // 콘 시프트 — 앞쪽 가시거리 확보
+    // 회전 + X 스트레치 + 동심원 그라데이션. 부드러운 타원형 손전등.
     const vision = visionParam > 0 ? {
-      innerX: cx,
-      innerY: cy,
-      innerRadius: innerR,
-      outerX: cx + facingDx * SHIFT,
-      outerY: cy + facingDy * SHIFT,
-      outerRadius: outerR,
+      worldX: local.x,
+      worldY: local.y + BODY_OFF_Y,
+      facingDx,
+      facingDy,
+      radius: visionParam,
+      forwardStretch: 1.4,        // 앞뒤 1.4x (콘 모양 타원)
+      forwardOffset: visionParam * 0.25,  // 그라데이션 중심 앞으로 약간 → 뒤 좀 더 좁게
     } : null;
     renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale }, vision);
 

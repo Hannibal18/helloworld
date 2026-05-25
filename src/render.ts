@@ -39,16 +39,22 @@ export interface HudLayer {
   displayScale: number;
 }
 
-/** 시야 비네트 — 캐릭터 주변만 보이고 나머지는 어두움.
- *  inner 원 (작은 밝은 영역) 과 outer 원 (큰 페이드 끝) 의 중심을 다르게 두면 콘(cone) 모양.
- *  같으면 동그라미. createRadialGradient 의 두 원 사이 영역이 페이드. */
+/** 시야 비네트 — 회전/스트레치 + 동심원 그라데이션.
+ *  offset-center 콘 대신: 캔버스를 facing 방향으로 회전 + X 축 스트레치 한 다음
+ *  동심원 라디얼 그라데이션 그림. 동심원이라 isophote 깨끗하고, transform 으로 방향성 부여. */
 export interface VisionConfig {
-  innerX: number;       // 안쪽 원 중심 (월드) — 보통 캐릭터 몸통 중심
-  innerY: number;
-  innerRadius: number;  // 안쪽 원 반경 — 이 안은 100% 밝음
-  outerX: number;       // 바깥 원 중심 (월드) — 앞쪽으로 시프트 하면 콘 모양
-  outerY: number;
-  outerRadius: number;  // 바깥 원 반경 — 이 밖은 100% 검정
+  /** 시야 중심 (월드 좌표). 보통 캐릭터 몸통 중심. */
+  worldX: number;
+  worldY: number;
+  /** 바라보는 방향 (정규화 벡터). 0,0 이면 무방향 (등방 원). */
+  facingDx: number;
+  facingDy: number;
+  /** 기본 시야 반경 (transformed 좌표 기준 px). */
+  radius: number;
+  /** 앞쪽 늘림 비율 (1.0 = 원, 1.5 = 앞뒤로 1.5x 타원). */
+  forwardStretch?: number;
+  /** 앞쪽 시프트 — transformed 좌표에서 그라데이션 중심을 +X 로 이동. 0 = 캐릭터 중심. */
+  forwardOffset?: number;
 }
 
 export function renderFrame(
@@ -329,35 +335,46 @@ export function renderFrame(
   if (debug.showCollision) drawCollisionDebug(ctx, map, camera.x, camera.y);
   if (debug.showHitbox) drawHitboxes(ctx, camera, local, remotes);
 
-  // 7. 시야 비네트 — 캐릭터 주변만 보이고 나머지 검정. inner/outer 중심이 다르면 콘 모양.
+  // 7. 시야 비네트 — 회전 + X 스트레치 + 동심원 라디얼 그라데이션 (offset-center 콘 보다 매끈).
   if (vision) {
-    const ix = vision.innerX - camera.x;
-    const iy = vision.innerY - camera.y;
-    const ox = vision.outerX - camera.x;
-    const oy = vision.outerY - camera.y;
-    const ir = Math.max(0, vision.innerRadius);
-    const or = Math.max(ir + 1, vision.outerRadius);
-    // 중간 stop 추가 — 선형이 아닌 부드러운 곡선 (안쪽은 천천히, 가장자리에서 급격히 어두워짐).
-    // 결과: inner 경계가 안 느껴지고 자연스러운 글로우.
+    const sx = vision.worldX - camera.x;
+    const sy = vision.worldY - camera.y;
+    const angle = (vision.facingDx === 0 && vision.facingDy === 0)
+      ? 0
+      : Math.atan2(vision.facingDy, vision.facingDx);
+    const stretch = vision.forwardStretch ?? 1.0;
+    const offset = vision.forwardOffset ?? 0;
+    const r = Math.max(1, vision.radius);
+    // 부드러운 S커브 stops (안쪽 천천히 → 가장자리 급격)
     const addStops = (grad: CanvasGradient) => {
       grad.addColorStop(0,    'rgba(0,0,0,0)');
-      grad.addColorStop(0.4,  'rgba(0,0,0,0.05)');
-      grad.addColorStop(0.7,  'rgba(0,0,0,0.35)');
-      grad.addColorStop(0.9,  'rgba(0,0,0,0.8)');
+      grad.addColorStop(0.5,  'rgba(0,0,0,0.08)');
+      grad.addColorStop(0.78, 'rgba(0,0,0,0.4)');
+      grad.addColorStop(0.92, 'rgba(0,0,0,0.85)');
       grad.addColorStop(1,    'rgba(0,0,0,1)');
     };
-    // game 캔버스 (백버퍼 px)
-    const g = ctx.createRadialGradient(ix, iy, ir, ox, oy, or);
+    // game 캔버스
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(angle);
+    ctx.scale(stretch, 1);
+    const g = ctx.createRadialGradient(offset, 0, 0, offset, 0, r);
     addStops(g);
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, camera.viewW, camera.viewH);
+    // 변환 후에도 viewport 를 충분히 덮도록 큰 사각형
+    ctx.fillRect(-10000, -10000, 20000, 20000);
+    ctx.restore();
     // HUD 캔버스 (CSS px = 백버퍼 px × displayScale)
     const ds = hud.displayScale;
-    const hg = hud.ctx.createRadialGradient(ix * ds, iy * ds, ir * ds, ox * ds, oy * ds, or * ds);
+    hud.ctx.save();
+    hud.ctx.translate(sx * ds, sy * ds);
+    hud.ctx.rotate(angle);
+    hud.ctx.scale(stretch, 1);
+    const hg = hud.ctx.createRadialGradient(offset * ds, 0, 0, offset * ds, 0, r * ds);
     addStops(hg);
     hud.ctx.fillStyle = hg;
-    const dpr = window.devicePixelRatio || 1;
-    hud.ctx.fillRect(0, 0, hud.ctx.canvas.width / dpr, hud.ctx.canvas.height / dpr);
+    hud.ctx.fillRect(-20000, -20000, 40000, 40000);
+    hud.ctx.restore();
   }
 }
 
