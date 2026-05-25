@@ -1,0 +1,29 @@
+# Cloudflare Worker + Durable Object — 좀비 모드 서버봇.
+#
+# 사용법:
+#   1) 처음 1회: `npm i` (cloudflare/ 안에서)
+#   2) 로컬: `npm run dev`
+#   3) 배포: `npx wrangler login` 후 `npm run deploy`
+#
+# 환경 변수 (배포 시 wrangler secret 으로 등록):
+#   npx wrangler secret put SUPABASE_URL
+#   npx wrangler secret put SUPABASE_ANON_KEY
+
+name = "helloworld-server"
+main = "src/worker.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# 룸별 DO 인스턴스 — 좀비 시뮬 + Supabase 봇 가입.
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "GameRoomDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoomDO"]
+
+# CPU 시간 한도 (긴 게임 세션 대비 — 무료 플랜 50ms/요청, 유료 30s).
+# 게임 sim 은 alarm tick 마다 짧게 끝남.
+[limits]
+cpu_ms = 50

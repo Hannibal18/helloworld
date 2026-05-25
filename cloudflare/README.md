@@ -1,0 +1,79 @@
+# helloworld-server (Cloudflare Workers + Durable Object)
+
+좀비 모드 협동 게임의 **호스트 봇** — 클라이언트(P2P 호스트) 대신
+서버가 좀비 시뮬을 권위적으로 돌리도록 점진적 마이그.
+
+## 현재 상태 (Phase 1)
+
+- ✅ Worker 진입점 (`POST /room/:roomId/start` → 그 룸 DO 깨우기)
+- ✅ Durable Object 골격 (룸당 1 인스턴스)
+- ✅ Supabase Realtime 채널에 봇으로 가입 (presence track)
+- ✅ Idle 5분 시 자동 종료 (DO sleep)
+- ⏳ 좀비 시뮬 (Phase 2)
+- ⏳ hit_request 처리 (Phase 2)
+- ⏳ snapshot broadcast (Phase 2)
+- ⏳ 클라이언트 봇 감지 (Phase 3)
+
+## 설정
+
+처음 1회:
+
+```bash
+cd cloudflare
+npm install
+npx wrangler login          # 브라우저로 Cloudflare 계정 인증
+```
+
+## Secret 등록 (배포 전 1회)
+
+```bash
+npx wrangler secret put SUPABASE_URL
+# → 프롬프트에 https://....supabase.co 입력
+npx wrangler secret put SUPABASE_ANON_KEY
+# → 프롬프트에 anon key 입력
+```
+
+## 로컬 개발
+
+```bash
+npm run dev                 # http://localhost:8787
+```
+
+테스트:
+```bash
+curl -X POST http://localhost:8787/room/DEFAULT/start
+curl http://localhost:8787/room/DEFAULT/status
+```
+
+## 배포
+
+```bash
+npm run deploy
+```
+
+배포 후 URL (예: `https://helloworld-server.<account>.workers.dev`) 을
+클라이언트에서 사용. Phase 3 에서 클라이언트가 매치 시작 시 자동 POST.
+
+## 디자인
+
+### 봇 ID
+
+`00000000-0000-0000-0000-000000000000` — 사전순 최소 UUID.
+클라이언트의 `isLocalHost()` (id 최소 = 호스트) 가 자동으로 봇을 호스트로
+인식. 클라이언트는 자기를 호스트로 안 봄 → 시뮬 권한 자동으로 봇에.
+
+### Durable Object 1 인스턴스 = 1 룸
+
+`env.ROOMS.idFromName(roomId)` 로 룸 ID 마다 결정적 DO 생성. 같은 룸
+요청이 항상 같은 DO 로. 룸 비면 5분 후 자동 종료.
+
+### 알람 (Phase 2 예정)
+
+`this.state.storage.setAlarm()` 으로 주기적 sim tick. Phase 2 에서
+50~100ms 주기로 좀비 AI 업데이트.
+
+## 비용
+
+- 무료 플랜: 100k 요청/일, 1M DO 알람/일
+- 룸 1개 활성 = 알람 ~864k/일 (100ms 주기) — 거의 free tier 한도
+- 활성 룸 많아지면 유료 ($5/월 부터)
