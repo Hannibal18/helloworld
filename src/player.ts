@@ -105,14 +105,27 @@ export function makeLocalPlayer(id: string, name: string, color: string, charIdx
 }
 
 // 한 축씩 시도하며 충돌이면 막는다(슬라이드 이동).
-function tryMove(p: LocalPlayer, dx: number, dy: number, map: TileMap): void {
+/** 다른 캐릭터 AABB (cx, cy = 발 중심, hw/hh = 반쪽 폭/높이) — tryMove 가 충돌 체크에 사용. */
+export type SolidAABB = { cx: number; cy: number; hw: number; hh: number };
+
+function aabbHitsAny(cx: number, cy: number, hw: number, hh: number, others?: ReadonlyArray<SolidAABB>): boolean {
+  if (!others || others.length === 0) return false;
+  for (const o of others) {
+    if (Math.abs(cx - o.cx) < hw + o.hw && Math.abs(cy - o.cy) < hh + o.hh) return true;
+  }
+  return false;
+}
+
+function tryMove(p: LocalPlayer, dx: number, dy: number, map: TileMap, others?: ReadonlyArray<SolidAABB>): void {
   if (dx !== 0) {
     const nx = p.x + dx;
-    if (!isBlocked(map, nx, p.y - FOOT_HH, FOOT_HW, FOOT_HH)) p.x = nx;
+    if (!isBlocked(map, nx, p.y - FOOT_HH, FOOT_HW, FOOT_HH)
+        && !aabbHitsAny(nx, p.y - FOOT_HH, FOOT_HW, FOOT_HH, others)) p.x = nx;
   }
   if (dy !== 0) {
     const ny = p.y + dy;
-    if (!isBlocked(map, p.x, ny - FOOT_HH, FOOT_HW, FOOT_HH)) p.y = ny;
+    if (!isBlocked(map, p.x, ny - FOOT_HH, FOOT_HW, FOOT_HH)
+        && !aabbHitsAny(p.x, ny - FOOT_HH, FOOT_HW, FOOT_HH, others)) p.y = ny;
   }
 }
 
@@ -127,6 +140,8 @@ export interface UpdateCtx {
   sendDeath: (killerId: string | null) => void;
   // 보유 중인 총으로 사격 — game.ts 가 bullet broadcast 처리. (vx, vy = 정규화 후 BULLET_SPEED 곱한 px/sec)
   fireBullet: (x: number, y: number, vx: number, vy: number) => void;
+  /** 캐릭터-캐릭터 충돌용 — 다른 플레이어 발박스 목록. 미지정 시 통과 가능. */
+  getSolidOthers?: () => ReadonlyArray<SolidAABB>;
 }
 
 export function startDance(p: { danceUntil: number; danceStart: number }, now: number): void {
@@ -177,7 +192,7 @@ export function updateLocalPlayer(p: LocalPlayer, ctx: UpdateCtx): void {
     const speedMult = getConfig().player.moveSpeedMult ?? 1;
     const vx = (mx / len) * SPEED * speedMult * dt;
     const vy = (my / len) * SPEED * speedMult * dt;
-    tryMove(p, vx, vy, map);
+    tryMove(p, vx, vy, map, ctx.getSolidOthers?.());
     p.walkTimer += dt;
     if (p.walkTimer > 0.18) {
       p.walkTimer = 0;

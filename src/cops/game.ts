@@ -15,9 +15,9 @@ import {
 import { makeCamera, TILE, triggerShake, updateCamera } from '../world';
 import { prescaleCharacter, randomCharColor } from '../sprites';
 import {
-  BODY_HH, BODY_HW, BODY_OFF_Y,
+  BODY_HH, BODY_HW, BODY_OFF_Y, FOOT_HH, FOOT_HW,
   makeLocalPlayer, MAX_HP, updateLocalPlayer, clampToWorld,
-  type UpdateCtx,
+  type SolidAABB, type UpdateCtx,
 } from '../player';
 import { attackPhaseFor, renderFrame, type RenderableRemote } from '../render';
 import { setBubble, syncBubbles } from '../bubbles';
@@ -462,6 +462,20 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   }
 
   // ===== 게임 update 컨텍스트 — 공격/총알은 no-op (대기실에선 사용 안 함) =====
+  // 캐릭터-캐릭터 충돌용 — 살아있는 + ready 한 원격의 발박스 목록.
+  // 매 프레임 갱신 (캐릭터 수 8명 이하라 단순 배열로 충분).
+  const solidOthersBuf: SolidAABB[] = [];
+  const getSolidOthers = (): ReadonlyArray<SolidAABB> => {
+    solidOthersBuf.length = 0;
+    for (const r of remotes.values()) {
+      if (!remoteReady.has(r.id)) continue;
+      if (r.dead) continue;
+      // 발 위치 기준 (renderX/Y - FOOT_HH). renderX/Y 사용 → 시각적 위치와 일치.
+      solidOthersBuf.push({ cx: r.renderX, cy: r.renderY - FOOT_HH, hw: FOOT_HW, hh: FOOT_HH });
+    }
+    return solidOthersBuf;
+  };
+
   const updateCtx = (): UpdateCtx => ({
     dt: 0, now: nowSec(), map, chatActive: lobbyChatFocused,
     sendAttack: () => { /* no attack in lobby */ },
@@ -469,6 +483,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     sendHp: () => { /* no damage in lobby */ },
     sendDeath: () => { /* no death in lobby */ },
     fireBullet: () => { /* no guns in lobby */ },
+    getSolidOthers,
   });
 
   // ===== 네트워크 connect =====
