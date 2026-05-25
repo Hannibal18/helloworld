@@ -800,6 +800,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
       coneLength: visionParam * 0.7,       // 콘 길이 — ↓ 앞쪽 짧게
       coneSteps: 6,                        // 콘 매끈도
       exploredDimAlpha: 0.55,              // 한 번 본 영역 dim
+      pixelStep: 3,                        // 픽셀 도트 (1=매끈, 2~4=도트 점점 굵게)
     } : null;
     renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale }, vision);
 

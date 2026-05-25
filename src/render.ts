@@ -59,6 +59,8 @@ export interface VisionConfig {
   coneSteps?: number;
   /** 한 번이라도 본 영역의 어두움. 0 = 완전 밝음(메모리 무시), 1 = 미탐색과 동일. */
   exploredDimAlpha?: number;
+  /** fog 렌더 픽셀 크기. 1 = 매끈, 2 = 2x2 블록, 4 = 4x4 블록 (픽셀 도트 느낌). */
+  pixelStep?: number;
 }
 
 export function renderFrame(
@@ -456,15 +458,27 @@ export function renderFrame(
       paintVisionShapes(fctx, W, H, sx * scale, sy * scale, scale);
       return fog;
     };
+    // pixelStep: 1 매끈, 2+ fog 저해상도로 그려 nearest-neighbor 업스케일 → 픽셀 도트.
+    const pixStep = Math.max(1, Math.floor(vision.pixelStep ?? 1));
     // game 캔버스
-    const fogGame = buildFog(camera.viewW, camera.viewH, 1);
-    ctx.drawImage(fogGame, 0, 0);
-    // HUD 캔버스 (CSS px 단위 — displayScale 만큼 더 큼)
+    const fogW = Math.max(1, Math.ceil(camera.viewW / pixStep));
+    const fogH = Math.max(1, Math.ceil(camera.viewH / pixStep));
+    const fogGame = buildFog(fogW, fogH, 1 / pixStep);
+    const prevSmooth = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(fogGame, 0, 0, fogW, fogH, 0, 0, camera.viewW, camera.viewH);
+    ctx.imageSmoothingEnabled = prevSmooth;
+    // HUD 캔버스 (CSS px 단위 — displayScale 만큼 더 큼). pixelStep 같은 비율.
     const dpr = window.devicePixelRatio || 1;
     const hudW = hud.ctx.canvas.width / dpr;
     const hudH = hud.ctx.canvas.height / dpr;
-    const fogHud = buildFog(hudW, hudH, hud.displayScale);
-    hud.ctx.drawImage(fogHud, 0, 0);
+    const fogHudW = Math.max(1, Math.ceil(hudW / pixStep));
+    const fogHudH = Math.max(1, Math.ceil(hudH / pixStep));
+    const fogHud = buildFog(fogHudW, fogHudH, hud.displayScale / pixStep);
+    const prevHudSmooth = hud.ctx.imageSmoothingEnabled;
+    hud.ctx.imageSmoothingEnabled = false;
+    hud.ctx.drawImage(fogHud, 0, 0, fogHudW, fogHudH, 0, 0, hudW, hudH);
+    hud.ctx.imageSmoothingEnabled = prevHudSmooth;
 
     // (시야 밖 원격 캐릭터/이름은 Y-sort + HUD 패스에서 이미 skip 됨 → 검정 사각형 불필요.)
   }
