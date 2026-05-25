@@ -10,7 +10,7 @@ import { setupTouchControls } from '../controls';
 import { setupCanvas } from '../canvas';
 import { colorFromName } from '../colors';
 import {
-  setRosterCount, showGame, uiHandles, pushChatLog, showBanner,
+  setRosterCount, showGame, uiHandles, pushChatLog,
 } from '../ui';
 import { makeCamera, TILE, triggerShake, updateCamera } from '../world';
 import { prescaleCharacter, randomCharColor } from '../sprites';
