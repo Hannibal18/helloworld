@@ -32,17 +32,18 @@ import type {
   PartyLeavePayload, PosPayload, PresenceMeta, RemotePlayer,
 } from '../types';
 
-const POS_SEND_INTERVAL = 1 / 10;       // 이동 중 송신 주기 (100ms)
+// 술래잡기 — 원격 캐릭터 움직임 정확도가 중요. 송신율 ↑ + 클라이언트 예측 사용.
+const POS_SEND_INTERVAL = 1 / 15;       // 이동 중 송신 주기 (66ms) — 10Hz 보다 빠르게
 const POS_HEARTBEAT = 1.0;              // 정지 직후 하트비트
 const POS_HEARTBEAT_IDLE = 3.0;         // 오래 정지 시 더 느슨하게
 const POS_IDLE_GRACE = 3.0;
+const REMOTE_SPEED = 120;               // px/sec, player.ts 의 SPEED 와 동일. 예측용.
 
 // 대기실은 작은 맵이라 PC 도 살짝 크게 보이게 한다.
 const DEFAULT_VIEW_TILES_PC = 24;
 const TARGET_TILES_WIDE_MOBILE = 14;
-// 0.5 = LPC 64px → 32px (한 타일 크기). 정확히 절반이라 bilinear 가 0.75 보다 깔끔.
-// 1.0 도 시도했으나 작은 맵에서 캐릭터가 너무 크게 보임.
-const DEFAULT_CHAR_SCALE = 0.5;
+// 1.0 = 원본 LPC 64px 그대로. 도트 또렷.
+const DEFAULT_CHAR_SCALE = 1.0;
 
 const PARTY_MAX = 8;
 
@@ -297,6 +298,17 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     },
     () => { sendLeaveAndReset(); },
   );
+  // 파티 패널을 우상단(미니맵 아래)로 옮김 — 기본 위치는 좌측이라 chat-log 와 겹침.
+  // setupPartyPanel 은 lobby.ts 의 공용 코드라 inline style 만 덮어씀.
+  {
+    const panelEl = document.getElementById('party-panel');
+    if (panelEl) {
+      panelEl.style.left = 'auto';
+      panelEl.style.right = 'calc(env(safe-area-inset-right) + 8px)';
+      // 미니맵(top 40 + height 80 + margin) 아래쪽
+      panelEl.style.top = 'calc(env(safe-area-inset-top) + 130px)';
+    }
+  }
   refreshPartyUI();
   void lobbyChat;
 
@@ -504,11 +516,24 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     updateLocalPlayer(local, ctx);
     clampToWorld(local, map);
 
-    // 원격 플레이어 보간
-    const k = 1 - Math.exp(-dt / 0.08);
+    // 원격 플레이어 — 술래잡기 반응성 위해 클라이언트 예측.
+    //  - r.x/r.y = 마지막 수신 좌표 (authoritative). onPos 에서만 갱신.
+    //  - renderX/Y = 화면용 예측 좌표. moving 이면 매 프레임 SPEED*dt*dir 로 자체 이동.
+    //  - 패킷 도착 시 r.x 가 새 값으로 → 작은 lerp 로 부드럽게 보정 (drift 제거).
+    // 결과: 네트워크 지연 무관하게 즉시 움직임 반영. 정지/방향전환 시 짧은 보정만.
+    const CORRECT_K = 1 - Math.exp(-dt / 0.12);   // 120ms 정도 보정
     for (const r of remotes.values()) {
-      r.renderX += (r.x - r.renderX) * k;
-      r.renderY += (r.y - r.renderY) * k;
+      if (r.moving) {
+        switch (r.dir) {
+          case 'up':    r.renderY -= REMOTE_SPEED * dt; break;
+          case 'down':  r.renderY += REMOTE_SPEED * dt; break;
+          case 'left':  r.renderX -= REMOTE_SPEED * dt; break;
+          case 'right': r.renderX += REMOTE_SPEED * dt; break;
+        }
+      }
+      // authoritative 와 화면 좌표 차이 보정 — moving 동안엔 작은 drift, 정지 시 즉시 수렴
+      r.renderX += (r.x - r.renderX) * CORRECT_K;
+      r.renderY += (r.y - r.renderY) * CORRECT_K;
     }
 
     // ===== 위치 broadcast — 이동 중 throttle / 정지 시 하트비트 =====
