@@ -113,28 +113,15 @@ ready(() => {
     if (e.key === 'Enter') enter();
   });
 
-  // BGM 토글 버튼 (우상단)
+  // BGM 토글 버튼 (우상단 fixed — 인트로/게임 둘 다 동일 위치).
+  // .right-stack 은 CSS 에서 이 버튼 아래로 자동 배치 (--bgm-* 변수).
   try {
     if (localStorage.getItem('helloworld:bgmMuted') === '1') setBgmMuted(true);
   } catch { /* noop */ }
   const bgmBtn = document.createElement('button');
   bgmBtn.id = 'bgm-toggle';
   bgmBtn.type = 'button';
-  bgmBtn.style.cssText = [
-    'position:fixed',
-    'top:calc(env(safe-area-inset-top) + 8px)',
-    'right:calc(env(safe-area-inset-right) + 8px)',
-    'z-index:100',
-    'width:36px', 'height:36px',
-    'padding:0',
-    'background:rgba(20,14,8,0.75)',
-    'border:1px solid #6a4a2a',
-    'border-radius:50%',
-    'color:#ffd84a',
-    'font:16px system-ui, sans-serif',
-    'cursor:pointer',
-    'display:flex', 'align-items:center', 'justify-content:center',
-  ].join(';');
+  bgmBtn.className = 'bgm-toggle';
   const refreshBgmBtn = () => {
     bgmBtn.textContent = isBgmMuted() ? '🔇' : '🔊';
     bgmBtn.title = isBgmMuted() ? 'BGM 켜기' : 'BGM 끄기';

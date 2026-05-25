@@ -53,8 +53,10 @@
           <div id="chat-log" class="chat-log"></div>
         </div>
 
-        <!-- 미니맵 (대기실은 작은 맵이지만 통일감 위해 유지) -->
-        <canvas id="minimap" class="minimap" width="120" height="80"></canvas>
+        <!-- 우상단 스택 — BGM 토글 / 미니맵 / (게임장이면) 맵 이름. flex column 으로 자동 정렬. -->
+        <div id="right-stack" class="right-stack">
+          <canvas id="minimap" class="minimap" width="120" height="80"></canvas>
+        </div>
 
         <!-- 배너 (출발/안내) -->
         <div id="banner" class="banner"></div>

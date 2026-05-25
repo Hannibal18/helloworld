@@ -446,12 +446,48 @@ input[type="text"], textarea {
 .ranking-item.me .ranking-name { color: #ffd84a; font-weight: 600; }
 .ranking-item.me .ranking-kd { color: #ffd84a; }
 
-/* ===== 미니맵 (우상단) ===== */
-.minimap {
+/* ===== 우상단 UI 측정값 — BGM 버튼 / 우상단 스택 위치 계산에 공유. ===== */
+:root {
+  --ui-edge: 8px;        /* 화면 가장자리 여백 */
+  --bgm-size: 36px;      /* BGM 버튼 크기 (원형) */
+  --ui-gap: 6px;         /* 우상단 요소 간 간격 */
+}
+
+/* BGM 토글 — 우상단 고정. 인트로/게임 어디서나 동일 위치. */
+.bgm-toggle {
+  position: fixed;
+  top: calc(var(--ui-edge) + env(safe-area-inset-top));
+  right: calc(var(--ui-edge) + env(safe-area-inset-right));
+  z-index: 100;
+  width: var(--bgm-size);
+  height: var(--bgm-size);
+  padding: 0;
+  background: rgba(20, 14, 8, 0.75);
+  border: 1px solid #6a4a2a;
+  border-radius: 50%;
+  color: #ffd84a;
+  font: 16px system-ui, sans-serif;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===== 우상단 스택 — 미니맵 / 맵 이름 등. BGM 바로 아래 flex column. ===== */
+.right-stack {
   position: absolute;
-  top: calc(40px + env(safe-area-inset-top));
-  right: calc(8px + env(safe-area-inset-right));
+  top: calc(var(--ui-edge) + var(--bgm-size) + var(--ui-gap) + env(safe-area-inset-top));
+  right: calc(var(--ui-edge) + env(safe-area-inset-right));
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--ui-gap);
+  pointer-events: none;        /* 자식들이 개별로 pointer-events:auto 지정 */
+}
+
+/* ===== 미니맵 — right-stack 의 자식. 자체 위치 지정 X. ===== */
+.minimap {
   background: rgba(20, 14, 8, 0.75);
   border: 1px solid #6a4a2a;
   image-rendering: pixelated;

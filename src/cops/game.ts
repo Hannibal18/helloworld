@@ -901,27 +901,19 @@ function setupArenaTimer(): { update(remainingSec: number): void; destroy(): voi
   };
 }
 
-/** 우측 미니맵 아래 맵 이름 라벨 (일반 폰트, 흰 글자). */
+/** 우측 미니맵 아래 맵 이름 라벨 — #right-stack flex 컨테이너에 append. */
 function setupMapNameLabel(name: string): { destroy(): void } {
   const el = document.createElement('div');
   el.id = 'arena-mapname';
-  el.textContent = name;
-  // 미니맵 우상단 위치 — top:40px height:80px → 미니맵 아래에 8px 간격으로 붙임.
-  // CSS 의 .minimap 선언과 정수 일치시키는 단일 상수 없어 inline 계산.
-  const MINIMAP_TOP = 40;       // .minimap CSS top
-  const MINIMAP_H = 80;         // .minimap CSS height
-  const GAP = 6;
-  const TOP_PX = MINIMAP_TOP + MINIMAP_H + GAP;
+  el.textContent = `맵 이름: ${name}`;
   el.style.cssText = [
-    'position:fixed',
-    `top:calc(env(safe-area-inset-top) + ${TOP_PX}px)`,
-    'right:calc(env(safe-area-inset-right) + 8px)',
-    'z-index:5',
     'pointer-events:none',
-    'font:14px system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif',
+    'font:12px system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif',
     'color:#fff',
     'text-shadow:1px 1px 2px rgba(0,0,0,0.8)',
   ].join(';');
-  document.body.appendChild(el);
+  const stack = document.getElementById('right-stack');
+  if (stack) stack.appendChild(el);
+  else document.body.appendChild(el);
   return { destroy: () => { el.remove(); } };
 }

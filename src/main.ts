@@ -198,21 +198,7 @@ ready(() => {
   const bgmBtn = document.createElement('button');
   bgmBtn.id = 'bgm-toggle';
   bgmBtn.type = 'button';
-  bgmBtn.style.cssText = [
-    'position:fixed',
-    'top:calc(env(safe-area-inset-top) + 8px)',
-    'right:calc(env(safe-area-inset-right) + 8px)',
-    'z-index:100',                    // 다른 UI 보다 위 — 어디서나 보임
-    'width:36px', 'height:36px',
-    'padding:0',
-    'background:rgba(20,14,8,0.75)',
-    'border:1px solid #6a4a2a',
-    'border-radius:50%',
-    'color:#ffd84a',
-    'font:16px system-ui, sans-serif',
-    'cursor:pointer',
-    'display:flex', 'align-items:center', 'justify-content:center',
-  ].join(';');
+  bgmBtn.className = 'bgm-toggle';
   const refreshBgmBtn = () => {
     bgmBtn.textContent = isBgmMuted() ? '🔇' : '🔊';
     bgmBtn.title = isBgmMuted() ? 'BGM 켜기' : 'BGM 끄기';
