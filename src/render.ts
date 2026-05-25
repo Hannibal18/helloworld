@@ -84,7 +84,11 @@ export function renderFrame(
   // 충돌 없는 object tile-objects (잎 등) — 캐릭터 위에 그릴 것들. 별도 큐.
   const overObjs: Array<{ gid: number; px: number; py: number }> = [];
 
-  // gid 의 above 폴리곤들을 items 에 푸시 (worldX, worldY = 타일 top-left 월드좌표)
+  // gid 의 above 폴리곤들을 임시 큐에 모음 — 같은 트리(4-이웃 타일들)는 하나의 cluster 로 묶어
+  // 공통 footY (cluster 의 max footY) 로 Y-sort. 안 그러면 한 트리 안의 잎/줄기 폴리곤이
+  // 따로 Y-sort 돼서 캐릭터가 잎 앞이지만 줄기 뒤 같은 어색한 상태 발생.
+  type AboveCandidate = { gid: number; worldX: number; worldY: number; poly: Array<[number, number]>; localMaxY: number };
+  const aboveCandidates: AboveCandidate[] = [];
   const addAboveItems = (gid: number, worldX: number, worldY: number): void => {
     if (gid <= 0) return;
     for (let i = map.tilesets.length - 1; i >= 0; i--) {
@@ -96,7 +100,7 @@ export function renderFrame(
       for (const poly of polys) {
         let maxY = -Infinity;
         for (const [, py] of poly) if (py > maxY) maxY = py;
-        items.push({ kind: 'above', ySort: worldY + maxY, gid, worldX, worldY, poly });
+        aboveCandidates.push({ gid, worldX, worldY, poly, localMaxY: maxY });
       }
       return;
     }
@@ -148,6 +152,59 @@ export function renderFrame(
       }
     }
   }
+  // ===== above 클러스터링 =====
+  // 4-이웃 (tile-grid 기준) 으로 맞닿은 above 후보들을 union-find 로 묶고, cluster 의 max
+  // footY 를 그 cluster 전원의 ySort 로 사용. tile 크기 단위로 grid key 생성.
+  if (aboveCandidates.length > 0) {
+    const TW = map.tileW, TH = map.tileH;
+    // key = "tx,ty" — 후보가 차지하는 grid 셀 (top-left 기준)
+    const cellKey = (c: AboveCandidate) => `${Math.round(c.worldX / TW)},${Math.round(c.worldY / TH)}`;
+    const parent = new Map<number, number>();
+    const find = (i: number): number => {
+      let r = i;
+      while (parent.get(r)! !== r) r = parent.get(r)!;
+      // path compression
+      while (parent.get(i)! !== r) { const next = parent.get(i)!; parent.set(i, r); i = next; }
+      return r;
+    };
+    const union = (a: number, b: number) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
+
+    // 셀 → 후보 index (한 셀에 여러 폴리곤 있을 수 있으니 배열)
+    const cellToIdxs = new Map<string, number[]>();
+    for (let i = 0; i < aboveCandidates.length; i++) {
+      parent.set(i, i);
+      const k = cellKey(aboveCandidates[i]);
+      let arr = cellToIdxs.get(k);
+      if (!arr) { arr = []; cellToIdxs.set(k, arr); }
+      arr.push(i);
+    }
+    // 같은 셀의 모든 후보 union + 4-이웃 셀들 union
+    for (const [k, idxs] of cellToIdxs) {
+      for (let j = 1; j < idxs.length; j++) union(idxs[0], idxs[j]);
+      const [tx, ty] = k.split(',').map(Number);
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const nk = `${tx+dx},${ty+dy}`;
+        const nidxs = cellToIdxs.get(nk);
+        if (nidxs) union(idxs[0], nidxs[0]);
+      }
+    }
+    // root → max footY (worldY + localMaxY)
+    const rootMaxY = new Map<number, number>();
+    for (let i = 0; i < aboveCandidates.length; i++) {
+      const r = find(i);
+      const fy = aboveCandidates[i].worldY + aboveCandidates[i].localMaxY;
+      const cur = rootMaxY.get(r);
+      if (cur === undefined || fy > cur) rootMaxY.set(r, fy);
+    }
+    // items 에 push (cluster footY 로 ySort)
+    for (let i = 0; i < aboveCandidates.length; i++) {
+      const c = aboveCandidates[i];
+      const r = find(i);
+      const ySort = rootMaxY.get(r)!;
+      items.push({ kind: 'above', ySort, gid: c.gid, worldX: c.worldX, worldY: c.worldY, poly: c.poly });
+    }
+  }
+
   items.sort((a, b) => a.ySort - b.ySort);
 
   // above 폴리곤 클립 + 소스 타일 드로우 (애니메이션 gid swap 처리).
