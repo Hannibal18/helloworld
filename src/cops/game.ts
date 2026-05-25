@@ -795,10 +795,13 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
       facingDx,
       facingDy,
       radius: visionParam,
-      forwardStretch: 1.45,                // X 늘림 (앞뒤 길쭉)
-      forwardOffset: visionParam * 0.35,   // 그라데이션 중심 앞쪽 시프트 — ↑ 앞쪽 끝 더 멀리
-      forwardScale: 1.3,                   // FWD 원 전체 크기 — ↑ 앞쪽 더 멀리 + 두께 ↑
-      exploredDimAlpha: 0.55,              // 한 번 본 영역 dim 강도 (0=완전 밝음, 1=미탐색과 동일)
+      // 티어드롭 모양: 작은 OMNI (캐릭터 주변 360°) + 앞쪽 큰 원 (forward)
+      // 두 원이 부드럽게 union → 둥글지도 타원도 아닌 비대칭 물방울 형태
+      omniScale: 0.5,                      // OMNI 작게 (캐릭터 주변만)
+      forwardStretch: 1.0,                 // FWD 는 늘리지 않음 (그냥 원)
+      forwardOffset: visionParam * 0.55,   // FWD 중심을 앞쪽으로 많이 시프트
+      forwardScale: 1.0,                   // FWD 원 크기 = vision.radius
+      exploredDimAlpha: 0.55,              // 한 번 본 영역 dim 강도
     } : null;
     renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale }, vision);
 

@@ -55,8 +55,10 @@ export interface VisionConfig {
   forwardStretch?: number;
   /** 앞쪽 시프트 — transformed 좌표에서 그라데이션 중심을 +X 로 이동. 0 = 캐릭터 중심. */
   forwardOffset?: number;
-  /** FWD 원 반경 배율. 1.0 = vision.radius 그대로, 1.3 = FWD 가 OMNI 보다 30% 큼 (앞쪽 + 두꼐 동시 증가). */
+  /** FWD 원 반경 배율. 1.0 = vision.radius 그대로, 1.3 = FWD 가 OMNI 보다 30% 큼. */
   forwardScale?: number;
+  /** OMNI 원 반경 배율. 1.0 = vision.radius 그대로 (둥근 시야), 0.5 = 작게 (티어드롭). */
+  omniScale?: number;
   /** 한 번이라도 본 영역의 어두움. 0 = 완전 밝음(메모리 무시), 1 = 미탐색과 동일.
    *  StarCraft 식 fog-of-war 효과 — 미탐색은 완전 검정, 탐색은 dim 검정, 현재 시야는 밝음.
    *  미지정/0 이면 fog memory 안 씀 (현재 시야 밖은 모두 완전 검정). */
@@ -357,15 +359,16 @@ export function renderFrame(
     // helper — fog 캔버스에 OMNI + FWD 시야 도형 그리기 (현재 fillStyle 색상으로).
     // wx/wy = 시야 중심을 그릴 위치 (해당 캔버스 좌표). scale = 그릴 크기 배율.
     const paintVisionShapes = (fctx: CanvasRenderingContext2D, W: number, H: number, wx: number, wy: number, scale: number) => {
+      // Convex 곡선 — 안쪽에서 빠르게 어두워지고 가장자리에서 천천히 fade.
+      // → 카브된 "구멍" 의 edge 가 부드럽게 늘어남, sharp 경계 안 보임.
       const addSoftStops = (grad: CanvasGradient) => {
         grad.addColorStop(0,    'rgba(255,255,255,1.0)');
-        grad.addColorStop(0.2,  'rgba(255,255,255,0.82)');
-        grad.addColorStop(0.4,  'rgba(255,255,255,0.6)');
-        grad.addColorStop(0.6,  'rgba(255,255,255,0.36)');
-        grad.addColorStop(0.8,  'rgba(255,255,255,0.15)');
+        grad.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+        grad.addColorStop(0.5,  'rgba(255,255,255,0.25)');
+        grad.addColorStop(0.75, 'rgba(255,255,255,0.08)');
         grad.addColorStop(1,    'rgba(255,255,255,0)');
       };
-      const omniR = Math.max(8, r * scale);
+      const omniR = Math.max(8, r * (vision.omniScale ?? 1) * scale);
       const og = fctx.createRadialGradient(wx, wy, 0, wx, wy, omniR);
       addSoftStops(og);
       fctx.fillStyle = og;
@@ -387,15 +390,22 @@ export function renderFrame(
     };
 
     // ===== explored mask 갱신 (월드 좌표계, persistent) =====
-    // dimAlpha>0 일 때만 활성. 현재 시야 위치에서 destination-out 으로 영구 erase.
+    // dimAlpha>0 일 때만 활성. 현재 vision 의 복잡한 모양(타원/콘) 그대로 누적하지 않고,
+    // 단순한 원 (반경 r) 으로만 누적 → explored 영역의 모양이 깔끔한 원형 트레일.
+    // 또한 단일 큰 stop 으로 영역 전체가 한 번에 explored 처리 (가장자리 부드럽게).
     let explored: HTMLCanvasElement | null = null;
     if (dimAlpha > 0) {
       explored = getExploredCanvas(map.pixelW, map.pixelH);
       const ectx = explored.getContext('2d')!;
       ectx.setTransform(1, 0, 0, 1, 0, 0);
       ectx.globalCompositeOperation = 'destination-out';
-      // 현재 vision 도형을 explored 좌표(=월드)에 그림. wx/wy = 캐릭터 월드 좌표.
-      paintVisionShapes(ectx, map.pixelW, map.pixelH, vision.worldX, vision.worldY, 1);
+      const eg = ectx.createRadialGradient(vision.worldX, vision.worldY, 0, vision.worldX, vision.worldY, r);
+      // 안쪽은 진하게 (한 번에 다 explored), 가장자리만 부드럽게 사라짐
+      eg.addColorStop(0,    'rgba(255,255,255,1)');
+      eg.addColorStop(0.7,  'rgba(255,255,255,0.9)');
+      eg.addColorStop(1,    'rgba(255,255,255,0)');
+      ectx.fillStyle = eg;
+      ectx.fillRect(0, 0, map.pixelW, map.pixelH);
       ectx.globalCompositeOperation = 'source-over';
     }
 
