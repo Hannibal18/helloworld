@@ -133,6 +133,8 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   const remotes = new Map<string, RemotePlayer>();
   // 원격 플레이어 속도벡터 — onPos 의 vx/vy 저장. dir-only 폴백.
   const remoteVel = new Map<string, { vx: number; vy: number }>();
+  // 첫 pos 패킷 받은 플레이어 id — presence join 시점엔 위치 모르니, 첫 pos 도착 전엔 렌더 스킵.
+  const remoteReady = new Set<string>();
 
   const upsertRemote = (m: PresenceMeta) => {
     if (m.id === local.id) return;
@@ -390,8 +392,15 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     onPos: (p: PosPayload) => {
       const r = remotes.get(p.id);
       if (!r) return;
+      const firstPos = !remoteReady.has(p.id);
       r.x = p.x; r.y = p.y;
       r.dir = p.dir;
+      // 첫 pos: renderX/Y 도 즉시 snap (presence join 직후 잘못된 초기위치 안 보이게)
+      if (firstPos) {
+        r.renderX = p.x;
+        r.renderY = p.y;
+        remoteReady.add(p.id);
+      }
       const wasMoving = r.moving;
       r.moving = p.moving;
       r.lastSeen = nowSec();
@@ -445,7 +454,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     onPresenceSync: (members) => {
       const ids = new Set(members.map((m) => m.id));
       for (const id of Array.from(remotes.keys())) {
-        if (!ids.has(id)) remotes.delete(id);
+        if (!ids.has(id)) { remotes.delete(id); remoteVel.delete(id); remoteReady.delete(id); }
       }
       for (const m of members) upsertRemote(m);
       setRosterCount(ui, remotes.size + 1);
@@ -459,6 +468,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
       for (const m of members) {
         remotes.delete(m.id);
         remoteVel.delete(m.id);
+        remoteReady.delete(m.id);
         // 파티 멤버가 룸 떠나면 정리. leader 였으면 해산.
         if (partyMembers.has(m.id) && m.id !== local.id) {
           if (m.id === partyLeader) {
@@ -624,9 +634,10 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     // 카메라
     updateCamera(camera, local.x, local.y, map.pixelW, map.pixelH, dt, 0.5);
 
-    // 렌더
+    // 렌더 — 첫 pos 도착한 원격만 (presence 직후 잘못된 초기위치 표시 방지)
     const renderables: RenderableRemote[] = [];
     for (const r of remotes.values()) {
+      if (!remoteReady.has(r.id)) continue;
       renderables.push({
         id: r.id,
         name: r.name,
