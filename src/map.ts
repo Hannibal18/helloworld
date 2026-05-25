@@ -22,6 +22,10 @@ export interface Tileset {
   tileAnimations: Map<number, Array<{ tileid: number; duration: number }>>;
   // 위의 totalDuration 캐시 (매 프레임 합산 안 하려고)
   tileAnimTotal: Map<number, number>;
+  // localId → "캐릭터 위에 그릴" 폴리곤 영역(들). tile-local 절대좌표.
+  // Tiled 의 Tile Collision Editor 에서 class/type="above" 인 object 들.
+  // 폴리곤 1개 = [[x0,y0], [x1,y1], ...]. 한 타일에 여러 폴리곤 가능.
+  tileAboveRegions: Map<number, Array<Array<[number, number]>>>;
 }
 
 export type Layer =
@@ -95,9 +99,13 @@ interface RawTilesetTile {
       y: number;
       width?: number;
       height?: number;
+      class?: string;
+      type?: string;
     }>;
   };
   animation?: Array<{ tileid: number; duration: number }>;
+  /** "캐릭터 위에 그릴" 폴리곤 영역. tile-local 절대좌표. 임포트 스크립트가 변환해 채움. */
+  above?: Array<Array<[number, number]>>;
 }
 interface RawLayer {
   id?: number;
@@ -153,13 +161,16 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
 
     // per-tile 충돌 도형 모음 — Tile Collision Editor 의 사각형들.
     // width 또는 height 가 0/undefined 인 객체는 Point 도구로 찍은 점이라 무시.
+    // class/type="above" 인 object 는 collision 이 아니고 별도 above 영역 (.tsj 의 above 필드에서만 옴).
     const tileCollisions = new Map<number, Array<{ x: number; y: number; w: number; h: number }>>();
-    // per-tile 애니메이션 — Tile Animation Editor 의 프레임 시퀀스.
     const tileAnimations = new Map<number, Array<{ tileid: number; duration: number }>>();
     const tileAnimTotal = new Map<number, number>();
+    const tileAboveRegions = new Map<number, Array<Array<[number, number]>>>();
     for (const tileEntry of t.tiles ?? []) {
       const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
       for (const o of tileEntry.objectgroup?.objects ?? []) {
+        const cls = (o.class || o.type || '').toLowerCase();
+        if (cls === 'above') continue;   // above 는 .tsj 의 above 필드에서 별도 파싱
         const w = o.width ?? 0;
         const h = o.height ?? 0;
         if (w > 0 && h > 0) rects.push({ x: o.x, y: o.y, w, h });
@@ -170,6 +181,9 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
         let total = 0;
         for (const f of tileEntry.animation) total += Math.max(1, f.duration);
         tileAnimTotal.set(tileEntry.id, total);
+      }
+      if (tileEntry.above && tileEntry.above.length > 0) {
+        tileAboveRegions.set(tileEntry.id, tileEntry.above);
       }
     }
 
@@ -187,6 +201,7 @@ export async function loadMap(jsonUrl: string): Promise<TileMap> {
       tileCollisions,
       tileAnimations,
       tileAnimTotal,
+      tileAboveRegions,
     };
     tilesets.push(ts);
 

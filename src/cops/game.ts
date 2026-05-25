@@ -26,7 +26,7 @@ import {
   type InvitePopupHandle, type LobbyChatHandle,
   type PartyMemberInfo, type PartyPanelHandle, type TapMenuHandle,
 } from '../lobby';
-import { loadMap, type TileMap } from '../map';
+import { isBlocked, loadMap, type TileMap } from '../map';
 import type {
   ChatPayload, PartyAcceptPayload, PartyDeclinePayload, PartyInvitePayload,
   PartyLeavePayload, PosPayload, PresenceMeta, RemotePlayer,
@@ -86,9 +86,26 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   // ===== 로컬 플레이어 =====
   const id = crypto.randomUUID();
   const color = randomCharColor();
-  const spawn = map.spawns.length > 0
+  // 안전한 스폰 위치 찾기 — 맵에 spawns 레이어 없거나 그 자리도 충돌이면 주변에서 탐색.
+  const initial = map.spawns.length > 0
     ? map.spawns[Math.floor(Math.random() * map.spawns.length)]
     : { x: map.pixelW / 2, y: map.pixelH / 2 };
+  // 발박스 작게 잡고 (FOOT_HW=7, FOOT_HH=5) collision 체크. 막혔으면 나선형으로 빈자리 탐색.
+  const tryFindSafe = (sx: number, sy: number): { x: number; y: number } => {
+    if (!isBlocked(map, sx, sy, 7, 5)) return { x: sx, y: sy };
+    const STEP = 16;
+    for (let r = STEP; r < 800; r += STEP) {
+      for (let ang = 0; ang < 360; ang += 30) {
+        const rad = (ang * Math.PI) / 180;
+        const tx = sx + Math.cos(rad) * r;
+        const ty = sy + Math.sin(rad) * r;
+        if (tx < 16 || tx > map.pixelW - 16 || ty < 16 || ty > map.pixelH - 16) continue;
+        if (!isBlocked(map, tx, ty, 7, 5)) return { x: tx, y: ty };
+      }
+    }
+    return { x: sx, y: sy };  // 결국 못 찾으면 그냥 원래 자리 (이론상 발생 X)
+  };
+  const spawn = tryFindSafe(initial.x, initial.y);
   const local = makeLocalPlayer(id, name, color, charIdx, spawn);
 
   prescaleCharacter(DEFAULT_CHAR_SCALE);
