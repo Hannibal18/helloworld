@@ -40,7 +40,11 @@ export function setupViewport(): void {
     const width = vv?.width ?? window.innerWidth;
     const height = vv?.height ?? window.innerHeight;
     const offsetTop = vv?.offsetTop ?? 0;
-    const bottomOffset = vv
+    // 입력 요소가 포커스 안 되어 있으면 키보드 없음 — bottomOffset 0 으로 강제.
+    // iOS 26 Safari 의 visualViewport.offsetTop 가 키보드 닫혀도 0 으로 리셋 안 되는 버그 우회.
+    const ae = document.activeElement;
+    const inputFocused = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || (ae as HTMLElement).isContentEditable);
+    const bottomOffset = vv && inputFocused
       ? Math.max(0, window.innerHeight - vv.height - offsetTop)
       : 0;
 
@@ -66,6 +70,14 @@ export function setupViewport(): void {
   }
   window.addEventListener('resize', update);
   window.addEventListener('orientationchange', update);
+  // focusin/focusout: 입력 포커스 변화 → 즉시 재계산.
+  // (vv 이벤트만으론 iOS 의 키보드 닫힘 직후 offsetTop 가 안 리셋되는 케이스 대응 어려움)
+  document.addEventListener('focusin', update);
+  document.addEventListener('focusout', () => {
+    // 키보드 닫힘 애니메이션 후 한 번 더 (offsetTop reset 늦게 일어나는 경우 대비)
+    update();
+    setTimeout(update, 250);
+  });
 
   update();
 }

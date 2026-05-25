@@ -552,8 +552,8 @@ input[type="text"], textarea {
 .stick {
   position: absolute;
   left: calc(18px + env(safe-area-inset-left));
-  /* 채팅바 위로 — chat bar 높이(~50) + 10 gap */
-  bottom: calc(64px + env(safe-area-inset-bottom));
+  /* 채팅바 위 + 키보드 높이 (visualViewport 추적, viewport.ts) */
+  bottom: calc(64px + env(safe-area-inset-bottom) + var(--vp-bottom, 0px));
   width: 120px;
   height: 120px;
   border-radius: 50%;
@@ -561,7 +561,7 @@ input[type="text"], textarea {
   border: 2px solid rgba(202, 160, 74, 0.7);
   pointer-events: auto;
   touch-action: none;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, bottom 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .stick-knob {
   position: absolute;
@@ -577,13 +577,13 @@ input[type="text"], textarea {
 .touch-right {
   position: absolute;
   right: calc(18px + env(safe-area-inset-right));
-  bottom: calc(64px + env(safe-area-inset-bottom));
+  bottom: calc(64px + env(safe-area-inset-bottom) + var(--vp-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 12px;
   align-items: flex-end;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, bottom 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 .touch-btn {
