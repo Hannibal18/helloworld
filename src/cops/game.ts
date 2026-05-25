@@ -657,9 +657,13 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
         if (!bodyOverlaps(p.x, p.y, p.w, p.h)) continue;
         const pair = portals.find((p2) => p2 !== p && p2.pairId === p.pairId);
         if (pair) {
+          // 출구 = 포털 중심에서 아래로 24px (포털 위가 보통 벽/움막이라 그 안에 갇히지 않게).
+          // dir='down' 과 일치 — 아래로 걸어 나오는 느낌.
+          const PORTAL_EXIT_OFFSET = 24;
           local.x = pair.cx;
-          local.y = pair.cy;
+          local.y = pair.cy + PORTAL_EXIT_OFFSET;
           local.dir = 'down';
+          clampToWorld(local, map);
           portalJustExited = pair;
           sendLocalPos();
         }
