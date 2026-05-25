@@ -18,16 +18,18 @@ interface TiledLayer {
   name?: string;
   properties?: Array<{ name: string; value: unknown }>;
 }
+interface TilesetRef {
+  firstgid: number;
+  source?: string;          // 외부 .tsj 참조
+  tiles?: Array<{ id: number; properties?: Array<{ name: string; value: unknown }> }>;
+}
 interface TiledMap {
   width: number;
   height: number;
   tilewidth: number;
   tileheight: number;
   layers: TiledLayer[];
-  tilesets?: Array<{
-    firstgid: number;
-    tiles?: Array<{ id: number; properties?: Array<{ name: string; value: unknown }> }>;
-  }>;
+  tilesets?: TilesetRef[];
 }
 
 let _cache: BotMapData | null = null;
@@ -44,10 +46,25 @@ export async function loadBotMap(jsonUrl: string): Promise<BotMapData> {
   const total = widthTiles * heightTiles;
   const collision = new Uint8Array(total);
 
-  // collision blocked gid 추출 — tileset 의 'blocked' property 또는 'collision' 레이어 합산.
+  // 외부 .tsj 참조 타일셋은 fetch 해서 inline 타일 properties 받아옴.
+  // (client src/map.ts 와 동일한 패턴.)
+  const jsonDir = jsonUrl.replace(/[^/]*$/, '');
   const blockedGids = new Set<number>();
   for (const ts of raw.tilesets ?? []) {
-    for (const tt of ts.tiles ?? []) {
+    let tilesArr: TilesetRef['tiles'] = ts.tiles;
+    if (ts.source) {
+      try {
+        const tsjUrl = new URL(ts.source, jsonDir).toString();
+        const tsjRes = await fetch(tsjUrl);
+        if (tsjRes.ok) {
+          const tsjRaw = (await tsjRes.json()) as { tiles?: TilesetRef['tiles'] };
+          tilesArr = tsjRaw.tiles;
+        }
+      } catch (e) {
+        console.warn('[bot map] external tileset fetch failed', ts.source, e);
+      }
+    }
+    for (const tt of tilesArr ?? []) {
       const isBlocked = (tt.properties ?? []).some(
         (p) => (p.name === 'blocked' || p.name === 'collision') && p.value === true,
       );
