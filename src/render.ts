@@ -39,15 +39,16 @@ export interface HudLayer {
   displayScale: number;
 }
 
-/** 시야 비네트 — 캐릭터 주변만 보이고 나머지는 어두움. */
+/** 시야 비네트 — 캐릭터 주변만 보이고 나머지는 어두움.
+ *  inner 원 (작은 밝은 영역) 과 outer 원 (큰 페이드 끝) 의 중심을 다르게 두면 콘(cone) 모양.
+ *  같으면 동그라미. createRadialGradient 의 두 원 사이 영역이 페이드. */
 export interface VisionConfig {
-  /** 비네트 중심 (월드 좌표) — 보통 캐릭터 몸통 중심. */
-  worldX: number;
-  worldY: number;
-  /** 완전 투명 (정상 밝기) 반경. 백버퍼 픽셀. */
-  radius: number;
-  /** 가장자리 페이드 폭 — radius..radius+fadeWidth 사이에서 점차 어두워짐. */
-  fadeWidth: number;
+  innerX: number;       // 안쪽 원 중심 (월드) — 보통 캐릭터 몸통 중심
+  innerY: number;
+  innerRadius: number;  // 안쪽 원 반경 — 이 안은 100% 밝음
+  outerX: number;       // 바깥 원 중심 (월드) — 앞쪽으로 시프트 하면 콘 모양
+  outerY: number;
+  outerRadius: number;  // 바깥 원 반경 — 이 밖은 100% 검정
 }
 
 export function renderFrame(
@@ -328,23 +329,23 @@ export function renderFrame(
   if (debug.showCollision) drawCollisionDebug(ctx, map, camera.x, camera.y);
   if (debug.showHitbox) drawHitboxes(ctx, camera, local, remotes);
 
-  // 7. 시야 비네트 — 캐릭터 주변만 보이고 나머지 검정.
-  //    game 캔버스 + HUD 캔버스 둘 다 동일하게 덮어서 이름/HP 도 시야 밖이면 안 보이게.
+  // 7. 시야 비네트 — 캐릭터 주변만 보이고 나머지 검정. inner/outer 중심이 다르면 콘 모양.
   if (vision) {
-    const sx = vision.worldX - camera.x;
-    const sy = vision.worldY - camera.y;
+    const ix = vision.innerX - camera.x;
+    const iy = vision.innerY - camera.y;
+    const ox = vision.outerX - camera.x;
+    const oy = vision.outerY - camera.y;
+    const ir = Math.max(0, vision.innerRadius);
+    const or = Math.max(ir + 1, vision.outerRadius);
     // game 캔버스 (백버퍼 px)
-    const g = ctx.createRadialGradient(sx, sy, Math.max(0, vision.radius), sx, sy, vision.radius + vision.fadeWidth);
+    const g = ctx.createRadialGradient(ix, iy, ir, ox, oy, or);
     g.addColorStop(0, 'rgba(0,0,0,0)');
     g.addColorStop(1, 'rgba(0,0,0,1)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, camera.viewW, camera.viewH);
     // HUD 캔버스 (CSS px = 백버퍼 px × displayScale)
-    const hsx = sx * hud.displayScale;
-    const hsy = sy * hud.displayScale;
-    const hrIn = Math.max(0, vision.radius) * hud.displayScale;
-    const hrOut = (vision.radius + vision.fadeWidth) * hud.displayScale;
-    const hg = hud.ctx.createRadialGradient(hsx, hsy, hrIn, hsx, hsy, hrOut);
+    const ds = hud.displayScale;
+    const hg = hud.ctx.createRadialGradient(ix * ds, iy * ds, ir * ds, ox * ds, oy * ds, or * ds);
     hg.addColorStop(0, 'rgba(0,0,0,0)');
     hg.addColorStop(1, 'rgba(0,0,0,1)');
     hud.ctx.fillStyle = hg;

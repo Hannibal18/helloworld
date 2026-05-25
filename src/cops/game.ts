@@ -773,7 +773,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
         danceStart: r.danceStart,
       });
     }
-    // 시야 비네트 — 캐릭터 바라보는 방향으로 시야 중심을 앞쪽 이동 → 앞은 멀리, 뒤는 가까이.
+    // 시야 비네트 — inner 원은 캐릭터 위치, outer 원은 바라보는 방향으로 시프트 → 콘 모양 손전등.
     // 8방향: 이동 중이면 input 정규화 벡터, 정지 중이면 local.dir 의 4방향.
     let facingDx = 0, facingDy = 0;
     if (local.moving) {
@@ -788,12 +788,19 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
         case 'right': facingDx =  1; break;
       }
     }
-    const FORWARD_SHIFT = Math.max(0, visionParam * 0.4);   // 반경의 40% 앞쪽으로
+    const cx = local.x, cy = local.y + BODY_OFF_Y;
+    // inner: 캐릭터 발 근처의 작은 밝은 영역 (앞뒤 무관하게 항상 보임)
+    // outer: 바라보는 방향으로 큰 폭 시프트 (콘 끝이 앞쪽 멀리)
+    const innerR = Math.max(20, visionParam * 0.25);     // 반경의 25% — 캐릭터 주변 작은 밝은 원
+    const outerR = visionParam;                          // 명목 반경
+    const SHIFT = visionParam * 0.7;                     // 콘 길이 조절 — 크면 더 좁고 멀리
     const vision = visionParam > 0 ? {
-      worldX: local.x + facingDx * FORWARD_SHIFT,
-      worldY: (local.y + BODY_OFF_Y) + facingDy * FORWARD_SHIFT,
-      radius: visionParam,
-      fadeWidth: Math.max(20, visionParam * 0.4),
+      innerX: cx,
+      innerY: cy,
+      innerRadius: innerR,
+      outerX: cx + facingDx * SHIFT,
+      outerY: cy + facingDy * SHIFT,
+      outerRadius: outerR,
     } : null;
     renderFrame(ctx2d, map, camera, local, renderables, now, debug, { ctx: hudCtx, displayScale }, vision);
 
