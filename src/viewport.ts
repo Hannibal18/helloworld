@@ -17,6 +17,9 @@ type Listener = (info: ViewportInfo) => void;
 let current: ViewportInfo = { width: 0, height: 0, bottomOffset: 0 };
 const listeners = new Set<Listener>();
 let started = false;
+// focusin/focusout 으로 직접 추적. document.activeElement 는 focusin 시점에
+// 아직 갱신 안 된 경우 있어 신뢰 X (iOS Safari 에서 특히).
+let inputFocusedFlag = false;
 
 export function getViewport(): ViewportInfo {
   return current;
@@ -39,20 +42,24 @@ export function setupViewport(): void {
     const vv = window.visualViewport;
     const width = vv?.width ?? window.innerWidth;
     const height = vv?.height ?? window.innerHeight;
-    const offsetTop = vv?.offsetTop ?? 0;
-    // 입력 요소가 포커스 안 되어 있으면 키보드 없음 — bottomOffset 0 으로 강제.
-    // iOS 26 Safari 의 visualViewport.offsetTop 가 키보드 닫혀도 0 으로 리셋 안 되는 버그 우회.
-    const ae = document.activeElement;
-    const inputFocused = !!ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || (ae as HTMLElement).isContentEditable);
-    const bottomOffset = vv && inputFocused
-      ? Math.max(0, window.innerHeight - vv.height - offsetTop)
-      : 0;
+
+    // 키보드 높이 계산 — innerHeight - vv.height. offsetTop 은 시각적 스크롤 위치라
+    // 키보드 높이와 무관 (이전 공식이 offsetTop 빼서 transient 폭주 유발했음).
+    // 입력 포커스 없으면 키보드 없음 — 강제 0.
+    let bottomOffset = 0;
+    if (vv && inputFocusedFlag) {
+      bottomOffset = Math.max(0, window.innerHeight - vv.height);
+      // 비합리적 값 (창 높이의 80% 이상) 거부 — transient 버그 방어.
+      const cap = window.innerHeight * 0.8;
+      if (bottomOffset > cap) bottomOffset = 0;
+    }
 
     const changed =
       width !== current.width ||
       height !== current.height ||
       bottomOffset !== current.bottomOffset;
 
+    if (!changed) return;
     current = { width, height, bottomOffset };
 
     const root = document.documentElement;
@@ -60,7 +67,7 @@ export function setupViewport(): void {
     root.style.setProperty('--vp-height', `${height}px`);
     root.style.setProperty('--vp-bottom', `${bottomOffset}px`);
 
-    if (changed) for (const cb of listeners) cb(current);
+    for (const cb of listeners) cb(current);
   };
 
   const vv = window.visualViewport;
@@ -70,13 +77,25 @@ export function setupViewport(): void {
   }
   window.addEventListener('resize', update);
   window.addEventListener('orientationchange', update);
-  // focusin/focusout: 입력 포커스 변화 → 즉시 재계산.
-  // (vv 이벤트만으론 iOS 의 키보드 닫힘 직후 offsetTop 가 안 리셋되는 케이스 대응 어려움)
-  document.addEventListener('focusin', update);
-  document.addEventListener('focusout', () => {
-    // 키보드 닫힘 애니메이션 후 한 번 더 (offsetTop reset 늦게 일어나는 경우 대비)
-    update();
-    setTimeout(update, 250);
+  // focusin/focusout: 입력 포커스 변화 → flag 직접 설정 후 update.
+  // (document.activeElement 는 focusin 시점에 아직 갱신 안 된 경우 있어 신뢰 X)
+  const isInputLike = (el: EventTarget | null): boolean => {
+    const e = el as HTMLElement | null;
+    return !!e && (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA' || e.isContentEditable);
+  };
+  document.addEventListener('focusin', (e) => {
+    if (isInputLike(e.target)) {
+      inputFocusedFlag = true;
+      update();
+    }
+  });
+  document.addEventListener('focusout', (e) => {
+    if (isInputLike(e.target)) {
+      inputFocusedFlag = false;
+      update();
+      // 키보드 닫힘 애니메이션 후 한 번 더 — vv 가 늦게 리셋되는 경우 대응
+      setTimeout(update, 300);
+    }
   });
 
   update();

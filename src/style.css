@@ -561,7 +561,9 @@ input[type="text"], textarea {
   border: 2px solid rgba(202, 160, 74, 0.7);
   pointer-events: auto;
   touch-action: none;
-  transition: opacity 0.15s, bottom 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* 키보드 슬라이드 중 vv.resize 가 여러 번 fire → 매번 새 transition 시작 시 카오스.
+     짧게 (60ms) 두면 거의 즉시 따라가서 키보드 슬라이드와 동기. */
+  transition: opacity 0.15s, bottom 0.06s linear;
 }
 .stick-knob {
   position: absolute;
@@ -583,7 +585,7 @@ input[type="text"], textarea {
   gap: 12px;
   align-items: flex-end;
   pointer-events: none;
-  transition: opacity 0.15s, bottom 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition: opacity 0.15s, bottom 0.06s linear;
 }
 
 .touch-btn {

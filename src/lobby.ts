@@ -340,8 +340,8 @@ export function setupLobbyChat(onSend: (text: string) => void): LobbyChatHandle 
     'gap:6px',
     'width:min(440px, calc(100vw - 24px))',
     'pointer-events:auto',
-    // 키보드 올라올 때 부드럽게. viewport.ts 가 --vp-bottom 갱신.
-    'transition:bottom 0.22s cubic-bezier(0.22, 0.61, 0.36, 1)',
+    // 키보드 슬라이드 중 vv 이벤트가 여러 번 fire 됨 → 짧은 transition 으로 동기.
+    'transition:bottom 0.06s linear',
   ].join(';');
 
   // type="search" + name 비-신원성 + 다양한 autofill off 속성 조합.
