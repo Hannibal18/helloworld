@@ -95,8 +95,10 @@ import type {
   ZombieHitRequestPayload, ZombieSnapshotPayload, ZombieWaveStartPayload,
 } from './types';
 
-const POS_SEND_INTERVAL = 1 / 10;
-const POS_HEARTBEAT = 1.0;
+const POS_SEND_INTERVAL = 1 / 10;     // 움직이는 동안 송신 주기 (100ms)
+const POS_HEARTBEAT = 1.0;             // 정지 직후 하트비트 주기
+const POS_HEARTBEAT_IDLE = 3.0;        // 정지 IDLE_GRACE 초 이상이면 더 느슨하게 (3s)
+const POS_IDLE_GRACE = 3.0;            // 정지 후 이 시간 지나면 idle 로 간주
 
 // 백버퍼 논리 해상도 — 디버그 패널 슬라이더로 실시간 조정 가능.
 // 디폴트: PC 24 타일 폭, 모바일 세로 10 타일. 캐릭터 prescale 0.75 (살짝 작게).
@@ -983,6 +985,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   let posTimer = 0;
   let lastPosMoving = false;
   let heartbeatTimer = 0;
+  let idleSec = 0;
   // HP 감소 감지 → 데미지 플래시. 매 프레임 비교.
   let prevLocalHp = local.hp;
   // 공격 버튼 edge 감지 — 라이트닝 차지/방출용
@@ -991,6 +994,7 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
   // ===== 스테이지 진행 (config 의 stages 기반) =====
   let currentStageTotalIdx = -1;       // 변경 감지용
   let prevBossCount = 0;               // 보스 출현 감지용 — 늘어나면 alert
+  let lastStagePillText = '';          // textContent 캐시 — 변경 시에만 set
   // 우상단 HUD 에 작은 스테이지 표시 — 동적으로 삽입.
   let stagePillEl: HTMLDivElement | null = null;
   if (isZombieMode) {
@@ -1035,16 +1039,18 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       const newMyZone = getZoneAt(local.x, local.y);
       let changed = newMyZone !== myZone;
       myZone = newMyZone;
-      // 원격 zone 갱신 (위치는 net 으로 받아옴 — 매 프레임 재계산)
-      for (const r of remotes.values()) {
+      // 파티 멤버만 zone 추적 (파티 안 멤버는 출발 조건과 무관 — 비용 줄임)
+      for (const pid of partyMembers) {
+        if (pid === local.id) continue;
+        const r = remotes.get(pid);
+        if (!r) continue;
         const z = getZoneAt(r.x, r.y);
-        const prev = remoteZones.get(r.id) ?? null;
+        const prev = remoteZones.get(pid) ?? null;
         if (z !== prev) {
-          remoteZones.set(r.id, z);
-          if (partyMembers.has(r.id)) changed = true;
+          remoteZones.set(pid, z);
+          changed = true;
         }
       }
-      // 파티 멤버 zone 이 변하면 패널 갱신 (출발 버튼 활성/비활성)
       if (changed) refreshPartyUI();
     }
 
@@ -1068,8 +1074,12 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       }
       if (stagePillEl) {
         const remain = Math.max(0, Math.floor(progress.remainingSec));
-        // 짧게 표기: "🎯 S1 · 293s" — 전체 스테이지 이름은 전환 시 배너로만.
-        stagePillEl.textContent = `🎯 S${progress.totalIdx + 1} · ${remain}s`;
+        // 1초 단위로만 바뀌므로 매 프레임이 아닌 변경 시에만 textContent set (리플로우 줄임)
+        const next = `🎯 S${progress.totalIdx + 1} · ${remain}s`;
+        if (next !== lastStagePillText) {
+          stagePillEl.textContent = next;
+          lastStagePillText = next;
+        }
       }
       // 보스 출현 감지 — boss 타입 좀비 카운트가 늘어난 순간 사이렌.
       let bossCount = 0;
@@ -1305,13 +1315,20 @@ async function startGameAsync(opts: StartGameOpts): Promise<void> {
       net.sendPos({ id: local.id, x: local.x, y: local.y, dir: local.dir, moving: true });
       posTimer = 0;
       heartbeatTimer = 0;
+      idleSec = 0;
     } else if (movingChanged) {
       net.sendPos({ id: local.id, x: local.x, y: local.y, dir: local.dir, moving: movingNow });
       posTimer = 0;
       heartbeatTimer = 0;
-    } else if (heartbeatTimer >= POS_HEARTBEAT) {
-      net.sendPos({ id: local.id, x: local.x, y: local.y, dir: local.dir, moving: movingNow });
-      heartbeatTimer = 0;
+      idleSec = 0;
+    } else {
+      // 정지 상태 — IDLE_GRACE 넘으면 하트비트 간격 늘림 (네트워크 부담 ↓)
+      if (!movingNow) idleSec += dt;
+      const hbInterval = idleSec >= POS_IDLE_GRACE ? POS_HEARTBEAT_IDLE : POS_HEARTBEAT;
+      if (heartbeatTimer >= hbInterval) {
+        net.sendPos({ id: local.id, x: local.x, y: local.y, dir: local.dir, moving: movingNow });
+        heartbeatTimer = 0;
+      }
     }
     lastPosMoving = movingNow;
 

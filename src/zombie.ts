@@ -29,6 +29,9 @@ const SPAWN_INTERVAL_BASE = 3.33;
 const SPAWN_INTERVAL_MIN = 0.25;
 const MAX_ZOMBIES = 72;
 
+// updateWave 매 프레임 alloc 줄이기용 — 외부 캐시 배열.
+const _targetsCache: { x: number; y: number }[] = [];
+
 // 파티원 수 — game.ts 가 매 프레임 setRoomPlayerCount() 갱신. 1 이상.
 // 좀비/무기 모두 이 partyScale 을 사용 (weapons.ts 도 import).
 let _playerCount = 1;
@@ -438,11 +441,23 @@ export function updateWave(
       wave.nextBossAt = now + 5;
     }
   }
-  // 살아있는 플레이어 목록 (타깃 후보)
-  const targets: { x: number; y: number }[] = [];
-  if (!local.dead) targets.push({ x: local.x, y: local.y });
-  for (const r of remotes) if (!r.dead) targets.push({ x: r.renderX, y: r.renderY });
-  if (targets.length === 0) return;
+  // 살아있는 플레이어 목록 (타깃 후보) — 외부 캐시 배열 재사용 (alloc 줄임)
+  let nTargets = 0;
+  if (!local.dead) {
+    if (_targetsCache.length <= nTargets) _targetsCache.push({ x: 0, y: 0 });
+    _targetsCache[nTargets].x = local.x;
+    _targetsCache[nTargets].y = local.y;
+    nTargets++;
+  }
+  for (const r of remotes) {
+    if (r.dead) continue;
+    if (_targetsCache.length <= nTargets) _targetsCache.push({ x: 0, y: 0 });
+    _targetsCache[nTargets].x = r.renderX;
+    _targetsCache[nTargets].y = r.renderY;
+    nTargets++;
+  }
+  if (nTargets === 0) return;
+  const targets = _targetsCache;
 
   for (const z of wave.zombies) {
     // 공격 모션 중이면 정지
@@ -450,7 +465,7 @@ export function updateWave(
     // 가장 가까운 타깃
     let tx = targets[0].x, ty = targets[0].y;
     let bestD2 = (tx - z.x) ** 2 + (ty - z.y) ** 2;
-    for (let i = 1; i < targets.length; i++) {
+    for (let i = 1; i < nTargets; i++) {
       const d2 = (targets[i].x - z.x) ** 2 + (targets[i].y - z.y) ** 2;
       if (d2 < bestD2) { bestD2 = d2; tx = targets[i].x; ty = targets[i].y; }
     }
