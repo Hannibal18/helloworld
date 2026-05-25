@@ -112,6 +112,7 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
     zoomMin: 12,
     zoomMax: 28,
     onSized: (w, h, scale) => { camera.viewW = w; camera.viewH = h; displayScale = scale; },
+    enableWheelZoom: false,   // 술래잡기 — 휠로 줌 변경 시 게임플레이 영향. 비활성.
   });
 
   // ===== 네트워크 (forward 선언 — 핸들러에서 캡처) =====

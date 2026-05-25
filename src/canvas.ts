@@ -20,6 +20,8 @@ export interface CanvasSetupOpts {
   /** 백버퍼 해상도가 갱신될 때마다 호출 — 카메라 viewW/H 등을 따라가야 함.
    *  displayScale = "백버퍼 1px 당 CSS px 수" (HUD 캔버스의 backbuffer→screen 좌표 변환에 필요). */
   onSized: (logicalW: number, logicalH: number, displayScale: number) => void;
+  /** PC 마우스 휠로 줌 변경 허용 여부. 기본 true. cops 처럼 줌이 게임플레이에 영향 주는 모드는 false. */
+  enableWheelZoom?: boolean;
 }
 
 export interface CanvasController {
@@ -31,6 +33,7 @@ export interface CanvasController {
 
 export function setupCanvas(opts: CanvasSetupOpts): CanvasController {
   const { canvas, hudCanvas, getViewTiles, setViewTiles, mobileTilesWide, zoomMin, zoomMax, onSized } = opts;
+  const enableWheelZoom = opts.enableWheelZoom !== false;   // 기본 true (기존 동작 유지)
   const ctx2d = canvas.getContext('2d')!;
   ctx2d.imageSmoothingEnabled = false;
   const hudCtx = hudCanvas.getContext('2d')!;
@@ -82,9 +85,10 @@ export function setupCanvas(opts: CanvasSetupOpts): CanvasController {
     if (valEl)  valEl.textContent = String(n);
   };
 
-  // ===== PC 마우스 휠 =====
+  // ===== PC 마우스 휠 — enableWheelZoom 일 때만 줌, 아니면 전부 차단 (페이지 스크롤 방지) =====
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
+    if (!enableWheelZoom) return;
     const step = e.deltaY > 0 ? 1 : -1;
     setZoom(getViewTiles() + step);
   }, { passive: false });
