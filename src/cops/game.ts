@@ -67,12 +67,12 @@ async function startCopsGameAsync(opts: CopsStartOpts): Promise<void> {
   showGame(ui);
 
   // ===== 맵 로드 =====
-  // 기본은 zombie_road (대기실). ?map=lost_temple 로 게임장 맵 테스트 가능.
+  // 기본 대기실: cops_lobby (waitingroom.tmx 임포트). ?map=lost_temple 로 게임장 맵 테스트.
   // 실제 술래잡기 게임 로직 만들 때 출발 버튼 → 게임장 맵 전환 예정.
   const mapParam = new URLSearchParams(window.location.search).get('map');
   const mapPath = mapParam === 'lost_temple'
     ? '/maps/lost_temple/lost_temple.json'
-    : '/maps/zombie_road.json';
+    : '/maps/cops_lobby/cops_lobby.json';
   let map: TileMap;
   try {
     map = await loadMap(mapPath);
