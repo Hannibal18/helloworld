@@ -23,7 +23,4 @@ class_name = "GameRoomDO"
 tag = "v1"
 new_sqlite_classes = ["GameRoomDO"]
 
-# CPU 시간 한도 (긴 게임 세션 대비 — 무료 플랜 50ms/요청, 유료 30s).
-# 게임 sim 은 alarm tick 마다 짧게 끝남.
-[limits]
-cpu_ms = 50
+# (CPU 한도 설정은 유료 플랜 전용 — 무료는 기본 10ms 유지)
