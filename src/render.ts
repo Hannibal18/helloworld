@@ -128,8 +128,38 @@ export function renderFrame(
       return;
     }
   };
+  // 시야 콘 안에 있는지 체크 (vision 활성 시) — Y-sort 와 HUD 이름 둘 다에서 사용.
+  // vision 없거나 dimAlpha 0 이면 모든 원격 표시.
+  const visionCircles: Array<{ wx: number; wy: number; r: number }> = [];
+  if (vision) {
+    const vSteps = Math.max(2, vision.coneSteps ?? 5);
+    const vNear = Math.max(8, vision.nearRadius);
+    const vFar = Math.max(vNear, vision.farRadius);
+    const vLen = Math.max(0, vision.coneLength);
+    const vdx = vision.facingDx, vdy = vision.facingDy;
+    const hasDir = vdx !== 0 || vdy !== 0;
+    for (let i = 0; i < vSteps; i++) {
+      const t = i / (vSteps - 1);
+      const dist = hasDir ? t * vLen : 0;
+      const radius = vNear + (vFar - vNear) * t;
+      visionCircles.push({ wx: vision.worldX + vdx * dist, wy: vision.worldY + vdy * dist, r: radius });
+      if (!hasDir) break;
+    }
+  }
+  const isVisible = (wx: number, wy: number): boolean => {
+    if (visionCircles.length === 0) return true;
+    for (const c of visionCircles) {
+      const ex = wx - c.wx, ey = wy - c.wy;
+      if (ex * ex + ey * ey <= c.r * c.r) return true;
+    }
+    return false;
+  };
   items.push({ ySort: local.y, kind: 'local' });
-  for (const r of remotes) items.push({ ySort: r.y, kind: 'remote', remote: r });
+  // 시야 밖 원격은 Y-sort 자체에서 제외 → 아예 안 그려짐. 검정 사각형 노출 문제 사라짐.
+  for (const r of remotes) {
+    if (!isVisible(r.x, r.y)) continue;
+    items.push({ ySort: r.y, kind: 'remote', remote: r });
+  }
 
   {
     const tw = map.tileW, th = map.tileH;
@@ -299,6 +329,7 @@ export function renderFrame(
   //    HUD 캔버스는 게임 캔버스보다 해상도가 높으므로 좌표는 (worldX - camera.x) * displayScale 로 변환.
   hud.ctx.clearRect(0, 0, hud.ctx.canvas.width / (window.devicePixelRatio || 1), hud.ctx.canvas.height / (window.devicePixelRatio || 1));
   for (const r of remotes) {
+    if (!isVisible(r.x, r.y)) continue;   // 시야 밖이면 이름/HP 도 표시 X
     drawNameHpKills(hud.ctx, camera, hud.displayScale, r.x, r.y, r.name, r.color, r.hp, r.maxHp, r.kills, false, r.dancing);
   }
   const localDancing = now < local.danceUntil;
@@ -369,14 +400,7 @@ export function renderFrame(
       return arr;
     };
     const circles = buildCircles();
-    // 어떤 월드 좌표가 콘 안인지 — 캐릭터/이름 hiding 에 사용.
-    const isInsideCone = (worldX: number, worldY: number): boolean => {
-      for (const c of circles) {
-        const ex = worldX - c.wx, ey = worldY - c.wy;
-        if (ex * ex + ey * ey <= c.r * c.r) return true;
-      }
-      return false;
-    };
+    // (isInsideCone 은 위쪽 isVisible 로 통합돼 Y-sort 단계에서 원격 hiding 처리됨.)
 
     // helper — fog 캔버스에 콘 (여러 원의 union) 그리기.
     // scale = 캐릭터 좌표 단위를 해당 캔버스 픽셀로 변환하는 계수.
@@ -442,20 +466,7 @@ export function renderFrame(
     const fogHud = buildFog(hudW, hudH, hud.displayScale);
     hud.ctx.drawImage(fogHud, 0, 0);
 
-    // ===== 현재 시야 밖 캐릭터/이름 가리기 =====
-    // dim 영역 (탐색했지만 현재 안 보임) 에서 다른 플레이어가 비치면 안 됨.
-    // 시야 콘 밖에 있는 캐릭터는 게임/HUD 캔버스 둘 다 검정 사각형으로 덮음.
-    const PAD = 28;        // 캐릭터 sprite 대략 사이즈 (몸+이름 포함)
-    const ds = hud.displayScale;
-    ctx.fillStyle = '#000';
-    hud.ctx.fillStyle = '#000';
-    for (const r of remotes) {
-      if (isInsideCone(r.x, r.y)) continue;
-      const gx = Math.round(r.x - camera.x);
-      const gy = Math.round(r.y - camera.y);
-      ctx.fillRect(gx - PAD, gy - PAD * 2, PAD * 2, PAD * 2.6);
-      hud.ctx.fillRect((gx - PAD) * ds, (gy - PAD * 2) * ds, PAD * 2 * ds, PAD * 2.6 * ds);
-    }
+    // (시야 밖 원격 캐릭터/이름은 Y-sort + HUD 패스에서 이미 skip 됨 → 검정 사각형 불필요.)
   }
 }
 
