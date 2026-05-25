@@ -356,12 +356,20 @@ export function renderFrame(
       fctx.fillRect(0, 0, W, H);
       fctx.globalCompositeOperation = 'destination-out';
       const cx = sx * scale, cy = sy * scale;
+      // 부드러운 단조 감소 stops — 안쪽 plateau 없음, 가장자리까지 균등하게 어두워짐.
+      // 약간 concave (slow start, faster mid, slow end) 로 자연스러운 라이트 폴오프.
+      const addSoftStops = (grad: CanvasGradient) => {
+        grad.addColorStop(0,    'rgba(255,255,255,1.0)');
+        grad.addColorStop(0.2,  'rgba(255,255,255,0.82)');
+        grad.addColorStop(0.4,  'rgba(255,255,255,0.6)');
+        grad.addColorStop(0.6,  'rgba(255,255,255,0.36)');
+        grad.addColorStop(0.8,  'rgba(255,255,255,0.15)');
+        grad.addColorStop(1,    'rgba(255,255,255,0)');
+      };
       // (1) OMNI — 캐릭터 발치 부드러운 원 (360° 가시)
       const omniR = Math.max(8, r * 0.45 * scale);
       const og = fctx.createRadialGradient(cx, cy, 0, cx, cy, omniR);
-      og.addColorStop(0,    'rgba(255,255,255,1)');
-      og.addColorStop(0.55, 'rgba(255,255,255,0.85)');
-      og.addColorStop(1,    'rgba(255,255,255,0)');
+      addSoftStops(og);
       fctx.fillStyle = og;
       fctx.fillRect(0, 0, W, H);
       // (2) FWD — facing 방향으로 시프트 + X 스트레치 (회전된 좌표계에서 동심원)
@@ -374,9 +382,7 @@ export function renderFrame(
         fctx.rotate(Math.atan2(dy, dx));
         fctx.scale(stretch, 1);
         const fg = fctx.createRadialGradient(0, 0, 0, 0, 0, fwdR);
-        fg.addColorStop(0,    'rgba(255,255,255,1)');
-        fg.addColorStop(0.55, 'rgba(255,255,255,0.7)');
-        fg.addColorStop(1,    'rgba(255,255,255,0)');
+        addSoftStops(fg);
         fctx.fillStyle = fg;
         fctx.fillRect(-W * 2, -H * 2, W * 4, H * 4);
         fctx.restore();
