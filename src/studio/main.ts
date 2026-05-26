@@ -40,9 +40,16 @@ ready(() => {
   initTouch();
 
   // ===== 트랜스포트 컨트롤 =====
-  document.getElementById('tp-play')!.addEventListener('click', () => togglePlay());
-  document.getElementById('tp-rec')!.addEventListener('click', () => toggleRecord());
-  document.getElementById('tp-prev')!.addEventListener('click', () => seek(0));
+  // iOS Safari 는 멀티터치 (조이스틱 + 버튼 동시) 시 click 이벤트를 묵살하므로
+  // 트랜스포트 버튼들은 pointerdown 로 즉시 발사한다.
+  const bindTap = (id: string, fn: () => void) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); });
+  };
+  bindTap('tp-play', () => togglePlay());
+  bindTap('tp-rec',  () => toggleRecord());
+  bindTap('tp-prev', () => seek(0));
 
   const scrub = document.getElementById('tp-scrub') as HTMLInputElement;
   scrub.addEventListener('input', () => {

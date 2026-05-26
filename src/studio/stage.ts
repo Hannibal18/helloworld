@@ -84,11 +84,11 @@ export function sampleTrack(track: CharTrack, t: number): { x: number; y: number
   }
   if (t <= ks[0].t) {
     const k = ks[0];
-    return { x: k.x, y: k.y, dir: k.dir, walk: false };
+    return { x: k.x, y: k.y, dir: k.dir, walk: k.walk };
   }
   const last = ks[ks.length - 1];
   if (t >= last.t) {
-    return { x: last.x, y: last.y, dir: last.dir, walk: false };
+    return { x: last.x, y: last.y, dir: last.dir, walk: last.walk };
   }
   // 이진 탐색 생략 — 키프레임 수가 보통 수백 이하라 선형 OK.
   for (let i = 0; i < ks.length - 1; i++) {

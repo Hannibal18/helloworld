@@ -22,6 +22,7 @@ const COUNTDOWN_SEC = 3;      // 녹화 시작 전 카운트다운
 let lastNow = performance.now();
 let lastSample = -1;          // sceneTime 기준 마지막 샘플 시각
 let countdownStart = 0;       // performance.now() 기준
+let lastArmedId: string | null = null;   // armed 트랙 바뀔 때 liveX/Y 재동기화
 
 // 녹화 중인 캐릭터의 라이브 상태 (sampleTrack 으로 못 얻으니 별도 유지)
 let liveX = 0;
@@ -58,8 +59,42 @@ function loop(now: number): void {
 
   if (state.rt.playing || state.rt.recording) {
     advance(dt);
+  } else if (state.rt.armedTrackId && !state.rt.countingDown) {
+    // 자유 이동 모드 — 녹화 안 해도 조이스틱으로 캐릭터 위치 잡기.
+    // 시간은 안 흐르고, 키프레임도 안 쌓고, startX/Y 만 갱신됨.
+    freeMove(dt);
   }
   requestAnimationFrame(loop);
+}
+
+function freeMove(dt: number): void {
+  const scene = activeScene();
+  const trk = trackById(scene, state.rt.armedTrackId);
+  if (!trk) return;
+  // 활성 트랙이 바뀌면 liveX/Y 를 그 트랙의 startX/Y 로 재동기화 (기존엔 옛 좌표 남아 있음).
+  if (state.rt.armedTrackId !== lastArmedId) {
+    lastArmedId = state.rt.armedTrackId;
+    liveX = trk.startX; liveY = trk.startY; liveDir = trk.startDir; liveWalk = false;
+  }
+  const v = inputVector();
+  const mag = Math.hypot(v.x, v.y);
+  liveWalk = mag > 0.05;
+  if (mag <= 0.05) return;
+  const norm = mag > 1 ? mag : 1;
+  const ux = v.x / norm, uy = v.y / norm;
+  const speed = SPEED * Math.min(1, mag);
+  const map = currentMap();
+  const nx = liveX + ux * speed * dt;
+  const ny = liveY + uy * speed * dt;
+  if (!map || !isBlocked(map, nx, liveY, 8, 4)) liveX = nx;
+  if (!map || !isBlocked(map, liveX, ny, 8, 4)) liveY = ny;
+  if (Math.abs(v.x) > Math.abs(v.y)) liveDir = v.x > 0 ? 'right' : 'left';
+  else                                liveDir = v.y > 0 ? 'down'  : 'up';
+  // startX/Y 도 같이 갱신 — 다음 녹화의 시작점이 됨
+  trk.startX = Math.round(liveX);
+  trk.startY = Math.round(liveY);
+  trk.startDir = liveDir;
+  notify();
 }
 
 function advance(dt: number): void {

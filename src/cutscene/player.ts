@@ -223,9 +223,9 @@ function sampleTrk(trk: ExportedScene['tracks'][number], t: number):
 {
   const ks = trk.keyframes;
   if (ks.length === 0) return { x: trk.startX, y: trk.startY, dir: trk.startDir, walk: false };
-  if (t <= ks[0].t) return { x: ks[0].x, y: ks[0].y, dir: ks[0].dir, walk: false };
+  if (t <= ks[0].t) return { x: ks[0].x, y: ks[0].y, dir: ks[0].dir, walk: ks[0].walk };
   const last = ks[ks.length - 1];
-  if (t >= last.t) return { x: last.x, y: last.y, dir: last.dir, walk: false };
+  if (t >= last.t) return { x: last.x, y: last.y, dir: last.dir, walk: last.walk };
   for (let i = 0; i < ks.length - 1; i++) {
     const a = ks[i], b = ks[i + 1];
     if (t >= a.t && t < b.t) {
