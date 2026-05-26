@@ -70,15 +70,6 @@ function setupStick(): void {
   knobEl = document.getElementById('touch-stick-knob') as HTMLElement;
   if (!stickEl || !knobEl) return;
 
-  // 표시/숨김 — 터치기기 + armedTrackId 있을 때만.
-  const updateVis = () => {
-    const shouldShow = isTouchDevice() && !!state.rt.armedTrackId;
-    stickEl.classList.toggle('hidden', !shouldShow);
-    if (!shouldShow) reset();
-  };
-  subscribe(updateVis);
-  updateVis();
-
   const refreshRect = () => { stickRect = stickEl.getBoundingClientRect(); };
   window.addEventListener('resize', refreshRect);
   window.addEventListener('orientationchange', refreshRect);
@@ -152,4 +143,13 @@ function setupStick(): void {
     if (!mouseDown) return;
     mouseDown = false; reset();
   });
+
+  // 표시/숨김 — 터치기기 + armedTrackId 있을 때만. (reset 정의 이후에 호출돼야 TDZ 회피)
+  const updateVis = () => {
+    const shouldShow = isTouchDevice() && !!state.rt.armedTrackId;
+    stickEl.classList.toggle('hidden', !shouldShow);
+    if (!shouldShow) reset();
+  };
+  subscribe(updateVis);
+  updateVis();
 }
