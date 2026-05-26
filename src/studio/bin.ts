@@ -5,6 +5,7 @@ import { state, notify, uid, activeScene } from './state';
 import type { Asset, AssetKind } from './state';
 import { CHARACTER_COUNT, drawCharacterPreview } from '../sprites';
 import { showToast } from './util';
+import { currentMap } from './stage';
 
 const BUILTIN_MAPS: Array<{ name: string; url: string }> = [
   { name: 'zombie_road',  url: '/maps/zombie_road.json' },
@@ -157,17 +158,24 @@ function onUseAsset(asset: Asset): void {
     scene.bgm.assetId = asset.id;
     showToast(`BGM '${asset.name}' 적용`);
   } else if (asset.kind === 'char') {
-    // 캐릭터는 트랙으로 추가. 위치는 맵 중앙 또는 (160, 120).
-    scene.tracks.push({
+    // 캐릭터는 트랙으로 추가. 시작 위치는 맵 중앙 (없으면 화면 중앙으로 폴백).
+    const map = currentMap();
+    const sx = map ? Math.round(map.pixelW / 2) : 160;
+    const sy = map ? Math.round(map.pixelH / 2) : 120;
+    const newTrack = {
       id: uid('trk'),
       name: asset.name,
       charAssetId: asset.id,
-      startX: 160, startY: 120,
-      startDir: 'down',
+      startX: sx, startY: sy,
+      startDir: 'down' as const,
       keyframes: [],
       recorded: false,
-    });
-    showToast(`'${asset.name}' 트랙 추가`);
+    };
+    scene.tracks.push(newTrack);
+    // 새로 추가한 캐릭터를 바로 활성 트랙으로 → 카메라가 따라가서 보임
+    state.rt.armedTrackId = newTrack.id;
+    state.rt.selectedTrackId = newTrack.id;
+    showToast(`'${asset.name}' 추가 — 캔버스 탭으로 위치 조정`);
   }
   notify();
 }

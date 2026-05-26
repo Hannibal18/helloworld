@@ -111,7 +111,19 @@ interface CamState { x: number; y: number; zoom: number; }
 
 export function sampleCamera(scene: Scene, t: number, fallbackCx: number, fallbackCy: number): CamState {
   const ks = scene.camera.keyframes;
-  if (ks.length === 0) return { x: fallbackCx, y: fallbackCy, zoom: 1 };
+  // 카메라 키프레임이 없을 때:
+  //   - 활성(armed) 트랙이 있으면 → 그 캐릭터를 따라감 (편집 중 시야 확보)
+  //   - 없으면 맵 중앙 폴백
+  if (ks.length === 0) {
+    if (state.rt.armedTrackId) {
+      const armed = trackById(scene, state.rt.armedTrackId);
+      if (armed) {
+        const s = sampleTrack(armed, t);
+        return { x: s.x, y: s.y, zoom: 1 };
+      }
+    }
+    return { x: fallbackCx, y: fallbackCy, zoom: 1 };
+  }
   const resolve = (k: CameraKey): CamState => {
     if (k.followTrackId) {
       const trk = trackById(scene, k.followTrackId);
