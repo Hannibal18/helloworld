@@ -173,7 +173,7 @@ export const state: State = {
     recording: false,
     sceneTime: 0,
     binTab: 'maps',
-    pxPerSec: 80,
+    pxPerSec: typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches ? 140 : 80,
   },
 };
 

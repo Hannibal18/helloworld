@@ -18,6 +18,8 @@ let body!: HTMLElement;
 export function initTimeline(): void {
   body = document.getElementById('timeline-body')!;
   const zoomIn = document.getElementById('tl-zoom') as HTMLInputElement;
+  // 초기값을 state.rt.pxPerSec 에 맞춤 (모바일 자동 ↑)
+  zoomIn.value = String(state.rt.pxPerSec);
   zoomIn.addEventListener('input', () => {
     state.rt.pxPerSec = parseInt(zoomIn.value, 10);
     notify();
@@ -54,13 +56,15 @@ function makeRuler(duration: number, px: number): HTMLElement {
   pad.className = 'tl-ruler-pad';
   wrap.appendChild(pad);
 
+  const isMobile = window.matchMedia('(max-width: 900px)').matches;
+  const H = isMobile ? 32 : 24;
   const w = Math.max(200, duration * px + 200);
   const c = document.createElement('canvas');
   c.className = 'tl-ruler-canvas';
   c.width = w;
-  c.height = 24;
+  c.height = H;
   c.style.width = w + 'px';
-  c.style.height = '24px';
+  c.style.height = H + 'px';
   const ctx = c.getContext('2d')!;
   ctx.fillStyle = '#9aa2ad';
   ctx.font = '10px Galmuri11, system-ui';
@@ -71,8 +75,8 @@ function makeRuler(duration: number, px: number): HTMLElement {
     const major = Math.abs(t - Math.round(t)) < 0.001;
     ctx.strokeStyle = major ? '#bfc6d0' : 'rgba(154, 162, 173, 0.3)';
     ctx.beginPath();
-    ctx.moveTo(x, major ? 8 : 14);
-    ctx.lineTo(x, 22);
+    ctx.moveTo(x, major ? H - 16 : H - 10);
+    ctx.lineTo(x, H - 2);
     ctx.stroke();
     if (major) ctx.fillText(t.toFixed(0) + 's', x + 2, 0);
   }
@@ -81,7 +85,7 @@ function makeRuler(duration: number, px: number): HTMLElement {
   ctx.strokeStyle = '#4ea1ff';
   ctx.beginPath();
   ctx.moveTo(endX, 0);
-  ctx.lineTo(endX, 24);
+  ctx.lineTo(endX, H);
   ctx.stroke();
   wrap.appendChild(c);
 
