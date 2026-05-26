@@ -230,6 +230,43 @@ function render(): void {
   // 전환 효과 (씬 시작 부분에 transitionIn 이 있으면 t < dur 동안 오버레이)
   drawTransitionOverlay(scene, t, cssW, cssH);
 
+  // 카운트다운 — 녹화 시작 직전 3-2-1
+  if (state.rt.countingDown) drawCountdown(state.rt.countdownT, cssW, cssH);
+
+  ctx.restore();
+}
+
+function drawCountdown(t: number, w: number, h: number): void {
+  const n = Math.ceil(t);
+  if (n <= 0) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillRect(0, 0, w, h);
+  // 둥근 링 — 남은 시간 비율
+  const frac = t - Math.floor(t);    // 1초 안에서 0→1 진행
+  const cx = w / 2, cy = h / 2;
+  const radius = Math.min(w, h) * 0.18;
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+  ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = '#ff4d4d';
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + (1 - frac) * Math.PI * 2);
+  ctx.stroke();
+  // 숫자
+  const fontSize = Math.round(Math.min(w, h) * 0.25);
+  ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.lineWidth = Math.max(4, fontSize * 0.06);
+  ctx.strokeText(String(n), cx, cy);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(String(n), cx, cy);
+  // 안내
+  ctx.font = `${Math.round(fontSize * 0.18)}px Galmuri11, system-ui, sans-serif`;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.fillText('조이스틱을 미리 잡으면 0초에 즉시 출발', cx, cy + radius + fontSize * 0.3);
   ctx.restore();
 }
 

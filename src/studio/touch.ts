@@ -57,13 +57,13 @@ function setupDrawers(): void {
   });
 }
 
-// ===== 가상 조이스틱 =====
+// ===== 가상 조이스틱 (TouchEvent — iOS Safari 호환) =====
 
 let stickEl!: HTMLElement;
 let knobEl!: HTMLElement;
-let pointerId: number | null = null;
+let stickTouchId: number | null = null;
 let stickRect: DOMRect | null = null;
-const STICK_RADIUS_RATIO = 0.4; // CSS 110px → 44px max throw
+const STICK_RADIUS_RATIO = 0.4;
 
 function setupStick(): void {
   stickEl = document.getElementById('touch-stick') as HTMLElement;
@@ -74,10 +74,7 @@ function setupStick(): void {
   const updateVis = () => {
     const shouldShow = isTouchDevice() && !!state.rt.armedTrackId;
     stickEl.classList.toggle('hidden', !shouldShow);
-    if (!shouldShow) {
-      setStick(0, 0);
-      knobEl.style.transform = 'translate(0,0)';
-    }
+    if (!shouldShow) reset();
   };
   subscribe(updateVis);
   updateVis();
@@ -102,30 +99,57 @@ function setupStick(): void {
     setStick(nx, ny);
   };
   const reset = () => {
-    pointerId = null;
+    stickTouchId = null;
     knobEl.style.transform = 'translate(0,0)';
     setStick(0, 0);
   };
 
-  stickEl.addEventListener('pointerdown', (e) => {
-    if (pointerId !== null) return;
+  // touchstart 는 stick 자체에서만 (다른 손가락이 다른 곳을 만져도 무시).
+  stickEl.addEventListener('touchstart', (e) => {
+    const t = e.changedTouches[0];
+    if (!t) return;
     e.preventDefault();
-    pointerId = e.pointerId;
-    refreshRect();
-    stickEl.setPointerCapture(e.pointerId);
-    updateKnob(e.clientX, e.clientY);
-  });
-  stickEl.addEventListener('pointermove', (e) => {
-    if (e.pointerId !== pointerId) return;
-    e.preventDefault();
-    updateKnob(e.clientX, e.clientY);
-  });
-  const onEnd = (e: PointerEvent) => {
-    if (e.pointerId !== pointerId) return;
-    try { stickEl.releasePointerCapture(e.pointerId); } catch { /* noop */ }
-    reset();
+    if (stickTouchId === null) {
+      stickTouchId = t.identifier;
+      refreshRect();
+      updateKnob(t.clientX, t.clientY);
+    }
+  }, { passive: false });
+
+  // 손가락이 stick 밖으로 나가도 따라가도록 document 에서 listen.
+  document.addEventListener('touchmove', (e) => {
+    if (stickTouchId === null) return;
+    for (const t of Array.from(e.changedTouches)) {
+      if (t.identifier === stickTouchId) {
+        e.preventDefault();
+        updateKnob(t.clientX, t.clientY);
+        break;
+      }
+    }
+  }, { passive: false });
+
+  const endHandler = (e: TouchEvent): void => {
+    if (stickTouchId === null) return;
+    for (const t of Array.from(e.changedTouches)) {
+      if (t.identifier === stickTouchId) { reset(); break; }
+    }
   };
-  stickEl.addEventListener('pointerup', onEnd);
-  stickEl.addEventListener('pointercancel', onEnd);
-  stickEl.addEventListener('lostpointercapture', () => reset());
+  document.addEventListener('touchend', endHandler);
+  document.addEventListener('touchcancel', endHandler);
+
+  // 데스크톱 폴백 — 마우스로도 조이스틱 테스트 가능 (모바일이 안 보이면 안 동작)
+  let mouseDown = false;
+  stickEl.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    mouseDown = true; refreshRect();
+    updateKnob(e.clientX, e.clientY);
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!mouseDown) return;
+    updateKnob(e.clientX, e.clientY);
+  });
+  document.addEventListener('mouseup', () => {
+    if (!mouseDown) return;
+    mouseDown = false; reset();
+  });
 }

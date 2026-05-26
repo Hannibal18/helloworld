@@ -290,7 +290,9 @@ function makeCharTrack(trk: CharTrack, px: number): HTMLElement {
   } else {
     const hint = document.createElement('div');
     hint.style.cssText = 'position:absolute;left:8px;top:50%;transform:translateY(-50%);color:#9aa2ad;font-size:11px;';
-    hint.textContent = state.rt.armedTrackId === trk.id ? '⏺ R 누르면 녹화 시작' : '● 점을 눌러 활성화';
+    hint.textContent = state.rt.armedTrackId === trk.id
+      ? (state.rt.countingDown ? '🎬 곧 시작!' : '⏺ 버튼 누르면 3-2-1 카운트다운 → 녹화')
+      : '● 점을 눌러 활성화';
     cont.appendChild(hint);
   }
   row.appendChild(cont);

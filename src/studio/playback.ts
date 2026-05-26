@@ -17,9 +17,11 @@ import { inputVector, initKeyboard } from './input';
 
 const SPEED = 120;            // px / sec (게임의 이동 속도와 비슷)
 const REC_SAMPLE_HZ = 30;     // 키프레임 샘플 레이트
+const COUNTDOWN_SEC = 3;      // 녹화 시작 전 카운트다운
 
 let lastNow = performance.now();
 let lastSample = -1;          // sceneTime 기준 마지막 샘플 시각
+let countdownStart = 0;       // performance.now() 기준
 
 // 녹화 중인 캐릭터의 라이브 상태 (sampleTrack 으로 못 얻으니 별도 유지)
 let liveX = 0;
@@ -42,6 +44,18 @@ export function initPlayback(): void {
 function loop(now: number): void {
   const dt = Math.min(0.1, (now - lastNow) / 1000);
   lastNow = now;
+
+  // 카운트다운 진행 — 끝나면 자동으로 실제 녹화 시작.
+  if (state.rt.countingDown) {
+    const elapsed = (now - countdownStart) / 1000;
+    state.rt.countdownT = Math.max(0, COUNTDOWN_SEC - elapsed);
+    if (state.rt.countdownT <= 0) {
+      state.rt.countingDown = false;
+      doStartRecord();
+      notify();   // 한 번만 — recording 상태 UI 동기화
+    }
+  }
+
   if (state.rt.playing || state.rt.recording) {
     advance(dt);
   }
@@ -120,6 +134,10 @@ export function togglePlay(): void {
     // 녹화 중 Space → 녹화 중단, 재생만 계속? UX 결정: 녹화도 멈춤.
     stopRecord();
   }
+  if (state.rt.countingDown) {
+    cancelCountdown();
+    return;
+  }
   state.rt.playing = !state.rt.playing;
   if (state.rt.playing && state.rt.sceneTime >= activeScene().duration) {
     state.rt.sceneTime = 0;
@@ -128,21 +146,23 @@ export function togglePlay(): void {
   notify();
 }
 
+// ⏺ 또는 R: 카운트다운 시작 → 끝나면 자동 녹화. 진행 중 다시 누르면 취소.
 export function toggleRecord(): void {
-  if (state.rt.recording) stopRecord();
-  else startRecord();
+  if (state.rt.recording) { stopRecord(); return; }
+  if (state.rt.countingDown) { cancelCountdown(); return; }
+  startRecord();
 }
 
+// 외부에서 호출하는 record 시작 — 사용자 입장에선 '⏺ 누름'.
+// 실제로는 카운트다운을 켜고, 끝나면 doStartRecord() 가 진짜 녹화 시작.
 export function startRecord(): void {
   const scene = activeScene();
   const trk = trackById(scene, state.rt.armedTrackId);
   if (!trk) {
-    // 활성 트랙 없으면 아무 동작 X — 트랙 라벨의 ● 점을 눌러 활성화하라는 안내가 필요.
     console.warn('녹화 대상 트랙이 선택되지 않음');
     return;
   }
-  // 시작점: 기존 키프레임이 있으면 startX/Y 갱신은 사용자 의도가 아님 → 그대로 두고 keyframes 만 비움.
-  // sceneTime 은 0 으로 리셋.
+  // 카운트다운 동안 캐릭터가 startX/Y 에 정지해 보이도록 기존 키프레임 비움.
   trk.keyframes = [];
   trk.recorded = false;
   liveX = trk.startX;
@@ -150,10 +170,28 @@ export function startRecord(): void {
   liveDir = trk.startDir;
   liveWalk = false;
   state.rt.sceneTime = 0;
-  state.rt.recording = true;
-  state.rt.playing = true;
+  state.rt.recording = false;
+  state.rt.playing = false;
+  state.rt.countingDown = true;
+  state.rt.countdownT = COUNTDOWN_SEC;
+  countdownStart = performance.now();
   lastNow = performance.now();
   lastSample = -1;
+  notify();
+}
+
+function doStartRecord(): void {
+  state.rt.recording = true;
+  state.rt.playing = true;
+  state.rt.sceneTime = 0;
+  lastNow = performance.now();
+  lastSample = -1;
+  // liveX/Y/Dir 는 startRecord 에서 이미 설정됨 — 카운트다운 동안 변경되지 않으니 그대로 사용.
+}
+
+function cancelCountdown(): void {
+  state.rt.countingDown = false;
+  state.rt.countdownT = 0;
   notify();
 }
 

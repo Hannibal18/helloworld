@@ -116,6 +116,9 @@ export interface RuntimeState {
   selectedTrackId: string | null;
   playing: boolean;
   recording: boolean;
+  /** 녹화 시작 전 카운트다운(3→2→1). 진행 중엔 조이스틱 입력만 수집(미동작). */
+  countingDown: boolean;
+  countdownT: number;
   /** 씬 내부 시간(sec). 재생/녹화/스크럽 모두 이 값을 움직임. */
   sceneTime: number;
   /** 빈 카테고리 탭. */
@@ -171,6 +174,8 @@ export const state: State = {
     selectedTrackId: null,
     playing: false,
     recording: false,
+    countingDown: false,
+    countdownT: 0,
     sceneTime: 0,
     binTab: 'maps',
     pxPerSec: typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches ? 140 : 80,
