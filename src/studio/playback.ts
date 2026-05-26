@@ -13,12 +13,11 @@ import type { Dir } from '../types';
 import { isBlocked } from '../map';
 import { currentMap } from './stage';
 import { clamp } from './util';
+import { inputVector, initKeyboard } from './input';
 
 const SPEED = 120;            // px / sec (게임의 이동 속도와 비슷)
 const REC_SAMPLE_HZ = 30;     // 키프레임 샘플 레이트
 
-// 키 상태
-const keys = new Set<string>();
 let lastNow = performance.now();
 let lastSample = -1;          // sceneTime 기준 마지막 샘플 시각
 
@@ -29,32 +28,15 @@ let liveDir: Dir = 'down';
 let liveWalk = false;
 
 export function initPlayback(): void {
-  window.addEventListener('keydown', onKey);
-  window.addEventListener('keyup',   onKey);
+  initKeyboard();
+  // 트랜스포트 핫키 (Space=재생, R=녹화) — input.ts 의 일반 키 캡처와 별도.
+  window.addEventListener('keydown', (e) => {
+    const tgt = e.target as HTMLElement | null;
+    if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    else if (e.code === 'KeyR') { e.preventDefault(); toggleRecord(); }
+  });
   requestAnimationFrame(loop);
-}
-
-function onKey(e: KeyboardEvent): void {
-  // 입력 포커스가 input/textarea 면 무시.
-  const tgt = e.target as HTMLElement;
-  if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
-
-  const code = e.code;
-  if (e.type === 'keydown') {
-    if (code === 'Space') {
-      e.preventDefault();
-      togglePlay();
-      return;
-    }
-    if (code === 'KeyR') {
-      e.preventDefault();
-      toggleRecord();
-      return;
-    }
-    keys.add(code);
-  } else {
-    keys.delete(code);
-  }
 }
 
 function loop(now: number): void {
@@ -69,19 +51,20 @@ function loop(now: number): void {
 function advance(dt: number): void {
   const scene = activeScene();
 
-  // 1) 활성 캐릭터 입력 처리 (녹화 중일 때만)
+  // 1) 활성 캐릭터 입력 처리 (녹화 중일 때만) — 키보드 + 조이스틱 합산
   if (state.rt.recording && state.rt.armedTrackId) {
     const trk = trackById(scene, state.rt.armedTrackId);
     if (trk) {
-      const dx = (keys.has('KeyA') || keys.has('ArrowLeft')  ? -1 : 0)
-               + (keys.has('KeyD') || keys.has('ArrowRight') ?  1 : 0);
-      const dy = (keys.has('KeyW') || keys.has('ArrowUp')    ? -1 : 0)
-               + (keys.has('KeyS') || keys.has('ArrowDown')  ?  1 : 0);
+      const v = inputVector();
+      const dx = v.x, dy = v.y;
       const mag = Math.hypot(dx, dy);
-      liveWalk = mag > 0;
-      if (mag > 0) {
-        const nx = liveX + (dx / mag) * SPEED * dt;
-        const ny = liveY + (dy / mag) * SPEED * dt;
+      liveWalk = mag > 0.05;
+      if (mag > 0.05) {
+        const norm = mag > 1 ? mag : 1; // 조이스틱은 이미 단위벡터 — 합산 시 1 초과만 정규화
+        const ux = dx / norm, uy = dy / norm;
+        const speed = SPEED * Math.min(1, mag); // 아날로그: 적게 밀면 천천히
+        const nx = liveX + ux * speed * dt;
+        const ny = liveY + uy * speed * dt;
         // 충돌 (옵션) — 발박스 16x8 정도.
         const map = currentMap();
         const blocked = !!map && isBlocked(map, nx, ny, 8, 4);

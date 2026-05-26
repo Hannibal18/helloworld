@@ -29,6 +29,32 @@ export function showToast(msg: string, kind: 'ok' | 'err' = 'ok', ms = 1800): vo
   }, ms);
 }
 
+/** 마우스/터치/펜 통합 드래그 — pointerdown 핸들러 안에서 호출.
+ *  onMove 는 매 이동마다 (현재 x/y, 시작 x/y, dx, dy) 호출. */
+export function startPointerDrag(
+  e: PointerEvent,
+  target: HTMLElement,
+  onMove: (curX: number, curY: number, startX: number, startY: number, dx: number, dy: number) => void,
+  onEnd?: () => void,
+): void {
+  const startX = e.clientX, startY = e.clientY;
+  try { target.setPointerCapture(e.pointerId); } catch { /* noop */ }
+  const move = (ev: PointerEvent) => {
+    if (ev.pointerId !== e.pointerId) return;
+    onMove(ev.clientX, ev.clientY, startX, startY, ev.clientX - startX, ev.clientY - startY);
+  };
+  const end = (ev: PointerEvent) => {
+    if (ev.pointerId !== e.pointerId) return;
+    target.removeEventListener('pointermove', move);
+    target.removeEventListener('pointerup', end);
+    target.removeEventListener('pointercancel', end);
+    if (onEnd) onEnd();
+  };
+  target.addEventListener('pointermove', move);
+  target.addEventListener('pointerup', end);
+  target.addEventListener('pointercancel', end);
+}
+
 export function downloadJson(filename: string, data: unknown): void {
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: 'application/json' });

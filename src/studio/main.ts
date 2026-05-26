@@ -9,6 +9,7 @@ import { initScenes, renderScenes } from './scenes';
 import { initPlayback, togglePlay, toggleRecord, seek, setActiveStartPos } from './playback';
 import { initExport } from './export';
 import { syncBgm } from './audio';
+import { initTouch } from './touch';
 import { clamp, showToast } from './util';
 
 function ready(fn: () => void): void {
@@ -36,6 +37,7 @@ ready(() => {
   initProps();
   initExport();
   initPlayback();
+  initTouch();
 
   // ===== 트랜스포트 컨트롤 =====
   document.getElementById('tp-play')!.addEventListener('click', () => togglePlay());
@@ -115,11 +117,14 @@ ready(() => {
     notify();
   });
 
-  // ===== 캔버스 클릭 (녹화 OFF + 트랙 armed) → 시작 위치 지정 =====
+  // ===== 캔버스 탭 (녹화 OFF + 트랙 armed) → 시작 위치 지정 =====
   const canvas = document.getElementById('stage-canvas') as HTMLCanvasElement;
-  canvas.addEventListener('mousedown', (e) => {
+  canvas.style.touchAction = 'none';
+  canvas.addEventListener('pointerdown', (e) => {
     if (state.rt.recording) return;       // 녹화 중엔 비활성
     if (!state.rt.armedTrackId) return;
+    if (e.target !== canvas) return;
+    e.preventDefault();
     const r = canvas.getBoundingClientRect();
     const sx = e.clientX - r.left;
     const sy = e.clientY - r.top;

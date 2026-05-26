@@ -281,3 +281,116 @@ a:hover { text-decoration: underline; }
   box-shadow: var(--shadow); z-index: 9999;
 }
 .st-toast.err { background: var(--rec); color: #fff; }
+
+/* ===== 모바일 / 데스크톱 가시성 토글 ===== */
+.st-mobile-only  { display: none; }
+.st-desktop-only { display: inline-flex; }
+
+/* ===== 드로워 백드롭 ===== */
+.st-drawer-backdrop {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* ===== 가상 조이스틱 (기본은 숨김, 모바일에서 활성 시 표시) ===== */
+.st-stick {
+  position: absolute;
+  left: calc(16px + env(safe-area-inset-left, 0));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0));
+  width: 110px; height: 110px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.10);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  touch-action: none; user-select: none;
+  pointer-events: auto;
+  z-index: 5;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.st-stick-knob {
+  position: absolute; left: 50%; top: 50%;
+  width: 52px; height: 52px; margin: -26px 0 0 -26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.32);
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  transition: transform 0.04s linear;
+  pointer-events: none;
+}
+
+/* ===== 모바일 (≤ 900px) ===== */
+@media (max-width: 900px) {
+  html, body { font-size: 14px; }
+
+  .st-mobile-only  { display: inline-flex; }
+  .st-desktop-only { display: none; }
+
+  .st-topbar { padding: 0 8px; height: 48px; }
+  .st-brand  { font-size: 13px; }
+  .st-input-title { width: 110px; font-size: 12px; }
+  .st-topbar-left, .st-topbar-right { gap: 6px; }
+  .st-tp { width: 36px; height: 36px; font-size: 16px; }
+
+  /* 본문: 빈/속성 패널 → 드로워. 스테이지가 풀폭. */
+  .st-body {
+    grid-template-columns: 1fr;       /* 빈/속성 숨김 → 스테이지만 */
+    gap: 0;
+    height: calc(100dvh - 48px - 220px);
+  }
+  .st-bin {
+    position: fixed;
+    left: 0; top: 48px; bottom: 0;
+    width: min(280px, 80vw);
+    z-index: 60;
+    transform: translateX(-105%);
+    transition: transform 0.18s ease;
+    box-shadow: 4px 0 18px rgba(0, 0, 0, 0.5);
+  }
+  .st-bin.st-open { transform: translateX(0); }
+  .st-props {
+    position: fixed;
+    right: 0; top: 48px; bottom: 0;
+    width: min(300px, 88vw);
+    z-index: 60;
+    transform: translateX(105%);
+    transition: transform 0.18s ease;
+    box-shadow: -4px 0 18px rgba(0, 0, 0, 0.5);
+  }
+  .st-props.st-open { transform: translateX(0); }
+
+  /* 트랜스포트 — 두 줄로 풀어줌 (스크럽바가 길어야 사용성↑) */
+  .st-transport { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
+  .st-transport .st-tp-spacer { display: none; }
+  .st-tp-time { font-size: 11px; }
+  .st-tp-zoom input { width: 84px; }
+
+  /* 타임라인 — 라벨 폭 축소, 행 높이 ↑ (탭하기 편하게) */
+  .st-timeline { height: 220px; }
+  :root { --row-h: 36px; }
+  .tl-track-label { width: 100px; padding: 0 6px; gap: 4px; }
+  .tl-track-label .name { font-size: 11px; }
+  .tl-track-label .dot { width: 14px; height: 14px; }
+  .tl-ruler-pad { width: 100px; }
+  .tl-clip { font-size: 10px; padding: 0 4px; }
+  .tl-key { width: 14px; height: 14px; }
+
+  /* 미디어 빈 / 속성 아이템 폰트 살짝 ↑ */
+  .st-bin-item { padding: 8px; }
+  .st-bin-item button.use { padding: 6px 10px; font-size: 11px; }
+
+  /* 씬 탭 — 좁아도 가로 스크롤 */
+  .st-scene-tabs { padding: 6px; }
+  .st-scene-tab { padding: 6px 10px; font-size: 12px; }
+
+  /* HUD/배지 위치 — 노치 안전영역 회피 */
+  .st-preview-hud { top: calc(8px + env(safe-area-inset-top, 0)); }
+
+  /* 캔버스 영역의 기본 터치 동작 차단 (핀치줌/당겨새로고침/더블탭줌) */
+  .st-preview-wrap { touch-action: none; }
+}
+
+/* 매우 좁은 폰 (≤ 380px) — 폰트 더 축소 */
+@media (max-width: 380px) {
+  .st-input-title { width: 80px; }
+  .st-tp { width: 32px; height: 32px; }
+  .st-bin { width: 84vw; }
+  .st-props { width: 92vw; }
+}

@@ -11,13 +11,15 @@
   <body>
     <header class="st-topbar">
       <div class="st-topbar-left">
-        <strong>🎬 컷씬 스튜디오</strong>
+        <button id="btn-toggle-bin" class="st-btn st-btn-ghost st-mobile-only" type="button" title="미디어">📁</button>
+        <strong class="st-brand">🎬 컷씬</strong>
         <input id="project-name" class="st-input st-input-title" type="text" value="새 컷씬" />
       </div>
       <div class="st-topbar-right">
-        <a class="st-link" href="/">← 게임</a>
-        <button id="btn-import" class="st-btn" type="button">📥 Import</button>
-        <button id="btn-export" class="st-btn st-btn-primary" type="button">💾 Export</button>
+        <a class="st-link st-desktop-only" href="/">← 게임</a>
+        <button id="btn-import" class="st-btn st-desktop-only" type="button">📥 Import</button>
+        <button id="btn-export" class="st-btn st-btn-primary" type="button">💾</button>
+        <button id="btn-toggle-props" class="st-btn st-btn-ghost st-mobile-only" type="button" title="속성">⚙️</button>
       </div>
     </header>
 
@@ -44,6 +46,10 @@
           <div class="st-preview-hud">
             <span id="hud-time">0.00s / 0.00s</span>
             <span id="hud-record" class="st-hud-rec hidden">● REC</span>
+          </div>
+          <!-- 가상 조이스틱 — 모바일에서 트랙 활성화(armed)면 표시 -->
+          <div id="touch-stick" class="st-stick hidden" aria-hidden="true">
+            <div id="touch-stick-knob" class="st-stick-knob"></div>
           </div>
         </div>
         <div class="st-transport">
@@ -85,6 +91,8 @@
       <div class="st-timeline-body" id="timeline-body"></div>
     </section>
 
+    <!-- 드로워 외곽 클릭 감지용 백드롭 (모바일 전용) -->
+    <div id="drawer-backdrop" class="st-drawer-backdrop hidden"></div>
     <div id="toast" class="st-toast hidden"></div>
     <script type="module" src="/src/studio/main.ts"></script>
   </body>

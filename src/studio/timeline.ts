@@ -8,7 +8,7 @@
 
 import { state, notify, activeScene, findAsset } from './state';
 import type { Bubble, CharTrack, CameraKey } from './state';
-import { clamp } from './util';
+import { clamp, startPointerDrag } from './util';
 import { seek } from './playback';
 
 const LABEL_W = 160;
@@ -85,20 +85,17 @@ function makeRuler(duration: number, px: number): HTMLElement {
   ctx.stroke();
   wrap.appendChild(c);
 
-  // 눈금자 클릭 → seek
+  // 눈금자 탭/드래그 → seek
   c.style.cursor = 'pointer';
-  c.addEventListener('mousedown', (e) => {
-    const onMove = (ev: MouseEvent) => {
-      const r = c.getBoundingClientRect();
-      seek((ev.clientX - r.left) / px);
-    };
-    onMove(e);
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+  c.style.touchAction = 'none';
+  c.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const r = c.getBoundingClientRect();
+    seek((e.clientX - r.left) / px);
+    startPointerDrag(e, c, (cx) => {
+      const rr = c.getBoundingClientRect();
+      seek((cx - rr.left) / px);
+    });
   });
 
   return wrap;
@@ -122,22 +119,25 @@ function makeCameraTrack(keys: CameraKey[], px: number): HTMLElement {
   cont.className = 'tl-track-content';
   cont.style.minWidth = (activeScene().duration * px + 200) + 'px';
   cont.style.cursor = 'pointer';
-  cont.addEventListener('mousedown', (e) => seekFromContentMouse(e, cont, px));
+  cont.style.touchAction = 'none';
+  cont.addEventListener('pointerdown', (e) => seekFromContentPointer(e, cont, px));
   for (let i = 0; i < keys.length; i++) {
     const k = keys[i];
     const dot = document.createElement('div');
     dot.className = 'tl-key' + (state.rt.selectedCamKey === i ? ' selected' : '');
     dot.style.left = (k.t * px) + 'px';
     dot.title = `t=${k.t.toFixed(2)}s zoom=${k.zoom.toFixed(2)}${k.followTrackId ? ' (follow)' : ''}`;
-    dot.addEventListener('mousedown', (e) => {
+    dot.style.touchAction = 'none';
+    dot.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
+      e.preventDefault();
       state.rt.selectedCamKey = i;
       state.rt.selectedBubbleId = null;
       state.rt.selectedTrackId = '__camera__';
       notify();
-      startDrag(e, (newPx) => {
-        k.t = clamp(newPx / px, 0, activeScene().duration);
-        // t 순서 유지
+      const startLeft = parseFloat(dot.style.left) || 0;
+      startPointerDrag(e, dot, (_cx, _cy, _sx, _sy, dx) => {
+        k.t = clamp((startLeft + dx) / px, 0, activeScene().duration);
         keys.sort((a, b) => a.t - b.t);
         notify();
       });
@@ -158,7 +158,8 @@ function makeBgmTrack(bgm: ReturnType<typeof activeScene>['bgm'], duration: numb
   const cont = document.createElement('div');
   cont.className = 'tl-track-content';
   cont.style.minWidth = (duration * px + 200) + 'px';
-  cont.addEventListener('mousedown', (e) => seekFromContentMouse(e, cont, px));
+  cont.style.touchAction = 'none';
+  cont.addEventListener('pointerdown', (e) => seekFromContentPointer(e, cont, px));
   if (asset) {
     const clip = document.createElement('div');
     clip.className = 'tl-clip tl-clip-bgm';
@@ -221,7 +222,8 @@ function makeCharTrack(trk: CharTrack, px: number): HTMLElement {
   const cont = document.createElement('div');
   cont.className = 'tl-track-content';
   cont.style.minWidth = (activeScene().duration * px + 200) + 'px';
-  cont.addEventListener('mousedown', (e) => seekFromContentMouse(e, cont, px));
+  cont.style.touchAction = 'none';
+  cont.addEventListener('pointerdown', (e) => seekFromContentPointer(e, cont, px));
 
   if (trk.recorded && trk.keyframes.length > 0) {
     const first = trk.keyframes[0].t;
@@ -250,21 +252,25 @@ function makeBubblesTrack(bubbles: Bubble[], px: number): HTMLElement {
   const cont = document.createElement('div');
   cont.className = 'tl-track-content';
   cont.style.minWidth = (activeScene().duration * px + 200) + 'px';
-  cont.addEventListener('mousedown', (e) => seekFromContentMouse(e, cont, px));
+  cont.style.touchAction = 'none';
+  cont.addEventListener('pointerdown', (e) => seekFromContentPointer(e, cont, px));
   for (const b of bubbles) {
     const clip = document.createElement('div');
     clip.className = 'tl-clip tl-clip-bubble' + (state.rt.selectedBubbleId === b.id ? ' selected' : '');
     clip.style.left = (b.t * px) + 'px';
     clip.style.width = Math.max(20, b.dur * px) + 'px';
     clip.textContent = b.text || '...';
-    clip.addEventListener('mousedown', (e) => {
+    clip.style.touchAction = 'none';
+    clip.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
+      e.preventDefault();
       state.rt.selectedBubbleId = b.id;
       state.rt.selectedCamKey = null;
       state.rt.selectedTrackId = null;
       notify();
-      startDrag(e, (newPx) => {
-        b.t = clamp(newPx / px, 0, activeScene().duration - b.dur);
+      const startLeft = parseFloat(clip.style.left) || 0;
+      startPointerDrag(e, clip, (_cx, _cy, _sx, _sy, dx) => {
+        b.t = clamp((startLeft + dx) / px, 0, activeScene().duration - b.dur);
         notify();
       });
     });
@@ -274,26 +280,14 @@ function makeBubblesTrack(bubbles: Bubble[], px: number): HTMLElement {
   return row;
 }
 
-// 클립 드래그 — onMove(newLeftPx) 는 클립 좌단 px 위치를 받는다.
-function startDrag(e: MouseEvent, onMove: (leftPx: number) => void): void {
-  const startX = e.clientX;
-  const tgt = e.currentTarget as HTMLElement;
-  const startLeft = parseFloat(tgt.style.left) || 0;
-  const onMv = (ev: MouseEvent) => {
-    const dx = ev.clientX - startX;
-    onMove(startLeft + dx);
-  };
-  const onUp = () => {
-    window.removeEventListener('mousemove', onMv);
-    window.removeEventListener('mouseup', onUp);
-  };
-  window.addEventListener('mousemove', onMv);
-  window.addEventListener('mouseup', onUp);
-}
-
-function seekFromContentMouse(e: MouseEvent, cont: HTMLElement, px: number): void {
+function seekFromContentPointer(e: PointerEvent, cont: HTMLElement, px: number): void {
+  e.preventDefault();
   const r = cont.getBoundingClientRect();
   seek((e.clientX - r.left) / px);
+  startPointerDrag(e, cont, (cx) => {
+    const rr = cont.getBoundingClientRect();
+    seek((cx - rr.left) / px);
+  });
 }
 
 function escapeHtml(s: string): string {
