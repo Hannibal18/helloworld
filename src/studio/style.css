@@ -223,17 +223,32 @@ a:hover { text-decoration: underline; }
 }
 .tl-ruler-canvas { flex: 1; height: 100%; }
 
-/* 재생헤드 */
+/* 재생헤드 — 라인은 pointer-events:none 이지만 위쪽 잡이는 잡을 수 있게 */
 .tl-playhead {
   position: absolute; top: 0; bottom: 0;
   width: 0; border-left: 1px solid var(--warn);
   pointer-events: none; z-index: 4;
 }
-.tl-playhead::before {
-  content: ''; position: absolute; top: 0; left: -6px;
+.tl-playhead-grab {
+  position: absolute;
+  top: 0; left: -14px;
+  width: 28px; height: 28px;
+  cursor: ew-resize;
+  touch-action: none;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.tl-playhead-grab::before {
+  content: ''; position: absolute;
+  top: 0; left: 50%; transform: translateX(-50%);
   width: 0; height: 0;
-  border-left: 6px solid transparent; border-right: 6px solid transparent;
-  border-top: 8px solid var(--warn);
+  border-left: 8px solid transparent; border-right: 8px solid transparent;
+  border-top: 12px solid var(--warn);
+}
+.tl-playhead-grab:active::before { border-top-color: #fff; }
+@media (max-width: 900px) {
+  .tl-playhead-grab { width: 36px; height: 36px; left: -18px; }
+  .tl-playhead-grab::before { border-left-width: 11px; border-right-width: 11px; border-top-width: 16px; }
 }
 
 /* 씬 구분선 */
@@ -286,6 +301,28 @@ a:hover { text-decoration: underline; }
 .st-mobile-only  { display: none; }
 .st-desktop-only { display: inline-flex; }
 
+/* ===== 모바일 FAB (부유 토글 버튼) ===== */
+/* topbar 안에 두면 노치/Safari UI 가 가릴 수 있어 fixed FAB 로 분리. */
+.st-fab {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0) + 8px);
+  width: 44px; height: 44px;
+  padding: 0; font-size: 20px;
+  z-index: 70;
+  background: rgba(38, 42, 48, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  color: #fff;
+  display: none;            /* 모바일에서만 보임 — 미디어 쿼리에서 활성 */
+  align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  -webkit-tap-highlight-color: transparent;
+}
+.st-fab:active { background: rgba(78, 161, 255, 0.55); }
+.st-fab-left  { left:  calc(env(safe-area-inset-left, 0)  + 8px); }
+.st-fab-right { right: calc(env(safe-area-inset-right, 0) + 8px); }
+
 /* ===== 드로워 백드롭 ===== */
 .st-drawer-backdrop {
   position: fixed; inset: 0; z-index: 50;
@@ -323,31 +360,22 @@ a:hover { text-decoration: underline; }
   .st-mobile-only  { display: inline-flex; }
   .st-desktop-only { display: none; }
 
-  /* topbar — 노치/Dynamic Island 안전영역 위에 내려옴 */
-  .st-topbar {
-    padding: 0 8px;
-    padding-top: env(safe-area-inset-top, 0);
-    padding-left: calc(8px + env(safe-area-inset-left, 0));
-    padding-right: calc(8px + env(safe-area-inset-right, 0));
-    height: calc(48px + env(safe-area-inset-top, 0));
-    align-items: flex-end;
-    padding-bottom: 4px;
-  }
-  .st-brand  { font-size: 13px; }
-  .st-input-title { width: 100px; font-size: 12px; }
-  .st-topbar-left, .st-topbar-right { gap: 6px; }
+  /* 모바일에선 topbar 자체를 숨기고 FAB 두 개로 대체 */
+  .st-topbar { display: none; }
+  .st-fab { display: flex; }     /* FAB 켜기 */
   .st-tp { width: 40px; height: 40px; font-size: 16px; }
 
-  /* 본문: 빈/속성 패널 → 드로워. 스테이지가 풀폭. */
+  /* 본문: 빈/속성 패널 → 드로워. 스테이지가 풀폭. topbar 가 사라졌으니 그만큼 더 큼. */
   .st-body {
-    grid-template-columns: 1fr;       /* 빈/속성 숨김 → 스테이지만 */
+    grid-template-columns: 1fr;
     gap: 0;
-    height: calc(100dvh - 48px - env(safe-area-inset-top, 0) - 240px);
+    height: calc(100dvh - env(safe-area-inset-top, 0) - 240px);
+    padding-top: env(safe-area-inset-top, 0);  /* 상단 노치 아래에서 시작 */
   }
   .st-bin {
     position: fixed;
     left: 0;
-    top: calc(48px + env(safe-area-inset-top, 0));
+    top: env(safe-area-inset-top, 0);
     bottom: 0;
     width: min(280px, 82vw);
     z-index: 60;
@@ -359,7 +387,7 @@ a:hover { text-decoration: underline; }
   .st-props {
     position: fixed;
     right: 0;
-    top: calc(48px + env(safe-area-inset-top, 0));
+    top: env(safe-area-inset-top, 0);
     bottom: 0;
     width: min(300px, 88vw);
     z-index: 60;
@@ -368,7 +396,7 @@ a:hover { text-decoration: underline; }
     box-shadow: -4px 0 18px rgba(0, 0, 0, 0.5);
   }
   .st-props.st-open { transform: translateX(0); }
-  .st-drawer-backdrop { top: calc(48px + env(safe-area-inset-top, 0)); }
+  .st-drawer-backdrop { top: env(safe-area-inset-top, 0); }
 
   /* 트랜스포트 — 스크럽바를 별도 줄로 빼서 손가락 미세조정 가능 */
   .st-transport { display: grid; gap: 6px; padding: 6px 8px;

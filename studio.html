@@ -11,17 +11,19 @@
   <body>
     <header class="st-topbar">
       <div class="st-topbar-left">
-        <button id="btn-toggle-bin" class="st-btn st-btn-ghost st-mobile-only" type="button" title="미디어">📁</button>
         <strong class="st-brand">🎬 컷씬</strong>
         <input id="project-name" class="st-input st-input-title" type="text" value="새 컷씬" />
       </div>
       <div class="st-topbar-right">
-        <a class="st-link st-desktop-only" href="/">← 게임</a>
-        <button id="btn-import" class="st-btn st-desktop-only" type="button">📥 Import</button>
-        <button id="btn-export" class="st-btn st-btn-primary" type="button">💾</button>
-        <button id="btn-toggle-props" class="st-btn st-btn-ghost st-mobile-only" type="button" title="속성">⚙️</button>
+        <a class="st-link" href="/">← 게임</a>
+        <button id="btn-import" class="st-btn" type="button">📥 Import</button>
+        <button id="btn-export" class="st-btn st-btn-primary" type="button">💾 Export</button>
       </div>
     </header>
+
+    <!-- 모바일 전용 부유 토글 — 노치/Safari UI 위에 항상 떠 있어 가려지지 않음 -->
+    <button id="btn-toggle-bin"   class="st-fab st-fab-left"  type="button" aria-label="미디어 빈">📁</button>
+    <button id="btn-toggle-props" class="st-fab st-fab-right" type="button" aria-label="속성 패널">⚙️</button>
 
     <div class="st-body">
       <!-- 좌: 미디어 빈 -->

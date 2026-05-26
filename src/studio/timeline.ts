@@ -24,6 +24,40 @@ export function initTimeline(): void {
     state.rt.pxPerSec = parseInt(zoomIn.value, 10);
     notify();
   });
+  setupPinchZoom(body, zoomIn);
+}
+
+// 두 손가락 핀치 → pxPerSec 확대/축소. TouchEvent 로 처리 (PointerEvent capture 회피).
+function setupPinchZoom(target: HTMLElement, zoomIn: HTMLInputElement): void {
+  let basePx = 0;
+  let baseDist = 0;
+  let active = false;
+  target.addEventListener('touchstart', (e) => {
+    if (e.touches.length >= 2) {
+      const a = e.touches[0], b = e.touches[1];
+      baseDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      basePx = state.rt.pxPerSec;
+      active = true;
+    }
+  }, { passive: true });
+  target.addEventListener('touchmove', (e) => {
+    if (active && e.touches.length >= 2) {
+      e.preventDefault();
+      const a = e.touches[0], b = e.touches[1];
+      const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      if (baseDist > 5) {
+        const nextPx = clamp(basePx * (dist / baseDist), 20, 600);
+        state.rt.pxPerSec = nextPx;
+        zoomIn.value = String(Math.round(nextPx));
+        notify();
+      }
+    }
+  }, { passive: false });
+  const end = (e: TouchEvent) => {
+    if (e.touches.length < 2) active = false;
+  };
+  target.addEventListener('touchend', end);
+  target.addEventListener('touchcancel', end);
 }
 
 export function renderTimeline(): void {
@@ -41,10 +75,25 @@ export function renderTimeline(): void {
   for (const trk of scene.tracks) body.appendChild(makeCharTrack(trk, px));
   body.appendChild(makeBubblesTrack(scene.bubbles, px));
 
-  // 플레이헤드 (전체 위에 floating)
+  // 플레이헤드 (전체 위에 floating) — 위쪽에 ‘잡이’ 가 있어 드래그하면 scrub.
   const ph = document.createElement('div');
   ph.className = 'tl-playhead';
   ph.style.left = (LABEL_W + state.rt.sceneTime * px) + 'px';
+  const grab = document.createElement('div');
+  grab.className = 'tl-playhead-grab';
+  grab.title = '드래그해서 시간 이동';
+  grab.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const seekAt = (clientX: number) => {
+      const r = body.getBoundingClientRect();
+      const contentX = clientX - r.left + body.scrollLeft;
+      seek((contentX - LABEL_W) / px);
+    };
+    seekAt(e.clientX);
+    startPointerDrag(e, grab, (cx) => seekAt(cx));
+  });
+  ph.appendChild(grab);
   body.appendChild(ph);
 }
 
