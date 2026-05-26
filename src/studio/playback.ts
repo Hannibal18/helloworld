@@ -145,18 +145,16 @@ function advance(dt: number): void {
     }
   }
 
-  // 4) 씬 끝 도달
-  if (state.rt.sceneTime >= scene.duration) {
-    if (state.rt.recording) {
-      // 녹화는 씬 끝에서 자동 stop.
-      stopRecord();
-      state.rt.playing = false;
-      state.rt.sceneTime = scene.duration;
-    } else {
-      // 다음 씬으로 (있으면) — MVP 에선 우선 정지.
-      state.rt.playing = false;
-      state.rt.sceneTime = scene.duration;
+  // 4) 씬 끝 처리
+  if (state.rt.recording) {
+    // 녹화는 사용자가 정지(⏺) 누를 때까지 계속 — 씬 길이는 sceneTime 에 맞춰 자동 확장
+    if (state.rt.sceneTime > scene.duration) {
+      scene.duration = Math.ceil(state.rt.sceneTime * 10) / 10; // 0.1s 단위로 올림
     }
+  } else if (state.rt.sceneTime >= scene.duration) {
+    // 재생만 — 끝나면 정지
+    state.rt.playing = false;
+    state.rt.sceneTime = scene.duration;
   }
 
   notify();
@@ -263,10 +261,15 @@ export function stopRecord(): void {
   if (!state.rt.recording) return;
   state.rt.recording = false;
   state.rt.playing = false;     // 녹화 중단 시 재생도 멈춤 — 사용자 멘탈모델 일치
-  // 마지막 위치 한 번 더 저장
-  const trk = trackById(activeScene(), state.rt.armedTrackId);
+  const scene = activeScene();
+  const trk = trackById(scene, state.rt.armedTrackId);
   if (trk) {
+    // 마지막 위치 한 번 더 저장
     trk.keyframes.push({ t: state.rt.sceneTime, x: liveX, y: liveY, dir: liveDir, walk: false });
+  }
+  // 씬 길이를 녹화 끝까지 확장 (이미 advance 에서 확장 중이지만 안전망)
+  if (state.rt.sceneTime > scene.duration) {
+    scene.duration = Math.ceil(state.rt.sceneTime * 10) / 10;
   }
   notify();
 }
