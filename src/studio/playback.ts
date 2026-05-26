@@ -17,7 +17,7 @@ import { inputVector, initKeyboard } from './input';
 
 const SPEED = 120;            // px / sec (게임의 이동 속도와 비슷)
 const CAM_SPEED = 200;        // 카메라 패닝 속도 (px/sec, 조이스틱 최대 입력 시)
-const REC_SAMPLE_HZ = 30;     // 키프레임 샘플 레이트
+const REC_SAMPLE_HZ = 60;     // 키프레임 샘플 레이트 (60 = 부드러움, JSON 2배)
 const COUNTDOWN_SEC = 3;      // 녹화 시작 전 카운트다운
 
 let lastNow = performance.now();
