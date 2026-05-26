@@ -14,7 +14,6 @@ export default defineConfig({
         momWar: 'mom-war.html',
         cops: 'cops.html',
         dashboard: 'dashboard.html',
-        studio: 'studio.html',
       },
     },
   },
