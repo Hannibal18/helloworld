@@ -29,25 +29,32 @@ function setupCamZoomButtons(): void {
     wrap.classList.toggle('hidden', !show);
   });
 
+  // 줌 속도: 누르고 있는 동안 초당 ZOOM_RATE 만큼 doubling. 1.0 = 1초당 2배.
+  const ZOOM_RATE = 1.0;
   const hold = (btn: HTMLElement, sign: number) => {
     let pressed = false;
-    let timer: number | null = null;
-    const step = () => adjustLiveCamZoom(sign > 0 ? 1.06 : 1 / 1.06);
+    let rafId: number | null = null;
+    let lastT = 0;
+    const tick = (now: number) => {
+      if (!pressed) return;
+      const dt = Math.min(0.1, (now - lastT) / 1000);
+      lastT = now;
+      // factor = 2^(sign · rate · dt). 매 프레임 작은 폭으로 곱해 연속적으로 변화.
+      adjustLiveCamZoom(Math.pow(2, sign * ZOOM_RATE * dt));
+      rafId = requestAnimationFrame(tick);
+    };
     const start = (e: Event) => {
       e.preventDefault();
       if (pressed) return;
       pressed = true;
-      step();
-      // 200ms 후부터 연속 반복
-      timer = window.setTimeout(() => {
-        timer = window.setInterval(step, 70) as unknown as number;
-      }, 200) as unknown as number;
+      lastT = performance.now();
+      // 첫 탭에서 작은 즉시 변화 (피드백)
+      adjustLiveCamZoom(sign > 0 ? 1.04 : 1 / 1.04);
+      rafId = requestAnimationFrame(tick);
     };
     const end = () => {
       pressed = false;
-      if (timer !== null) {
-        window.clearTimeout(timer); window.clearInterval(timer); timer = null;
-      }
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     };
     btn.addEventListener('pointerdown', start);
     btn.addEventListener('pointerup', end);

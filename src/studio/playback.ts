@@ -35,7 +35,7 @@ export function getLiveCam(): { x: number; y: number; zoom: number } {
 }
 export function adjustLiveCamZoom(factor: number): void {
   liveCamZoom = clamp(liveCamZoom * factor, 0.2, 6);
-  notify();
+  // stage 가 매 프레임 다시 그리므로 시각적으로 즉시 반영. notify() 호출 안 함 (UI 부담 회피).
 }
 
 // 녹화 중인 캐릭터의 라이브 상태 (sampleTrack 으로 못 얻으니 별도 유지)
