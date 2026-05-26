@@ -5,14 +5,57 @@
 
 import { state, subscribe } from './state';
 import { setStick, isTouchDevice } from './input';
+import { adjustLiveCamZoom, CAMERA_ARMED_ID } from './playback';
 
 export function initTouch(): void {
   setupDrawers();
   setupStick();
+  setupCamZoomButtons();
   // iOS Safari 의 더블탭 줌 / 핀치 줌 차단은 viewport meta 로 일부 처리됨.
   // 추가로 게임 영역만 touch-action: none 으로 (CSS 에 이미 적용).
   // 당겨새로고침 방지 — body overscroll 차단.
   document.documentElement.style.overscrollBehavior = 'none';
+}
+
+// ===== 카메라 줌 버튼 (+/-) — armed '__camera__' 일 때만 표시 =====
+function setupCamZoomButtons(): void {
+  const wrap = document.getElementById('cam-zoom-ctrl');
+  const inBtn = document.getElementById('cam-zoom-in');
+  const outBtn = document.getElementById('cam-zoom-out');
+  if (!wrap || !inBtn || !outBtn) return;
+
+  subscribe(() => {
+    const show = state.rt.armedTrackId === CAMERA_ARMED_ID;
+    wrap.classList.toggle('hidden', !show);
+  });
+
+  const hold = (btn: HTMLElement, sign: number) => {
+    let pressed = false;
+    let timer: number | null = null;
+    const step = () => adjustLiveCamZoom(sign > 0 ? 1.06 : 1 / 1.06);
+    const start = (e: Event) => {
+      e.preventDefault();
+      if (pressed) return;
+      pressed = true;
+      step();
+      // 200ms 후부터 연속 반복
+      timer = window.setTimeout(() => {
+        timer = window.setInterval(step, 70) as unknown as number;
+      }, 200) as unknown as number;
+    };
+    const end = () => {
+      pressed = false;
+      if (timer !== null) {
+        window.clearTimeout(timer); window.clearInterval(timer); timer = null;
+      }
+    };
+    btn.addEventListener('pointerdown', start);
+    btn.addEventListener('pointerup', end);
+    btn.addEventListener('pointercancel', end);
+    btn.addEventListener('pointerleave', end);
+  };
+  hold(inBtn, +1);
+  hold(outBtn, -1);
 }
 
 // ===== 드로워 =====

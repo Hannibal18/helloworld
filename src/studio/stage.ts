@@ -9,6 +9,7 @@ import type { TileMap } from '../map';
 import { drawCharacter, prescaleCharacter, CHAR_W } from '../sprites';
 import { clamp, lerp, easeInOut } from './util';
 import { getStick } from './input';
+import { CAMERA_ARMED_ID, getLiveCam } from './playback';
 
 // ===== 캔버스 셋업 =====
 
@@ -111,6 +112,11 @@ export function sampleTrack(track: CharTrack, t: number): { x: number; y: number
 interface CamState { x: number; y: number; zoom: number; }
 
 export function sampleCamera(scene: Scene, t: number, fallbackCx: number, fallbackCy: number): CamState {
+  // 카메라가 활성(armed)인 동안 — 녹화/자유이동 중이라면 라이브 값으로 즉시 그림.
+  // (재생 중 + !녹화 면 키프레임을 따라야 하니 라이브 override 안 함)
+  if (state.rt.armedTrackId === CAMERA_ARMED_ID && (state.rt.recording || !state.rt.playing)) {
+    return getLiveCam();
+  }
   const ks = scene.camera.keyframes;
   // 카메라 키프레임이 없을 때:
   //   - 활성(armed) 트랙이 있으면 → 그 캐릭터를 따라감 (편집 중 시야 확보)

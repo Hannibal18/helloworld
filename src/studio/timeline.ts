@@ -164,7 +164,23 @@ function makeLabel(icon: string, text: string): HTMLElement {
 function makeCameraTrack(keys: CameraKey[], px: number): HTMLElement {
   const row = document.createElement('div');
   row.className = 'tl-track';
-  const label = makeLabel('🎥', 'Camera');
+  const label = document.createElement('div');
+  label.className = 'tl-track-label';
+  const dot = document.createElement('span');
+  dot.className = 'dot' + (state.rt.armedTrackId === '__camera__' ? ' armed' : '');
+  dot.title = '카메라 ON — 조이스틱 = 패닝, +/- = 줌';
+  dot.addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.rt.armedTrackId = state.rt.armedTrackId === '__camera__' ? null : '__camera__';
+    notify();
+  });
+  label.appendChild(dot);
+  const ico = document.createElement('span');
+  ico.className = 'ico'; ico.textContent = '🎥';
+  label.appendChild(ico);
+  const name = document.createElement('span');
+  name.className = 'name'; name.textContent = 'Camera';
+  label.appendChild(name);
   label.addEventListener('click', () => { state.rt.selectedTrackId = '__camera__'; notify(); });
   row.appendChild(label);
 

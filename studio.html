@@ -49,9 +49,14 @@
             <span id="hud-time">0.00s / 0.00s</span>
             <span id="hud-record" class="st-hud-rec hidden">● REC</span>
           </div>
-          <!-- 가상 조이스틱 — 모바일에서 트랙 활성화(armed)면 표시 -->
+          <!-- 가상 조이스틱 — 트랙 활성화(armed)면 표시. 캐릭터는 캐릭터를, 카메라는 카메라를 조종 -->
           <div id="touch-stick" class="st-stick hidden" aria-hidden="true">
             <div id="touch-stick-knob" class="st-stick-knob"></div>
+          </div>
+          <!-- 카메라 줌 컨트롤 — armedTrackId === '__camera__' 일 때만 표시 -->
+          <div id="cam-zoom-ctrl" class="st-cam-zoom hidden">
+            <button id="cam-zoom-in"  type="button" aria-label="줌 인">＋</button>
+            <button id="cam-zoom-out" type="button" aria-label="줌 아웃">－</button>
           </div>
         </div>
         <div class="st-transport">

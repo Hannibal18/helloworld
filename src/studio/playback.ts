@@ -11,11 +11,12 @@
 import { state, notify, activeScene, trackById } from './state';
 import type { Dir } from '../types';
 import { isBlocked } from '../map';
-import { currentMap, sampleTrack } from './stage';
+import { currentMap, sampleTrack, sampleCamera } from './stage';
 import { clamp, showToast } from './util';
 import { inputVector, initKeyboard } from './input';
 
 const SPEED = 120;            // px / sec (게임의 이동 속도와 비슷)
+const CAM_SPEED = 200;        // 카메라 패닝 속도 (px/sec, 조이스틱 최대 입력 시)
 const REC_SAMPLE_HZ = 30;     // 키프레임 샘플 레이트
 const COUNTDOWN_SEC = 3;      // 녹화 시작 전 카운트다운
 
@@ -23,6 +24,19 @@ let lastNow = performance.now();
 let lastSample = -1;          // sceneTime 기준 마지막 샘플 시각
 let countdownStart = 0;       // performance.now() 기준
 let lastArmedId: string | null = null;   // armed 트랙 바뀔 때 liveX/Y 재동기화
+
+// 카메라 라이브 상태 — armed '__camera__' 일 때 조이스틱/줌 버튼이 갱신
+export const CAMERA_ARMED_ID = '__camera__';
+let liveCamX = 0;
+let liveCamY = 0;
+let liveCamZoom = 1;
+export function getLiveCam(): { x: number; y: number; zoom: number } {
+  return { x: liveCamX, y: liveCamY, zoom: liveCamZoom };
+}
+export function adjustLiveCamZoom(factor: number): void {
+  liveCamZoom = clamp(liveCamZoom * factor, 0.2, 6);
+  notify();
+}
 
 // 녹화 중인 캐릭터의 라이브 상태 (sampleTrack 으로 못 얻으니 별도 유지)
 let liveX = 0;
@@ -60,9 +74,9 @@ function loop(now: number): void {
   if (state.rt.playing || state.rt.recording) {
     advance(dt);
   } else if (state.rt.armedTrackId && !state.rt.countingDown) {
-    // 자유 이동 모드 — 녹화 안 해도 조이스틱으로 캐릭터 위치 잡기.
-    // 시간은 안 흐르고, 키프레임도 안 쌓고, startX/Y 만 갱신됨.
-    freeMove(dt);
+    // 자유 이동 모드 — 녹화 안 해도 조이스틱으로 활성 대상 조종.
+    if (state.rt.armedTrackId === CAMERA_ARMED_ID) freeMoveCamera(dt);
+    else                                            freeMove(dt);
   }
   requestAnimationFrame(loop);
 }
@@ -97,34 +111,75 @@ function freeMove(dt: number): void {
   notify();
 }
 
+function freeMoveCamera(dt: number): void {
+  const scene = activeScene();
+  // 활성 대상이 막 카메라로 바뀌었으면 liveCam 을 현재 보간/맵 중앙 으로 초기화
+  if (lastArmedId !== CAMERA_ARMED_ID) {
+    lastArmedId = CAMERA_ARMED_ID;
+    const ks = scene.camera.keyframes;
+    if (ks.length > 0) {
+      // 마지막 키프 위치/줌으로 시작
+      const last = ks[ks.length - 1];
+      liveCamX = last.x; liveCamY = last.y; liveCamZoom = last.zoom;
+    } else {
+      const map = currentMap();
+      liveCamX = map ? map.pixelW / 2 : 240;
+      liveCamY = map ? map.pixelH / 2 : 135;
+      liveCamZoom = 1;
+    }
+  }
+  const v = inputVector();
+  const mag = Math.hypot(v.x, v.y);
+  if (mag <= 0.05) return;
+  const norm = mag > 1 ? mag : 1;
+  const speed = CAM_SPEED * Math.min(1, mag);
+  const z = Math.max(0.3, liveCamZoom);
+  liveCamX += (v.x / norm) * (speed / z) * dt;
+  liveCamY += (v.y / norm) * (speed / z) * dt;
+  notify();
+}
+
 function advance(dt: number): void {
   const scene = activeScene();
+  const isCamArmed = state.rt.armedTrackId === CAMERA_ARMED_ID;
 
-  // 1) 활성 캐릭터 입력 처리 (녹화 중일 때만) — 키보드 + 조이스틱 합산
+  // 1) 활성 대상 입력 처리 (녹화 중일 때만)
   if (state.rt.recording && state.rt.armedTrackId) {
-    const trk = trackById(scene, state.rt.armedTrackId);
-    if (trk) {
+    if (isCamArmed) {
+      // 카메라 패닝 — 조이스틱은 카메라 픽셀 속도
       const v = inputVector();
-      const dx = v.x, dy = v.y;
-      const mag = Math.hypot(dx, dy);
-      liveWalk = mag > 0.05;
+      const mag = Math.hypot(v.x, v.y);
       if (mag > 0.05) {
-        const norm = mag > 1 ? mag : 1; // 조이스틱은 이미 단위벡터 — 합산 시 1 초과만 정규화
-        const ux = dx / norm, uy = dy / norm;
-        const speed = SPEED * Math.min(1, mag); // 아날로그: 적게 밀면 천천히
-        const nx = liveX + ux * speed * dt;
-        const ny = liveY + uy * speed * dt;
-        // 충돌 (옵션) — 발박스 16x8 정도.
-        const map = currentMap();
-        const blocked = !!map && isBlocked(map, nx, ny, 8, 4);
-        if (!blocked) {
-          // X / Y 분리 슬라이드.
-          if (!map || !isBlocked(map, nx, liveY, 8, 4)) liveX = nx;
-          if (!map || !isBlocked(map, liveX, ny, 8, 4)) liveY = ny;
+        const norm = mag > 1 ? mag : 1;
+        const speed = CAM_SPEED * Math.min(1, mag);
+        // 카메라 줌에 반비례 → 줌인 상태에선 천천히 패닝 (체감 일관성)
+        const z = Math.max(0.3, liveCamZoom);
+        liveCamX += (v.x / norm) * (speed / z) * dt;
+        liveCamY += (v.y / norm) * (speed / z) * dt;
+      }
+    } else {
+      // 캐릭터 이동
+      const trk = trackById(scene, state.rt.armedTrackId);
+      if (trk) {
+        const v = inputVector();
+        const dx = v.x, dy = v.y;
+        const mag = Math.hypot(dx, dy);
+        liveWalk = mag > 0.05;
+        if (mag > 0.05) {
+          const norm = mag > 1 ? mag : 1;
+          const ux = dx / norm, uy = dy / norm;
+          const speed = SPEED * Math.min(1, mag);
+          const nx = liveX + ux * speed * dt;
+          const ny = liveY + uy * speed * dt;
+          const map = currentMap();
+          const blocked = !!map && isBlocked(map, nx, ny, 8, 4);
+          if (!blocked) {
+            if (!map || !isBlocked(map, nx, liveY, 8, 4)) liveX = nx;
+            if (!map || !isBlocked(map, liveX, ny, 8, 4)) liveY = ny;
+          }
+          if (Math.abs(dx) > Math.abs(dy)) liveDir = dx > 0 ? 'right' : 'left';
+          else                              liveDir = dy > 0 ? 'down'  : 'up';
         }
-        // 방향
-        if (Math.abs(dx) > Math.abs(dy)) liveDir = dx > 0 ? 'right' : 'left';
-        else                              liveDir = dy > 0 ? 'down'  : 'up';
       }
     }
   }
@@ -136,10 +191,14 @@ function advance(dt: number): void {
   if (state.rt.recording && state.rt.armedTrackId) {
     const t = state.rt.sceneTime;
     if (lastSample < 0 || t - lastSample > 1 / REC_SAMPLE_HZ) {
-      const trk = trackById(scene, state.rt.armedTrackId);
-      if (trk) {
-        trk.keyframes.push({ t, x: liveX, y: liveY, dir: liveDir, walk: liveWalk });
-        trk.recorded = true;
+      if (isCamArmed) {
+        scene.camera.keyframes.push({ t, x: liveCamX, y: liveCamY, zoom: liveCamZoom, ease: 'linear' });
+      } else {
+        const trk = trackById(scene, state.rt.armedTrackId);
+        if (trk) {
+          trk.keyframes.push({ t, x: liveX, y: liveY, dir: liveDir, walk: liveWalk });
+          trk.recorded = true;
+        }
       }
       lastSample = t;
     }
@@ -195,45 +254,73 @@ export function toggleRecord(): void {
 //   - t 가 마지막 키프 이후 → 기존 키프 보존, 마지막 위치/방향에서 이어
 export function startRecord(): void {
   const scene = activeScene();
-  const trk = trackById(scene, state.rt.armedTrackId);
-  if (!trk) {
+  const isCamArmed = state.rt.armedTrackId === CAMERA_ARMED_ID;
+  const trk = !isCamArmed ? trackById(scene, state.rt.armedTrackId) : null;
+
+  if (!isCamArmed && !trk) {
     console.warn('녹화 대상 트랙이 선택되지 않음');
     return;
   }
 
   const T = state.rt.sceneTime;
-  const ks = trk.keyframes;
-  const hasKf = ks.length > 0;
-  const lastT = hasKf ? ks[ks.length - 1].t : 0;
   const APPEND_EPS = 0.05;
 
-  if (!hasKf || T <= APPEND_EPS) {
-    // === 새 녹화 ===
-    trk.keyframes = [];
-    trk.recorded = false;
-    liveX = trk.startX;
-    liveY = trk.startY;
-    liveDir = trk.startDir;
-    state.rt.sceneTime = 0;
-    lastSample = -1;
-    showToast('🆕 새 녹화 — 처음부터');
-  } else if (T >= lastT - APPEND_EPS) {
-    // === 이어 녹화 (끝에서) — 마지막 위치/방향 유지 ===
-    const last = ks[ks.length - 1];
-    liveX = last.x; liveY = last.y; liveDir = last.dir;
-    // sceneTime 은 그대로 (사용자가 멈춘 시점). lastSample 도 마지막 키프로 설정해
-    // 즉시 다음 키프가 너무 가까이 쌓이지 않게.
-    lastSample = last.t;
-    showToast(`▶ ${T.toFixed(1)}s 부터 이어 녹화`);
-  } else {
-    // === 중간부터 덮어쓰기 — 그 시점 이후 키프 삭제, 보간 위치에서 출발 ===
-    const sm = sampleTrack(trk, T);
-    trk.keyframes = ks.filter((k) => k.t < T);
-    liveX = sm.x; liveY = sm.y; liveDir = sm.dir;
-    lastSample = T;
-    showToast(`✂ ${T.toFixed(1)}s 부터 다시 녹화`);
+  if (isCamArmed) {
+    // ===== 카메라 녹화 =====
+    const ks = scene.camera.keyframes;
+    const hasKf = ks.length > 0;
+    const lastT = hasKf ? ks[ks.length - 1].t : 0;
+    if (!hasKf || T <= APPEND_EPS) {
+      // 새 녹화 — 현재 liveCam 위치/줌에서 시작 (freeMove 결과 보존)
+      scene.camera.keyframes = [];
+      state.rt.sceneTime = 0;
+      lastSample = -1;
+      showToast('🆕 카메라 새 녹화');
+    } else if (T >= lastT - APPEND_EPS) {
+      const last = ks[ks.length - 1];
+      liveCamX = last.x; liveCamY = last.y; liveCamZoom = last.zoom;
+      lastSample = last.t;
+      showToast(`▶ 카메라 ${T.toFixed(1)}s 부터 이어 녹화`);
+    } else {
+      // 중간부터 덮어쓰기 — 그 시점 보간 위치/줌에서 출발
+      // sampleCamera 는 fallback 인자가 필요 — 적당히 맵 중앙
+      const map = currentMap();
+      const fx = map ? map.pixelW / 2 : 240;
+      const fy = map ? map.pixelH / 2 : 135;
+      const sm = sampleCamera(scene, T, fx, fy);
+      scene.camera.keyframes = ks.filter((k) => k.t < T);
+      liveCamX = sm.x; liveCamY = sm.y; liveCamZoom = sm.zoom;
+      lastSample = T;
+      showToast(`✂ 카메라 ${T.toFixed(1)}s 부터 다시 녹화`);
+    }
+  } else if (trk) {
+    // ===== 캐릭터 녹화 =====
+    const ks = trk.keyframes;
+    const hasKf = ks.length > 0;
+    const lastT = hasKf ? ks[ks.length - 1].t : 0;
+    if (!hasKf || T <= APPEND_EPS) {
+      trk.keyframes = [];
+      trk.recorded = false;
+      liveX = trk.startX;
+      liveY = trk.startY;
+      liveDir = trk.startDir;
+      state.rt.sceneTime = 0;
+      lastSample = -1;
+      showToast('🆕 새 녹화 — 처음부터');
+    } else if (T >= lastT - APPEND_EPS) {
+      const last = ks[ks.length - 1];
+      liveX = last.x; liveY = last.y; liveDir = last.dir;
+      lastSample = last.t;
+      showToast(`▶ ${T.toFixed(1)}s 부터 이어 녹화`);
+    } else {
+      const sm = sampleTrack(trk, T);
+      trk.keyframes = ks.filter((k) => k.t < T);
+      liveX = sm.x; liveY = sm.y; liveDir = sm.dir;
+      lastSample = T;
+      showToast(`✂ ${T.toFixed(1)}s 부터 다시 녹화`);
+    }
+    liveWalk = false;
   }
-  liveWalk = false;
 
   state.rt.recording = false;
   state.rt.playing = false;
@@ -262,17 +349,20 @@ export function stopRecord(): void {
   state.rt.recording = false;
   state.rt.playing = false;     // 녹화 중단 시 재생도 멈춤 — 사용자 멘탈모델 일치
   const scene = activeScene();
-  const trk = trackById(scene, state.rt.armedTrackId);
-  if (trk) {
-    // 마지막 위치 한 번 더 저장
-    trk.keyframes.push({ t: state.rt.sceneTime, x: liveX, y: liveY, dir: liveDir, walk: false });
+  const isCamArmed = state.rt.armedTrackId === CAMERA_ARMED_ID;
+  if (isCamArmed) {
+    scene.camera.keyframes.push({ t: state.rt.sceneTime, x: liveCamX, y: liveCamY, zoom: liveCamZoom, ease: 'linear' });
+    showToast(`✓ 카메라 ${state.rt.sceneTime.toFixed(1)}초 녹화 (${scene.camera.keyframes.length}키프레임)`, 'ok', 2500);
+  } else {
+    const trk = trackById(scene, state.rt.armedTrackId);
+    if (trk) {
+      trk.keyframes.push({ t: state.rt.sceneTime, x: liveX, y: liveY, dir: liveDir, walk: false });
+      showToast(`✓ ${state.rt.sceneTime.toFixed(1)}초 녹화 완료 (${trk.keyframes.length}키프레임)`, 'ok', 2500);
+    }
   }
   // 씬 길이를 녹화 끝까지 확장 (이미 advance 에서 확장 중이지만 안전망)
   if (state.rt.sceneTime > scene.duration) {
     scene.duration = Math.ceil(state.rt.sceneTime * 10) / 10;
-  }
-  if (trk) {
-    showToast(`✓ ${state.rt.sceneTime.toFixed(1)}초 녹화 완료 (${trk.keyframes.length}키프레임)`, 'ok', 2500);
   }
   notify();
 }
