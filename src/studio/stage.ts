@@ -8,6 +8,7 @@ import { loadMap, drawTileLayer } from '../map';
 import type { TileMap } from '../map';
 import { drawCharacter, prescaleCharacter, CHAR_W } from '../sprites';
 import { clamp, lerp, easeInOut } from './util';
+import { getStick } from './input';
 
 // ===== 캔버스 셋업 =====
 
@@ -233,6 +234,40 @@ function render(): void {
   // 카운트다운 — 녹화 시작 직전 3-2-1
   if (state.rt.countingDown) drawCountdown(state.rt.countdownT, cssW, cssH);
 
+  // 디버그 — 녹화/카운트다운/활성 시 입력 상태 표시 (조이스틱 동작 확인용)
+  if (state.rt.recording || state.rt.countingDown || state.rt.armedTrackId) {
+    drawDebug(scene, t, cssW, cssH);
+  }
+
+  ctx.restore();
+}
+
+function drawDebug(scene: Scene, t: number, w: number, _h: number): void {
+  const s = getStick();
+  const trk = state.rt.armedTrackId ? trackById(scene, state.rt.armedTrackId) : null;
+  let liveStr = '';
+  if (trk) {
+    const sm = sampleTrack(trk, t);
+    liveStr = ` live=(${sm.x.toFixed(0)},${sm.y.toFixed(0)}) walk=${sm.walk ? 'Y' : 'N'}`;
+  }
+  const line1 = `stick=(${s.x.toFixed(2)}, ${s.y.toFixed(2)})${liveStr}`;
+  const line2 = `rec=${state.rt.recording ? 'ON' : 'off'} play=${state.rt.playing ? 'ON' : 'off'} cnt=${state.rt.countingDown ? state.rt.countdownT.toFixed(1) : '-'} keys=${trk?.keyframes.length ?? 0}`;
+  ctx.save();
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.textBaseline = 'top';
+  const pad = 6;
+  const lines = [line1, line2];
+  const wid = Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2;
+  const hi = 16 * lines.length + pad * 2;
+  // 상단 가운데
+  const x = (w - wid) / 2;
+  const y = 28;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillRect(x, y, wid, hi);
+  ctx.fillStyle = '#7df';
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], x + pad, y + pad + i * 16);
+  }
   ctx.restore();
 }
 

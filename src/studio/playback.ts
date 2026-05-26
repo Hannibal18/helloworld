@@ -198,6 +198,7 @@ function cancelCountdown(): void {
 export function stopRecord(): void {
   if (!state.rt.recording) return;
   state.rt.recording = false;
+  state.rt.playing = false;     // 녹화 중단 시 재생도 멈춤 — 사용자 멘탈모델 일치
   // 마지막 위치 한 번 더 저장
   const trk = trackById(activeScene(), state.rt.armedTrackId);
   if (trk) {

@@ -39,6 +39,11 @@ export function isAnyInputPressed(): boolean {
   return keys.size > 0 || Math.hypot(stickX, stickY) > 0.05;
 }
 
+/** 디버그용 — 현재 stick 값 보기. */
+export function getStick(): { x: number; y: number } {
+  return { x: stickX, y: stickY };
+}
+
 export function isTouchDevice(): boolean {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 }
