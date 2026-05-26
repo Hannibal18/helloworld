@@ -11,8 +11,8 @@
 import { state, notify, activeScene, trackById } from './state';
 import type { Dir } from '../types';
 import { isBlocked } from '../map';
-import { currentMap } from './stage';
-import { clamp } from './util';
+import { currentMap, sampleTrack } from './stage';
+import { clamp, showToast } from './util';
 import { inputVector, initKeyboard } from './input';
 
 const SPEED = 120;            // px / sec (게임의 이동 속도와 비슷)
@@ -190,6 +190,11 @@ export function toggleRecord(): void {
 
 // 외부에서 호출하는 record 시작 — 사용자 입장에선 '⏺ 누름'.
 // 실제로는 카운트다운을 켜고, 끝나면 doStartRecord() 가 진짜 녹화 시작.
+//
+// 모드는 재생헤드(sceneTime) 위치에 따라 자동 결정:
+//   - t ≤ 0 또는 키프 없음 → 새 녹화 (키프 비움, startX/Y 에서 시작)
+//   - t 가 녹화 중간       → 그 시점 이후 키프 잘라내고 보간 위치/방향에서 이어
+//   - t 가 마지막 키프 이후 → 기존 키프 보존, 마지막 위치/방향에서 이어
 export function startRecord(): void {
   const scene = activeScene();
   const trk = trackById(scene, state.rt.armedTrackId);
@@ -197,31 +202,55 @@ export function startRecord(): void {
     console.warn('녹화 대상 트랙이 선택되지 않음');
     return;
   }
-  // 카운트다운 동안 캐릭터가 startX/Y 에 정지해 보이도록 기존 키프레임 비움.
-  trk.keyframes = [];
-  trk.recorded = false;
-  liveX = trk.startX;
-  liveY = trk.startY;
-  liveDir = trk.startDir;
+
+  const T = state.rt.sceneTime;
+  const ks = trk.keyframes;
+  const hasKf = ks.length > 0;
+  const lastT = hasKf ? ks[ks.length - 1].t : 0;
+  const APPEND_EPS = 0.05;
+
+  if (!hasKf || T <= APPEND_EPS) {
+    // === 새 녹화 ===
+    trk.keyframes = [];
+    trk.recorded = false;
+    liveX = trk.startX;
+    liveY = trk.startY;
+    liveDir = trk.startDir;
+    state.rt.sceneTime = 0;
+    lastSample = -1;
+    showToast('🆕 새 녹화 — 처음부터');
+  } else if (T >= lastT - APPEND_EPS) {
+    // === 이어 녹화 (끝에서) — 마지막 위치/방향 유지 ===
+    const last = ks[ks.length - 1];
+    liveX = last.x; liveY = last.y; liveDir = last.dir;
+    // sceneTime 은 그대로 (사용자가 멈춘 시점). lastSample 도 마지막 키프로 설정해
+    // 즉시 다음 키프가 너무 가까이 쌓이지 않게.
+    lastSample = last.t;
+    showToast(`▶ ${T.toFixed(1)}s 부터 이어 녹화`);
+  } else {
+    // === 중간부터 덮어쓰기 — 그 시점 이후 키프 삭제, 보간 위치에서 출발 ===
+    const sm = sampleTrack(trk, T);
+    trk.keyframes = ks.filter((k) => k.t < T);
+    liveX = sm.x; liveY = sm.y; liveDir = sm.dir;
+    lastSample = T;
+    showToast(`✂ ${T.toFixed(1)}s 부터 다시 녹화`);
+  }
   liveWalk = false;
-  state.rt.sceneTime = 0;
+
   state.rt.recording = false;
   state.rt.playing = false;
   state.rt.countingDown = true;
   state.rt.countdownT = COUNTDOWN_SEC;
   countdownStart = performance.now();
   lastNow = performance.now();
-  lastSample = -1;
   notify();
 }
 
 function doStartRecord(): void {
   state.rt.recording = true;
   state.rt.playing = true;
-  state.rt.sceneTime = 0;
+  // sceneTime, lastSample, liveX/Y/Dir 는 startRecord 에서 이미 모드별로 설정됨 — 건드리지 않음.
   lastNow = performance.now();
-  lastSample = -1;
-  // liveX/Y/Dir 는 startRecord 에서 이미 설정됨 — 카운트다운 동안 변경되지 않으니 그대로 사용.
 }
 
 function cancelCountdown(): void {
