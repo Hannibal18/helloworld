@@ -271,6 +271,9 @@ export function stopRecord(): void {
   if (state.rt.sceneTime > scene.duration) {
     scene.duration = Math.ceil(state.rt.sceneTime * 10) / 10;
   }
+  if (trk) {
+    showToast(`✓ ${state.rt.sceneTime.toFixed(1)}초 녹화 완료 (${trk.keyframes.length}키프레임)`, 'ok', 2500);
+  }
   notify();
 }
 

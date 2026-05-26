@@ -7,10 +7,12 @@ import { initTimeline, renderTimeline } from './timeline';
 import { initProps, renderProps } from './props';
 import { initScenes, renderScenes } from './scenes';
 import { initPlayback, togglePlay, toggleRecord, seek, setActiveStartPos } from './playback';
-import { initExport } from './export';
+import { initExport, serialize, importProject } from './export';
 import { syncBgm } from './audio';
 import { initTouch } from './touch';
 import { clamp, showToast } from './util';
+
+const AUTOSAVE_KEY = 'studio:project:v1';
 
 function ready(fn: () => void): void {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
@@ -29,6 +31,20 @@ ready(() => {
   });
 
   loadBuiltinAssets();
+
+  // localStorage 복원 — 빈 (builtin assets) 로드된 직후에 시도해야 자산 매칭됨.
+  try {
+    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    if (raw) {
+      const json = JSON.parse(raw);
+      if (json && json.version === 1) {
+        importProject(json);
+        showToast('📁 이전 작업 복원됨');
+      }
+    }
+  } catch (e) {
+    console.warn('[studio:autosave] 복원 실패', e);
+  }
 
   initBinUI();
   initStage();
@@ -163,6 +179,21 @@ ready(() => {
   }
   requestAnimationFrame(tick);
 
+  // ===== 자동 저장 (디바운스 600ms) =====
+  let saveTimer: number | null = null;
+  const scheduleSave = (): void => {
+    if (saveTimer !== null) window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      try {
+        const data = serialize(state.project);
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(data));
+      } catch (e) {
+        console.warn('[studio:autosave] 저장 실패', e);
+      }
+      saveTimer = null;
+    }, 600);
+  };
+
   // ===== 상태 구독 → UI 갱신 =====
   let firstRender = true;
   subscribe(() => {
@@ -170,10 +201,16 @@ ready(() => {
     renderBin();
     renderTimeline();
     renderProps();
+    // 녹화 중에는 매 프레임 변경이 일어나므로 저장 디바운스가 필수
+    scheduleSave();
     if (firstRender) {
       firstRender = false;
-      // 첫 렌더 직후 — 안내 토스트
-      showToast('🎬 스튜디오 시작! 맵 → 캐릭터 → 녹화(R) 순서');
+      // 첫 렌더 직후 — 안내 토스트 (복원 토스트가 이미 있으면 덮지 않게 살짝 늦춤)
+      window.setTimeout(() => {
+        if (state.assets.length > 0 && state.project.scenes.every((s) => s.tracks.length === 0 && !s.mapAssetId)) {
+          showToast('🎬 스튜디오 시작! 맵 → 캐릭터 → 녹화(⏺) 순서');
+        }
+      }, 1500);
     }
   });
   // 초기 렌더 트리거
